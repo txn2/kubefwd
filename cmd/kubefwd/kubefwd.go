@@ -18,12 +18,14 @@ package main
 import (
 	"os"
 
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
-	"github.com/txn2/kubefwd/cmd/kubefwd/version"
 )
 
 var globalUsage = ``
+var Version = "0.0.0"
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -32,7 +34,17 @@ func newRootCmd() *cobra.Command {
 		Long:  globalUsage,
 	}
 
-	cmd.AddCommand(version.Cmd, services.Cmd)
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print the version of Kubefwd",
+		Long:  ``,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
+		},
+	}
+
+	cmd.AddCommand(versionCmd, services.Cmd)
+
 	return cmd
 }
 
