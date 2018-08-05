@@ -29,6 +29,10 @@ import (
 
 	"os/exec"
 
+	"log"
+
+	"strconv"
+
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/pkg/portforward"
@@ -223,4 +227,26 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 	}
 
 	return net.IP{}, d, errors.New("unable to find an available IP/Port")
+}
+
+func CheckRoot() bool {
+	cmd := exec.Command("id", "-u")
+
+	output, err := cmd.Output()
+	if err != nil {
+		log.Fatal(err)
+		return false
+	}
+
+	i, err := strconv.Atoi(string(output[:len(output)-1]))
+	if err != nil {
+		log.Fatal(err)
+		return false
+	}
+
+	if i == 0 {
+		return true
+	}
+
+	return false
 }

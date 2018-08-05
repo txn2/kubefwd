@@ -36,10 +36,28 @@ var Cmd = &cobra.Command{
 	Long:    `Forward all Kubernetes services.`,
 	Run: func(cmd *cobra.Command, args []string) {
 
+		if !utils.CheckRoot() {
+			fmt.Printf(`
+This program requires superuser priveledges to run.
+These priveledges are required to add IP address aliases
+to your loopback interface. Root priveledges are also
+needed to listen on low port numbers for these IP
+addresses.
+
+Try: sudo kubefwd services
+
+`)
+			return
+		}
+
 		// k8s rest config
 		config := utils.K8sConfig(cmd)
 		namespace := cmd.Flag("namespace").Value.String()
 		selector := cmd.Flag("selector").Value.String()
+
+		if namespace == "" {
+			namespace = "default"
+		}
 
 		listOptions := metav1.ListOptions{}
 		if selector != "" {
