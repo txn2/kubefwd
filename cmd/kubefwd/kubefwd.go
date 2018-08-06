@@ -50,6 +50,15 @@ func newRootCmd() *cobra.Command {
 }
 
 func main() {
+	fmt.Print(`
+ _          _           __             _
+| | ___   _| |__   ___ / _|_      ____| |
+| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
+|   <| |_| | |_) |  __/  _|\ V  V / (_| |
+|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
+
+`)
+
 	cmd := newRootCmd()
 
 	if err := cmd.Execute(); err != nil {

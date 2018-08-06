@@ -38,17 +38,18 @@ var Cmd = &cobra.Command{
 
 		if !utils.CheckRoot() {
 			fmt.Printf(`
-This program requires superuser priveledges to run.
-These priveledges are required to add IP address aliases
-to your loopback interface. Root priveledges are also
-needed to listen on low port numbers for these IP
-addresses.
+This program requires superuser priveledges to run. These 
+priveledges are required to add IP address aliases to your 
+loopback interface. Superuser priveledges are also needed 
+to listen on low port numbers for these IP addresses.
 
 Try: sudo kubefwd services
 
 `)
 			return
 		}
+
+		fmt.Println("Press [Ctrl-C] to stop forwarding.")
 
 		// k8s rest config
 		config := utils.K8sConfig(cmd)
