@@ -28,6 +28,19 @@ brew upgrade kubefwd
 
 Checkout the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries or [Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. I welcome any useful pull requests.
 
+## Usage
+
+Forward all services for the namespace `the-project`
+```bash
+sudo kubefwd services -n the-project
+```
+
+Forward all services for the namespace `the-project` where labeled `system: wx`:
+
+```bash
+sudo kubefwd services -l system=wx -n the-project
+```
+
 ## Help
 
 ```bash
