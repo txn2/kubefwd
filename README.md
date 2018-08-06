@@ -4,7 +4,7 @@
 
 When working on our local workstation, my team and I often build applications that access services by their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
 
-![](kubefwd_sn.png)
+![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
 
 ## Install / Update
 
