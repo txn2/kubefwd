@@ -22,6 +22,9 @@ import (
 	"strconv"
 	"sync"
 
+	"io"
+	"log"
+
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/pkg/utils"
@@ -82,11 +85,40 @@ Try: sudo kubefwd services
 
 		d := 1
 
-		//hosts := hostess.NewHostlist()
 		hostfile, errs := hostess.LoadHostfile()
+
+		fmt.Printf("Loading hosts file %s\n", hostfile.Path)
+
 		if errs != nil {
 			fmt.Println("Can not load /etc/hosts")
+			for _, err = range errs {
+				fmt.Println(err.Error())
+			}
 			os.Exit(1)
+		}
+
+		// make backup of original hosts file if no previous backup exists
+		backupHostsPath := hostfile.Path + ".original"
+		if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
+			from, err := os.Open(hostfile.Path)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer from.Close()
+
+			to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer to.Close()
+
+			_, err = io.Copy(to, from)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("Backing up your original hosts file %s to %s\n", hostfile.Path, backupHostsPath)
+		} else {
+			fmt.Printf("Original hosts backup already exists at %s\n", backupHostsPath)
 		}
 
 		for _, svc := range services.Items {
