@@ -6,6 +6,10 @@ When working on our local workstation, my team and I often build applications th
 
 ![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
 
+## OS
+
+Tested on **macOS** only. Planning on support for linux and windows in the future, as time and interest permits. Please submit a PR if you would like to contribute.
+
 ## Install / Update
 
 **kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context.
