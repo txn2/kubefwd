@@ -1,6 +1,6 @@
 # kubefwd
 
-**kubefwd** is a command line utility built to port forward some or all pods within a [Kubernetes namespace]. **kubefwd** uses the same port exposed by the service and forwards it from a loopback ip address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
+**kubefwd** is a command line utility built to port forward some or all pods within a [Kubernetes namespace]. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
 
 When working on our local workstation, my team and I often build applications that access services by their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
 
@@ -26,7 +26,7 @@ To upgrade:
 brew upgrade kubefwd
 ```
 
-Checkout the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries or [Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. I welcome any useful pull requests.
+Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries or [Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. I welcome any useful pull requests.
 
 ## Usage
 
