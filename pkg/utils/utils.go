@@ -182,9 +182,23 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 
 func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, error) {
 
+	ip := net.IPv4(a, b, c, byte(d))
+
+	// lo means we are probably on linux and not mac
+	_, err := net.InterfaceByName("lo")
+	if err == nil {
+		// if no error then check to see if the ip:port are in use
+		_, err := net.Dial("tcp", ip.String()+":"+port)
+		if err != nil {
+			return ip, d + 1, nil
+		}
+
+		return ip, d + 1, errors.New("ip and port are in use")
+	}
+
 	for i := d; i < 255; i++ {
 
-		ip := net.IPv4(a, b, c, byte(i))
+		ip = net.IPv4(a, b, c, byte(i))
 
 		iface, err := net.InterfaceByName("lo0")
 		if err != nil {
