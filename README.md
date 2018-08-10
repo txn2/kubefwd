@@ -73,6 +73,26 @@ Flags:
 
 ## Development
 
+### Build and Run Local
+
+```bash
+go run ./cmd/kubefwd/kubefwd.go
+```
+
+### Build Run in Docker
+
+Run in the [golang:1.10.3] docker container.
+```bash
+docker run -it --rm --privileged \
+    -v "$(pwd)":/go/src/github.com/txn2/kubefwd \
+    -v "$(echo $HOME)/.kube/":/root/.kube/ \
+    -w /go/src/github.com/txn2/kubefwd golang:1.10.3 bash
+```
+
+
+
+### Build Release
+
 Build test release:
 ```bash
 goreleaser --skip-publish --rm-dist --skip-validate
@@ -87,3 +107,4 @@ GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 [Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
 [homebrew]:https://brew.sh/
 [txn2]:https://txn2.com/
+[golang:1.10.3]:https://hub.docker.com/_/golang/

@@ -1,0 +1,21 @@
+package: github.com/txn2/kubefwd
+import:
+- package: github.com/cbednarski/hostess
+  version: ~0.3.0
+- package: github.com/spf13/cobra
+  version: ~0.0.3
+- package: k8s.io/api
+  subpackages:
+  - core/v1
+- package: k8s.io/apimachinery
+  subpackages:
+  - pkg/apis/meta/v1
+  - pkg/util/httpstream
+  - pkg/util/runtime
+- package: k8s.io/client-go
+  version: ~8.0.0
+  subpackages:
+  - kubernetes
+  - rest
+  - tools/clientcmd
+  - transport/spdy
