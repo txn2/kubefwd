@@ -10,7 +10,7 @@ When working on our local workstation, my team and I often build applications th
 
 Tested directly on **macOS** and **linux** based docker containers.
 
-## Install / Update
+## MacOs Install / Update
 
 **kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used, however it's configuration is needed to access a Kubernetes cluster.
 
@@ -30,7 +30,20 @@ To upgrade:
 brew upgrade kubefwd
 ```
 
-Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries or [Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. I welcome any useful pull requests.
+## Docker
+
+```
+docker run -it --rm --privileged \
+    -v "$(echo $HOME)/.kube/":/root/.kube/ \
+    txn2/kubefwd ./kubefwd services -n the-project
+```
+
+
+## Alternative Installs (tar.gz, RPM, deb, snap)
+Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries.
+
+## Contribute
+[Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. We welcome any useful pull requests.
 
 ## Usage
 
@@ -92,8 +105,6 @@ docker run -it --rm --privileged \
 ```bash
 go run ./cmd/kubefwd/kubefwd.go
 ```
-
-
 
 ### Build Release
 

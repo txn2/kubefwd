@@ -6,4 +6,4 @@ COPY kubefwd /
 
 WORKDIR /
 
-CMD ["/kubefwd"]
+ENTRYPOINT ["/kubefwd"]
