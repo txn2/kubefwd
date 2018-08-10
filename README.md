@@ -2,17 +2,17 @@
 
 **kubefwd** is a command line utility built to port forward some or all pods within a [Kubernetes namespace]. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
 
-When working on our local workstation, my team and I often build applications that access services by their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
+When working on our local workstation, my team and I often build applications that access services through their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
 
 ![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
 
 ## OS
 
-Tested directly on **macOS** and **linux** based docker containers.
+Tested directly on **macOS** and **Linux** based docker containers.
 
 ## MacOs Install / Update
 
-**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used, however it's configuration is needed to access a Kubernetes cluster.
+**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used. However, it's configuration is needed to access a Kubernetes cluster.
 
 Ensure you have a context by running:
 ```bash
@@ -32,18 +32,26 @@ brew upgrade kubefwd
 
 ## Docker
 
-```
-docker run -it --rm --privileged \
+Forward all services from the namespace **the-project** to a Docker container named **the-project**.
+
+```bash
+docker run -it --rm --privileged --name the-project \
     -v "$(echo $HOME)/.kube/":/root/.kube/ \
-    txn2/kubefwd ./kubefwd services -n the-project
+    txn2/kubefwd services -n the-project
 ```
 
+
+Execute a curl call to an Elasticsearch service in your Kubernetes cluster.
+
+```bash
+docker exec the-project curl -s elasticsearch:9200
+```
 
 ## Alternative Installs (tar.gz, RPM, deb, snap)
 Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries.
 
 ## Contribute
-[Fork kubefwd](https://github.com/txn2/kubefwd) and build your own version. We welcome any useful pull requests.
+[Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version. We welcome any useful pull requests.
 
 ## Usage
 
