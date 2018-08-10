@@ -131,7 +131,6 @@ dockers:
   dockerfile: Dockerfile
   tag_templates:
   - "{{ .Tag }}"
-  - "{{ .Tag }}-{{ .Env.GO_VERSION }}"
   - "v{{ .Major }}"
   - latest
 -
@@ -143,6 +142,5 @@ dockers:
   dockerfile: Dockerfile
   tag_templates:
   - "armv6-{{ .Tag }}"
-  - "armv6-{{ .Tag }}-{{ .Env.GO_VERSION }}"
   - "armv6-v{{ .Major }}"
   - arm-latest
