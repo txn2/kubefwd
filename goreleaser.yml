@@ -110,6 +110,8 @@ brew:
 
   description: "Kubernetes bulk port forwarding utility."
 
+  skip_upload: false
+
   test: |-
     kubefwd version
 
