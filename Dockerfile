@@ -1,4 +1,9 @@
-FROM golang:1.10.3
+FROM alpine:3.7
 
-RUN apt-get update
-RUN apt-get install -y net-tools
+RUN apk update
+RUN apk add curl
+COPY kubefwd /
+
+WORKDIR /
+
+CMD ["/kubefwd"]

@@ -25,6 +25,30 @@ build:
 
   ldflags: -s -w -X main.Version={{.Version}}
 
+release:
+  # Repo in which the release will be created.
+  # Default is extracted from the origin remote URL.
+  github:
+    owner: txn2
+    name: kubefwd
+
+  # If set to true, will not auto-publish the release.
+  # Default is false.
+  draft: true
+
+  # If set to true, will mark the release as not ready for production.
+  # Default is false.
+  prerelease: false
+
+  # You can change the name of the GitHub release.
+  # Default is ``
+  name_template: "{{.ProjectName}}-v{{.Version}} {{.Env.USER}}"
+
+  # You can disable this pipe in order to not upload any artifacts to
+  # GitHub.
+  # Defaults to false.
+  disable: false
+
 nfpm:
   name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
   homepage:  https://github.com/txn2/kubefwd
@@ -96,3 +120,29 @@ snapcraft:
     Kubernetes bulk port forwarding utility.
   grade: stable
   confinement: classic
+
+dockers:
+-
+  goos: linux
+  goarch: amd64
+  goarm: ''
+  binary: kubefwd
+  image: txn2/kubefwd
+  dockerfile: Dockerfile
+  tag_templates:
+  - "{{ .Tag }}"
+  - "{{ .Tag }}-{{ .Env.GO_VERSION }}"
+  - "v{{ .Major }}"
+  - latest
+-
+  goos: linux
+  goarch: arm
+  goarm: 6
+  binary: kubefwd
+  image: txn2/kubefwd
+  dockerfile: Dockerfile
+  tag_templates:
+  - "armv6-{{ .Tag }}"
+  - "armv6-{{ .Tag }}-{{ .Env.GO_VERSION }}"
+  - "armv6-v{{ .Major }}"
+  - arm-latest

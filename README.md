@@ -8,11 +8,11 @@ When working on our local workstation, my team and I often build applications th
 
 ## OS
 
-Tested on **macOS** only. Planning on support for linux and windows in the future, as time and interest permits. Please submit a PR if you would like to contribute.
+Tested directly on **macOS** and **linux** based docker containers.
 
 ## Install / Update
 
-**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context.
+**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used, however it's configuration is needed to access a Kubernetes cluster.
 
 Ensure you have a context by running:
 ```bash
@@ -87,6 +87,10 @@ docker run -it --rm --privileged \
     -v "$(pwd)":/go/src/github.com/txn2/kubefwd \
     -v "$(echo $HOME)/.kube/":/root/.kube/ \
     -w /go/src/github.com/txn2/kubefwd golang:1.10.3 bash
+```
+
+```bash
+go run ./cmd/kubefwd/kubefwd.go
 ```
 
 
