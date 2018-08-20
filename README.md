@@ -7,6 +7,7 @@ Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kuber
 When working on our local workstation, my team and I often build applications that access services through their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
 
 ![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
+![kubefwd - Kube Forward Diagram](https://mk.imti.co/images/content/kubefwd-net.png)
 
 ## OS
 
