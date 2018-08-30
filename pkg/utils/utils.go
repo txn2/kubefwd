@@ -109,6 +109,12 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 		os.Exit(1)
 	}
 
+	// check that pod port can be strconv.ParseUint
+	_, err = strconv.ParseUint(pfo.PodPort, 10, 32)
+	if err != nil {
+		pfo.PodPort = pfo.LocalPort
+	}
+
 	fwdPorts := []string{fmt.Sprintf("%s:%s", pfo.LocalPort, pfo.PodPort)}
 
 	restClient := pfo.ClientSet.RESTClient()
