@@ -28,6 +28,7 @@ import (
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/pkg/utils"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
