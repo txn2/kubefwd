@@ -97,6 +97,7 @@ type PortForwardOpts struct {
 	LocalIp   net.IP
 	LocalPort string
 	Hostfile  *hostess.Hostfile
+	SkipFail  bool
 }
 
 func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
@@ -182,6 +183,11 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	err = fw.ForwardPorts()
 	if err != nil {
 		fmt.Printf("fw.ForwardPorts Error: %s\n", err.Error())
+
+		if pfo.SkipFail == true {
+			fmt.Printf("Skipping failure.\n")
+			return
+		}
 		os.Exit(1)
 	}
 }

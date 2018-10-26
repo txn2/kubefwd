@@ -1,5 +1,5 @@
 hash: 818f7811f7e6eda2c005a7ea5950b73a775143246e3d7f092494da974923b66c
-updated: 2018-10-26T15:34:40.340245+01:00
+updated: 2018-10-26T08:33:58.285291-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -119,7 +119,7 @@ imports:
   subpackages:
   - rate
 - name: google.golang.org/appengine
-  version: ae0ab99deb4dc413a2b4bd6c8bdd0eb67f1e4d06
+  version: 4216e58b9158e5f1c906f1aca75162a46a2ec88a
   subpackages:
   - internal
   - internal/app_identity
