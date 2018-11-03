@@ -1,5 +1,7 @@
 Contributions welcome!
 
+![kubefwd - kubernetes bulk port forwarding](kubefwd-mast.jpg)
+
 # kubefwd (Kube Forward)
 
 Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. 
@@ -99,7 +101,8 @@ Flags:
 
 ## Development
 
-### Build and Run Local
+### Build and Run
+ Local
 
 ```bash
 go run ./cmd/kubefwd/kubefwd.go
