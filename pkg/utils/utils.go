@@ -98,6 +98,7 @@ type PortForwardOpts struct {
 	LocalPort string
 	Hostfile  *hostess.Hostfile
 	SkipFail  bool
+	ShortName bool
 }
 
 func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {

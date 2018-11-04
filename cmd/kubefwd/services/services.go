@@ -17,13 +17,11 @@ package services
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-
-	"io"
-	"log"
 
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
@@ -31,7 +29,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	restclient "k8s.io/client-go/rest"
 )
+
+var namespaces []string
+
+func init() {
+	cfgFilePath := ""
+
+	if home := homeDir(); home != "" {
+		cfgFilePath = filepath.Join(home, ".kube", "config")
+	}
+
+	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to the kubeconfig file")
+	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace.")
+	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+}
 
 var Cmd = &cobra.Command{
 	Use:     "services",
@@ -55,13 +68,18 @@ Try: sudo kubefwd services
 
 		fmt.Println("Press [Ctrl-C] to stop forwarding.")
 
+		// get the hostfile
+		hostfile, err := utils.GetHostFile()
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		// k8s rest config
 		config := utils.K8sConfig(cmd)
-		namespace := cmd.Flag("namespace").Value.String()
 		selector := cmd.Flag("selector").Value.String()
 
-		if namespace == "" {
-			namespace = "default"
+		if len(namespaces) < 1 {
+			namespaces = []string{"default"}
 		}
 
 		listOptions := metav1.ListOptions{}
@@ -75,127 +93,137 @@ Try: sudo kubefwd services
 			panic(err.Error())
 		}
 
-		services, err := clientSet.CoreV1().Services(namespace).List(listOptions)
+		wg := &sync.WaitGroup{}
 
-		var wg sync.WaitGroup
+		ipC := 27
 
-		publisher := &utils.Publisher{
-			PublisherName: "Services",
-			Output:        false,
-		}
-
-		d := 1
-
-		hostfile, errs := hostess.LoadHostfile()
-
-		fmt.Printf("Loading hosts file %s\n", hostfile.Path)
-
-		if errs != nil {
-			fmt.Println("Can not load /etc/hosts")
-			for _, err = range errs {
-				fmt.Println(err.Error())
-			}
-			os.Exit(1)
-		}
-
-		// make backup of original hosts file if no previous backup exists
-		backupHostsPath := hostfile.Path + ".original"
-		if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
-			from, err := os.Open(hostfile.Path)
+		for i, namespace := range namespaces {
+			err = fwdServices(FwdServiceOpts{
+				Wg:           wg,
+				ClientSet:    clientSet,
+				Namespace:    namespace,
+				ListOptions:  listOptions,
+				Hostfile:     hostfile,
+				ClientConfig: config,
+				ShortName:    i < 1, // only use shortname for the first namespace
+				IpC:          byte(ipC),
+			})
 			if err != nil {
-				log.Fatal(err)
-			}
-			defer from.Close()
-
-			to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer to.Close()
-
-			_, err = io.Copy(to, from)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Printf("Backing up your original hosts file %s to %s\n", hostfile.Path, backupHostsPath)
-		} else {
-			fmt.Printf("Original hosts backup already exists at %s\n", backupHostsPath)
-		}
-
-		for _, svc := range services.Items {
-			selector := mapToSelectorStr(svc.Spec.Selector)
-			pods, err := clientSet.CoreV1().Pods(namespace).List(metav1.ListOptions{LabelSelector: selector})
-			if err != nil {
-				fmt.Printf("no pods found for %s: %s\n", selector, err.Error())
-				continue
+				fmt.Printf("Error forwarding service: %s\n", err.Error())
 			}
 
-			if len(pods.Items) < 1 {
-				fmt.Printf("No pods returned for service.\n")
-				continue
-			}
-
-			podName := ""
-			podPort := ""
-
-			localIp, ii, err := utils.ReadyInterface(127, 1, 27, d, podPort)
-			d = ii
-
-			for _, port := range svc.Spec.Ports {
-
-				podName = pods.Items[0].Name
-				podPort = port.TargetPort.String()
-				localPort := strconv.Itoa(int(port.Port))
-
-				_, err = clientSet.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
-				if err != nil {
-					fmt.Printf("Error getting pod: %s\n", err.Error())
-					break // no need to check other ports if we can't ge the pod
-				}
-
-				if err != nil {
-					fmt.Println(err.Error())
-					os.Exit(1)
-				}
-
-				fmt.Printf("Forwarding local %s:%s as %s:%d to pod %s:%s\n", localIp.String(), localPort, svc.Name, port.Port, podName, podPort)
-
-				wg.Add(1)
-				pfo := &utils.PortForwardOpts{
-					Out:       publisher,
-					Config:    config,
-					ClientSet: clientSet,
-					Namespace: namespace,
-					Service:   svc.Name,
-					PodName:   podName,
-					PodPort:   podPort,
-					LocalIp:   localIp,
-					LocalPort: localPort,
-					Hostfile:  hostfile,
-					SkipFail:  true,
-				}
-
-				go utils.PortForward(&wg, pfo)
-
-			}
+			ipC = ipC + 1
 		}
 
 		wg.Wait()
+
 		fmt.Printf("\nDone...\n")
-		hostfile.Save()
+		err = hostfile.Save()
+		if err != nil {
+			fmt.Printf("Error saving hostfile: %s\n", err.Error())
+		}
 	},
 }
 
-func init() {
-	cfgFilePath := ""
+type FwdServiceOpts struct {
+	Wg           *sync.WaitGroup
+	ClientSet    *kubernetes.Clientset
+	Namespace    string
+	ListOptions  metav1.ListOptions
+	Hostfile     *hostess.Hostfile
+	ClientConfig *restclient.Config
+	ShortName    bool
+	IpC          byte
+}
 
-	if home := homeDir(); home != "" {
-		cfgFilePath = filepath.Join(home, ".kube", "config")
+func fwdServices(opts FwdServiceOpts) error {
+
+	services, err := opts.ClientSet.CoreV1().Services(opts.Namespace).List(opts.ListOptions)
+	if err != nil {
+		return err
 	}
 
-	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to the kubeconfig file")
-	Cmd.Flags().StringP("namespace", "n", "", "Specify a namespace.")
-	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+	publisher := &utils.Publisher{
+		PublisherName: "Services",
+		Output:        false,
+	}
+
+	d := 1
+
+	// loop through the services
+	for _, svc := range services.Items {
+		selector := mapToSelectorStr(svc.Spec.Selector)
+		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
+
+		if err != nil {
+			fmt.Printf("no pods found for %s: %s\n", selector, err.Error())
+			continue
+		}
+
+		if len(pods.Items) < 1 {
+			fmt.Printf("No pods returned for service.\n")
+			continue
+		}
+
+		podName := ""
+		podPort := ""
+		podNamespace := ""
+
+		localIp, ii, err := utils.ReadyInterface(127, 1, opts.IpC, d, podPort)
+		d = ii
+
+		for _, port := range svc.Spec.Ports {
+
+			podName = pods.Items[0].Name
+			podNamespace = pods.Items[0].Namespace
+			podPort = port.TargetPort.String()
+			localPort := strconv.Itoa(int(port.Port))
+
+			_, err = opts.ClientSet.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
+			if err != nil {
+				fmt.Printf("Error getting pod: %s\n", err.Error())
+				// TODO: Check for other pods?
+				break // no need to check other ports if we can't ge the pod
+			}
+
+			full := ""
+
+			if opts.ShortName != true {
+				full = fmt.Sprintf(".%s.svc.cluster.local", podNamespace)
+			}
+
+			fmt.Printf("Fwd %s:%s as %s%s:%d to pod %s:%s\n",
+				localIp.String(),
+				localPort,
+				svc.Name,
+				full,
+				port.Port,
+				podName,
+				podPort,
+			)
+
+			opts.Wg.Add(1)
+			pfo := &utils.PortForwardOpts{
+				Out:       publisher,
+				Config:    opts.ClientConfig,
+				ClientSet: opts.ClientSet,
+				Namespace: podNamespace,
+				Service:   svc.Name,
+				PodName:   podName,
+				PodPort:   podPort,
+				LocalIp:   localIp,
+				LocalPort: localPort,
+				Hostfile:  opts.Hostfile,
+				ShortName: opts.ShortName,
+				SkipFail:  true,
+			}
+
+			go utils.PortForward(opts.Wg, pfo)
+
+		}
+	}
+
+	return nil
 }
 
 func homeDir() string {
