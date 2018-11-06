@@ -22,7 +22,7 @@ Tested directly on **macOS** and **Linux** based docker containers.
 
 ## MacOs Install / Update
 
-**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used. However, it's configuration is needed to access a Kubernetes cluster.
+**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used. However, its configuration is needed to access a Kubernetes cluster.
 
 Ensure you have a context by running:
 ```bash
@@ -42,7 +42,7 @@ brew upgrade kubefwd
 
 ## Docker
 
-Forward all services from the namespace **the-project** to a Docker container named **the-project**.
+Forward all services from the namespace **the-project** to a Docker container named **the-project**:
 
 ```bash
 docker run -it --rm --privileged --name the-project \
@@ -51,7 +51,7 @@ docker run -it --rm --privileged --name the-project \
 ```
 
 
-Execute a curl call to an Elasticsearch service in your Kubernetes cluster.
+Execute a curl call to an Elasticsearch service in your Kubernetes cluster:
 
 ```bash
 docker exec the-project curl -s elasticsearch:9200
@@ -65,7 +65,7 @@ Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Gi
 
 ## Usage
 
-Forward all services for the namespace `the-project`
+Forward all services for the namespace `the-project`:
 ```bash
 sudo kubefwd services -n the-project
 ```
@@ -99,7 +99,7 @@ Flags:
   -h, --help                help for services
   -c, --kubeconfig string   absolute path to the kubeconfig file (default "/Users/cjimti/.kube/config")
   -n, --namespace string    Specify a namespace.
-  -l, --selector string     Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)
+  -l, --selector string     Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
 ```
 
 ## Development
@@ -113,7 +113,7 @@ go run ./cmd/kubefwd/kubefwd.go
 
 ### Build Run in Docker
 
-Run in the [golang:1.10.3] docker container.
+Run in the [golang:1.10.3] docker container:
 ```bash
 docker run -it --rm --privileged \
     -v "$(pwd)":/go/src/github.com/txn2/kubefwd \
@@ -143,7 +143,7 @@ Apache License 2.0
 
 ### Sponsor
 
-Opens source utility proudly sponsored by [Deasil Works Inc]
+Opens source utility proudly sponsored by [Deasil Works, Inc.]
 
 [Kubernetes]:https://kubernetes.io/
 [Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
