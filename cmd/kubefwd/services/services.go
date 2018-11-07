@@ -55,12 +55,14 @@ var Cmd = &cobra.Command{
 
 		if !utils.CheckRoot() {
 			fmt.Printf(`
-This program requires superuser priveledges to run. These 
+This program requires superuser priveleges to run. These 
 priveledges are required to add IP address aliases to your 
-loopback interface. Superuser priveledges are also needed 
+loopback interface. Superuser priveleges are also needed 
 to listen on low port numbers for these IP addresses.
 
-Try: sudo kubefwd services
+Try: 
+ - sudo kubefwd services (Unix)
+ - Running a shell with administrator rights (Windows)
 
 `)
 			return
