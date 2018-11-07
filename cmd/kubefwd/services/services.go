@@ -43,7 +43,7 @@ func init() {
 
 	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to the kubeconfig file")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace.")
-	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 }
 
 var Cmd = &cobra.Command{
@@ -55,9 +55,9 @@ var Cmd = &cobra.Command{
 
 		if !utils.CheckRoot() {
 			fmt.Printf(`
-This program requires superuser priveleges to run. These 
-priveledges are required to add IP address aliases to your 
-loopback interface. Superuser priveleges are also needed 
+This program requires superuser privileges to run. These
+privileges are required to add IP address aliases to your
+loopback interface. Superuser privileges are also needed
 to listen on low port numbers for these IP addresses.
 
 Try: 
@@ -158,7 +158,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
 
 		if err != nil {
-			fmt.Printf("no pods found for %s: %s\n", selector, err.Error())
+			fmt.Printf("No pods found for %s: %s\n", selector, err.Error())
 			continue
 		}
 
@@ -185,7 +185,7 @@ func fwdServices(opts FwdServiceOpts) error {
 			if err != nil {
 				fmt.Printf("Error getting pod: %s\n", err.Error())
 				// TODO: Check for other pods?
-				break // no need to check other ports if we can't ge the pod
+				break // no need to check other ports if we can't get the pod
 			}
 
 			full := ""
