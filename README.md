@@ -102,7 +102,7 @@ Aliases:
 Flags:
   -h, --help                help for services
   -c, --kubeconfig string   absolute path to the kubeconfig file (default "/Users/cjimti/.kube/config")
-  -n, --namespace string    Specify a namespace.
+  -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
   -l, --selector string     Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
 ```
 
@@ -126,7 +126,7 @@ docker run -it --rm --privileged \
 ```
 
 ```bash
-go run ./cmd/kubefwd/kubefwd.go
+sudo go run ./cmd/kubefwd/kubefwd.go svc
 ```
 
 ### Build Release

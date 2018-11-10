@@ -143,11 +143,16 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	localIpEndPoint := fmt.Sprintf("%s:%s", pfo.LocalIp.String(), pfo.LocalPort)
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 	localHost := pfo.Service
-	nsLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
+	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
+	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
 	hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
 	pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
 	pfo.Hostfile.Hosts.Add(hostname)
+
+	fullHostname := hostess.MustHostname(fullLocalHost, pfo.LocalIp.String(), true)
+	pfo.Hostfile.Hosts.RemoveDomain(fullHostname.Domain)
+	pfo.Hostfile.Hosts.Add(fullHostname)
 
 	nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
 	pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)

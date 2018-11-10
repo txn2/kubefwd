@@ -42,7 +42,7 @@ func init() {
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to the kubeconfig file")
-	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace.")
+	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 }
 
@@ -67,6 +67,7 @@ Try: sudo kubefwd services
 		}
 
 		fmt.Println("Press [Ctrl-C] to stop forwarding.")
+		fmt.Println("'cat /etc/hosts' to see all host entries.")
 
 		// get the hostfile
 		hostfile, err := utils.GetHostFile()
