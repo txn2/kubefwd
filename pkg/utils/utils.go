@@ -169,7 +169,7 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	go func() {
 		<-signals
 		if stopChannel != nil {
-			fmt.Printf("Stoped forwarding %s and removing %s from hosts.\n", localIpEndPoint, localHost)
+			fmt.Printf("Stopped forwarding %s and removing %s from hosts.\n", localIpEndPoint, localHost)
 			pfo.Hostfile.Hosts.RemoveDomain(localHost)
 			pfo.Hostfile.Hosts.RemoveDomain(nsLocalHost)
 
