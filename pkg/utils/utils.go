@@ -146,9 +146,11 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
 	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
-	hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
-	pfo.Hostfile.Hosts.Add(hostname)
+	if pfo.ShortName {
+		hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
+		pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
+		pfo.Hostfile.Hosts.Add(hostname)
+	}
 
 	fullHostname := hostess.MustHostname(fullLocalHost, pfo.LocalIp.String(), true)
 	pfo.Hostfile.Hosts.RemoveDomain(fullHostname.Domain)
