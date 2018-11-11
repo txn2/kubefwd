@@ -180,6 +180,10 @@ func fwdServices(opts FwdServiceOpts) error {
 			podPort = port.TargetPort.String()
 			localPort := strconv.Itoa(int(port.Port))
 
+			if _, err := strconv.Atoi(podPort); err != nil {
+				// @TODO lookup named port
+			}
+
 			_, err = opts.ClientSet.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
 			if err != nil {
 				fmt.Printf("Error getting pod: %s\n", err.Error())
