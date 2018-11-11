@@ -1,5 +1,5 @@
 hash: 818f7811f7e6eda2c005a7ea5950b73a775143246e3d7f092494da974923b66c
-updated: 2018-10-26T08:33:58.285291-07:00
+updated: 2018-11-11T14:48:18.801815-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -16,7 +16,7 @@ imports:
 - name: github.com/cbednarski/hostess
   version: 4f98a9f9bd854e31042bec9c5e8c4664fb46c725
 - name: github.com/codegangsta/cli
-  version: 8e01ec4cd3e2d84ab2fe90d8210528ffbb06d8ff
+  version: b67dcf995b6a7b7f14fad5fcb7cc5441b05e814b
 - name: github.com/dgrijalva/jwt-go
   version: 01aeca54ebda6e0fbfafd0a524d234159c05ec20
 - name: github.com/docker/spdystream
@@ -26,7 +26,7 @@ imports:
 - name: github.com/ghodss/yaml
   version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
 - name: github.com/gogo/protobuf
-  version: c0656edd0d9eab7c66d1eb0c568f9039345796f7
+  version: 342cbe0a04158f6dcb03ca0079991a51a4248c02
   subpackages:
   - proto
   - sortkeys
@@ -72,19 +72,19 @@ imports:
 - name: github.com/modern-go/concurrent
   version: bacd9c7ef1dd9b15be4a9909b8ac7a4e313eec94
 - name: github.com/modern-go/reflect2
-  version: 05fbef0ca5da472bbf96c9322b84a53edc03c9fd
+  version: 94122c33edd36123c84d5368cfb2b69df93a0ec8
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/spf13/cobra
   version: ef82de70bb3f60c65fb8eebacbb2d122ef517385
 - name: github.com/spf13/pflag
-  version: 9a97c102cda95a86cec2345a6f09f55a939babf5
+  version: aea12ed6721610dc6ed40141676d7ab0a1dac9e9
 - name: golang.org/x/crypto
   version: 49796115aa4b964c318aad4f3084fdb41e9aa067
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
-  version: 1c05540f6879653db88113bc4a2b70aec4bd491f
+  version: 0ed95abb35c445290478a5348a7b38bb154135fd
   subpackages:
   - context
   - context/ctxhttp
@@ -119,7 +119,7 @@ imports:
   subpackages:
   - rate
 - name: google.golang.org/appengine
-  version: 4216e58b9158e5f1c906f1aca75162a46a2ec88a
+  version: 4a4468ece617fc8205e99368fa2200e9d1fad421
   subpackages:
   - internal
   - internal/app_identity
@@ -133,7 +133,7 @@ imports:
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/yaml.v2
-  version: 670d4cfef0544295bc27a114dbac37980d83185a
+  version: 5420a8b6744d3b0345ab293f6fcba19c978f1183
 - name: k8s.io/api
   version: 072894a440bdee3a891dea811fe42902311cd2a3
   subpackages:
@@ -270,4 +270,6 @@ imports:
   - util/homedir
   - util/integer
   - util/jsonpath
+- name: k8s.io/klog
+  version: 8139d8cb77af419532b33dfa7dd09fbc5f1d344f
 testImports: []
