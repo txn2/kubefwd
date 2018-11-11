@@ -6,7 +6,3 @@ go:
 # Only clone the most recent commit.
 git:
   depth: 1
-
-# Skip the install step. Don't `go get` dependencies. Only build with the code
-# in vendor/
-install: true
