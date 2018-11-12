@@ -53,6 +53,9 @@ var Cmd = &cobra.Command{
 	Aliases: []string{"svcs", "svc"},
 	Short:   "Forward all services",
 	Long:    `Forward all Kubernetes services.`,
+	Example: "  kubefwd svc -n the-project\n" +
+		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
+		"  kubefwd svc -n default -n the-project\n",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		if !utils.CheckRoot() {

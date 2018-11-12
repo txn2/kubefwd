@@ -29,10 +29,13 @@ var Version = "0.0.0"
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "kubefwd",
-		Short:   "Expose Kubernetes services for local development.",
-		Example: "kubefwd services --namespace the-project",
-		Long:    globalUsage,
+		Use:   "kubefwd",
+		Short: "Expose Kubernetes services for local development.",
+		Example: "  kubefwd services --help\n" +
+			"  kubefwd svc -n the-project\n" +
+			"  kubefwd svc -n the-project -l app=wx,component=api\n" +
+			"  kubefwd svc -n default -n the-project\n",
+		Long: globalUsage,
 	}
 
 	versionCmd := &cobra.Command{
