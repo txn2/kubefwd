@@ -65,7 +65,9 @@ privileges are required to add IP address aliases to your
 loopback interface. Superuser privileges are also needed
 to listen on low port numbers for these IP addresses.
 
-Try: sudo kubefwd services
+Try: 
+ - sudo kubefwd services (Unix)
+ - Running a shell with administrator rights (Windows)
 
 `)
 			return

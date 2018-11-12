@@ -192,12 +192,17 @@ func (h *Hostfile) Format() []byte {
 // Save writes the Hostfile to disk to /etc/hosts or to the location specified
 // by the HOSTESS_PATH environment variable (if set).
 func (h *Hostfile) Save() error {
-	file, err := os.OpenFile(h.Path, os.O_RDWR|os.O_APPEND|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(h.Path, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	err = file.Truncate(0)
 	if err != nil {
 		return err
 	}
 
-	defer file.Close()
 	_, err = file.Write(h.Format())
 
 	return err

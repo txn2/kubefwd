@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -206,7 +207,7 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")
-	if err == nil {
+	if err == nil || runtime.GOOS == "windows" {
 		// if no error then check to see if the ip:port are in use
 		_, err := net.Dial("tcp", ip.String()+":"+port)
 		if err != nil {
@@ -264,6 +265,13 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 }
 
 func CheckRoot() bool {
+	if runtime.GOOS == "windows" {
+		// try to open a file which requires admin privileges
+		file, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+		defer file.Close()
+		return err == nil
+	}
+
 	cmd := exec.Command("id", "-u")
 
 	output, err := cmd.Output()
