@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"sync"
 
+	"k8s.io/api/core/v1"
+
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/pkg/utils"
@@ -181,14 +183,16 @@ func fwdServices(opts FwdServiceOpts) error {
 			localPort := strconv.Itoa(int(port.Port))
 
 			if _, err := strconv.Atoi(podPort); err != nil {
-				// @TODO lookup named port
+				// search a pods containers for the named port
+				if namedPodPort, ok := portSearch(podPort, pods.Items[0].Spec.Containers); ok == true {
+					podPort = namedPodPort
+				}
 			}
 
 			_, err = opts.ClientSet.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
 			if err != nil {
 				fmt.Printf("Error getting pod: %s\n", err.Error())
-				// TODO: Check for other pods?
-				break // no need to check other ports if we can't get the pod
+				break
 			}
 
 			full := ""
@@ -229,6 +233,19 @@ func fwdServices(opts FwdServiceOpts) error {
 	}
 
 	return nil
+}
+
+func portSearch(portName string, containers []v1.Container) (string, bool) {
+
+	for _, container := range containers {
+		for _, cp := range container.Ports {
+			if cp.Name == portName {
+				return fmt.Sprint(cp.ContainerPort), true
+			}
+		}
+	}
+
+	return "", false
 }
 
 func homeDir() string {
