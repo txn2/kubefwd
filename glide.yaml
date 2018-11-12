@@ -1,7 +1,8 @@
 package: github.com/txn2/kubefwd
 import:
 - package: github.com/cbednarski/hostess
-  version: ~0.3.0
+  version: ~0.4.0
+  repo: git@github.com:cedrickring/hostess.git
 - package: github.com/spf13/cobra
   version: ~0.0.3
 - package: k8s.io/api
