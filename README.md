@@ -84,7 +84,6 @@ sudo kubefwd services -l system=wx -n the-project
 
 ```bash
 $ kubefwd services --help
-
  _          _           __             _
 | | ___   _| |__   ___ / _|_      ____| |
 | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
@@ -98,6 +97,12 @@ Usage:
 
 Aliases:
   services, svcs, svc
+
+Examples:
+  kubefwd svc -n the-project
+  kubefwd svc -n the-project -l app=wx,component=api
+  kubefwd svc -n default -n the-project
+
 
 Flags:
   -h, --help                help for services
