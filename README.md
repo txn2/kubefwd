@@ -1,4 +1,4 @@
-Contributions welcome!
+Kubernetes port forwarding for local development, Contributions welcome!
 
 ![kubefwd - kubernetes bulk port forwarding](kubefwd-mast.jpg)
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
