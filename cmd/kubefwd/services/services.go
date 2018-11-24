@@ -43,7 +43,16 @@ func init() {
 		cfgFilePath = filepath.Join(home, ".kube", "config")
 	}
 
-	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to the kubeconfig file")
+	// if sudo -E is used and the KUBECONFIG environment variable is set
+	// make it the default, override with command line.
+	envCfg, ok := os.LookupEnv("KUBECONFIG")
+	if ok {
+		if envCfg != "" {
+			cfgFilePath = envCfg
+		}
+	}
+
+	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to a kubectl config file")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 }
@@ -66,7 +75,7 @@ loopback interface. Superuser privileges are also needed
 to listen on low port numbers for these IP addresses.
 
 Try: 
- - sudo kubefwd services (Unix)
+ - sudo -E kubefwd services (Unix)
  - Running a shell with administrator rights (Windows)
 
 `)
@@ -76,7 +85,6 @@ Try:
 		fmt.Println("Press [Ctrl-C] to stop forwarding.")
 		fmt.Println("'cat /etc/hosts' to see all host entries.")
 
-		// get the hostfile
 		hostfile, err := utils.GetHostFile()
 		if err != nil {
 			log.Fatal(err)
@@ -103,6 +111,8 @@ Try:
 
 		wg := &sync.WaitGroup{}
 
+		// ipC is the class C for the local IP address
+		// increment this for each cluster
 		ipC := 27
 
 		for i, namespace := range namespaces {
@@ -177,8 +187,8 @@ func fwdServices(opts FwdServiceOpts) error {
 		podPort := ""
 		podNamespace := ""
 
-		localIp, ii, err := utils.ReadyInterface(127, 1, opts.IpC, d, podPort)
-		d = ii
+		localIp, dInc, err := utils.ReadyInterface(127, 1, opts.IpC, d, podPort)
+		d = dInc
 
 		for _, port := range svc.Spec.Ports {
 

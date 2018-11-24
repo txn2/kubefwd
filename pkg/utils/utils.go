@@ -65,7 +65,7 @@ func (p *Publisher) Write(b []byte) (int, error) {
 }
 
 func K8sConfig(cmd *cobra.Command) *restclient.Config {
-	// use the current context in kubeconfig
+
 	cfgFilePath := cmd.Flag("kubeconfig").Value.String()
 	namespace := cmd.Flag("namespace").Value.String()
 
@@ -163,7 +163,8 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 
 	err = pfo.Hostfile.Save()
 	if err != nil {
-		fmt.Println("Cannot save hostfile.")
+		fmt.Println("Cannot save hostfile:")
+		signal.Stop(signals)
 		os.Exit(1)
 	}
 
@@ -184,6 +185,7 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
 	if err != nil {
 		fmt.Printf("portforward.New Error: %s\n", err.Error())
+		signal.Stop(signals)
 		os.Exit(1)
 	}
 
@@ -194,9 +196,14 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 		fmt.Printf("fw.ForwardPorts Error: %s\n", err.Error())
 
 		if pfo.SkipFail == true {
-			fmt.Printf("Skipping failure.\n")
+			fmt.Printf("Ignore failure.\n")
+
+			// TODO Retry code here
+
 			return
 		}
+
+		signal.Stop(signals)
 		os.Exit(1)
 	}
 }
