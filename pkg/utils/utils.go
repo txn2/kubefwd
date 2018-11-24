@@ -64,27 +64,31 @@ func (p *Publisher) Write(b []byte) (int, error) {
 	return 0, nil
 }
 
-func K8sConfig(cmd *cobra.Command) *restclient.Config {
+func K8sConfig(cmd *cobra.Command, contexts []string) *restclient.Config {
 
 	cfgFilePath := cmd.Flag("kubeconfig").Value.String()
-	namespace := cmd.Flag("namespace").Value.String()
-
-	if namespace == "" {
-		namespace = "default"
-	}
 
 	if cfgFilePath == "" {
 		fmt.Println("No config found. Use --kubeconfig to specify one")
 		os.Exit(1)
 	}
 
+	overrides := &clientcmd.ConfigOverrides{}
+
+	if len(contexts) > 0 {
+		overrides = &clientcmd.ConfigOverrides{CurrentContext: contexts[0]}
+	}
+
 	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", cfgFilePath)
+	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: cfgFilePath},
+		overrides,
+	).ClientConfig()
 	if err != nil {
 		panic(err.Error())
 	}
 
-	return config
+	return restConfig
 }
 
 type PortForwardOpts struct {

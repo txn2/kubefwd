@@ -35,6 +35,7 @@ import (
 )
 
 var namespaces []string
+var contexts []string
 
 func init() {
 	cfgFilePath := ""
@@ -53,6 +54,7 @@ func init() {
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to a kubectl config file")
+	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 }
@@ -91,17 +93,8 @@ Try:
 		}
 
 		// k8s rest config
-		config := utils.K8sConfig(cmd)
-		selector := cmd.Flag("selector").Value.String()
-
-		if len(namespaces) < 1 {
-			namespaces = []string{"default"}
-		}
-
-		listOptions := metav1.ListOptions{}
-		if selector != "" {
-			listOptions.LabelSelector = selector
-		}
+		// TODO: Future support for multiple contexts
+		config := utils.K8sConfig(cmd, contexts)
 
 		// create the client set
 		clientSet, err := kubernetes.NewForConfig(config)
@@ -109,11 +102,25 @@ Try:
 			panic(err.Error())
 		}
 
-		wg := &sync.WaitGroup{}
+		// labels selector to filter services
+		// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+		selector := cmd.Flag("selector").Value.String()
+		listOptions := metav1.ListOptions{}
+		if selector != "" {
+			listOptions.LabelSelector = selector
+		}
+
+		// if no namespaces were specified, explicitly set
+		// one to "default"
+		if len(namespaces) < 1 {
+			namespaces = []string{"default"}
+		}
 
 		// ipC is the class C for the local IP address
 		// increment this for each cluster
 		ipC := 27
+
+		wg := &sync.WaitGroup{}
 
 		for i, namespace := range namespaces {
 			err = fwdServices(FwdServiceOpts{
