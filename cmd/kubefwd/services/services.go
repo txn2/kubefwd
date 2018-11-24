@@ -36,6 +36,7 @@ import (
 
 var namespaces []string
 var contexts []string
+var exitOnFail bool
 
 func init() {
 	cfgFilePath := ""
@@ -57,6 +58,7 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
+	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
 }
 
 var Cmd = &cobra.Command{
@@ -132,6 +134,7 @@ Try:
 				ClientConfig: config,
 				ShortName:    i < 1, // only use shortname for the first namespace
 				IpC:          byte(ipC),
+				ExitOnFail:   exitOnFail,
 			})
 			if err != nil {
 				fmt.Printf("Error forwarding service: %s\n", err.Error())
@@ -159,6 +162,7 @@ type FwdServiceOpts struct {
 	ClientConfig *restclient.Config
 	ShortName    bool
 	IpC          byte
+	ExitOnFail   bool
 }
 
 func fwdServices(opts FwdServiceOpts) error {
@@ -186,7 +190,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		}
 
 		if len(pods.Items) < 1 {
-			fmt.Printf("No pods returned for service.\n")
+			fmt.Printf("No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 			continue
 		}
 
@@ -235,18 +239,18 @@ func fwdServices(opts FwdServiceOpts) error {
 
 			opts.Wg.Add(1)
 			pfo := &utils.PortForwardOpts{
-				Out:       publisher,
-				Config:    opts.ClientConfig,
-				ClientSet: opts.ClientSet,
-				Namespace: podNamespace,
-				Service:   svc.Name,
-				PodName:   podName,
-				PodPort:   podPort,
-				LocalIp:   localIp,
-				LocalPort: localPort,
-				Hostfile:  opts.Hostfile,
-				ShortName: opts.ShortName,
-				SkipFail:  true,
+				Out:        publisher,
+				Config:     opts.ClientConfig,
+				ClientSet:  opts.ClientSet,
+				Namespace:  podNamespace,
+				Service:    svc.Name,
+				PodName:    podName,
+				PodPort:    podPort,
+				LocalIp:    localIp,
+				LocalPort:  localPort,
+				Hostfile:   opts.Hostfile,
+				ShortName:  opts.ShortName,
+				ExitOnFail: exitOnFail,
 			}
 
 			go utils.PortForward(opts.Wg, pfo)

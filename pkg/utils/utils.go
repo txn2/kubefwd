@@ -92,18 +92,18 @@ func K8sConfig(cmd *cobra.Command, contexts []string) *restclient.Config {
 }
 
 type PortForwardOpts struct {
-	Out       *Publisher
-	Config    *restclient.Config
-	ClientSet *kubernetes.Clientset
-	Namespace string
-	Service   string
-	PodName   string
-	PodPort   string
-	LocalIp   net.IP
-	LocalPort string
-	Hostfile  *hostess.Hostfile
-	SkipFail  bool
-	ShortName bool
+	Out        *Publisher
+	Config     *restclient.Config
+	ClientSet  *kubernetes.Clientset
+	Namespace  string
+	Service    string
+	PodName    string
+	PodPort    string
+	LocalIp    net.IP
+	LocalPort  string
+	Hostfile   *hostess.Hostfile
+	ExitOnFail bool
+	ShortName  bool
 }
 
 func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
@@ -189,8 +189,12 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
 	if err != nil {
 		fmt.Printf("portforward.New Error: %s\n", err.Error())
-		signal.Stop(signals)
-		os.Exit(1)
+
+		if pfo.ExitOnFail == true {
+			signal.Stop(signals)
+			os.Exit(1)
+		}
+
 	}
 
 	fw.LocalIp(pfo.LocalIp)
@@ -199,16 +203,16 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	if err != nil {
 		fmt.Printf("fw.ForwardPorts Error: %s\n", err.Error())
 
-		if pfo.SkipFail == true {
-			fmt.Printf("Ignore failure.\n")
+		if pfo.ExitOnFail == true {
 
-			// TODO Retry code here
+			signal.Stop(signals)
+			os.Exit(1)
 
 			return
 		}
 
-		signal.Stop(signals)
-		os.Exit(1)
+		// TODO Retry code here
+		fmt.Printf("Ignore failure.\n")
 	}
 }
 
