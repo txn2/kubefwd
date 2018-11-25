@@ -16,6 +16,7 @@ limitations under the License.
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,9 +25,6 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
-	"sync"
-
-	"errors"
 
 	"os/exec"
 
@@ -106,14 +104,11 @@ type PortForwardOpts struct {
 	ShortName  bool
 }
 
-func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
-
-	defer wg.Done()
+func PortForward(pfo *PortForwardOpts) error {
 
 	transport, upgrader, err := spdy.RoundTripperFor(pfo.Config)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// check that pod port can be strconv.ParseUint
@@ -154,22 +149,29 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 	if pfo.ShortName {
 		hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
 		pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
-		pfo.Hostfile.Hosts.Add(hostname)
+		err := pfo.Hostfile.Hosts.Add(hostname)
+		if err != nil {
+			return err
+		}
 	}
 
 	fullHostname := hostess.MustHostname(fullLocalHost, pfo.LocalIp.String(), true)
 	pfo.Hostfile.Hosts.RemoveDomain(fullHostname.Domain)
-	pfo.Hostfile.Hosts.Add(fullHostname)
+	err = pfo.Hostfile.Hosts.Add(fullHostname)
+	if err != nil {
+		return err
+	}
 
 	nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
 	pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)
-	pfo.Hostfile.Hosts.Add(nsHostname)
+	err = pfo.Hostfile.Hosts.Add(nsHostname)
+	if err != nil {
+		return err
+	}
 
 	err = pfo.Hostfile.Save()
 	if err != nil {
-		fmt.Println("Cannot save hostfile:")
-		signal.Stop(signals)
-		os.Exit(1)
+		return err
 	}
 
 	go func() {
@@ -188,32 +190,19 @@ func PortForward(wg *sync.WaitGroup, pfo *PortForwardOpts) {
 
 	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
 	if err != nil {
-		fmt.Printf("portforward.New Error: %s\n", err.Error())
-
-		if pfo.ExitOnFail == true {
-			signal.Stop(signals)
-			os.Exit(1)
-		}
-
+		signal.Stop(signals)
+		return err
 	}
 
 	fw.LocalIp(pfo.LocalIp)
 
 	err = fw.ForwardPorts()
 	if err != nil {
-		fmt.Printf("fw.ForwardPorts Error: %s\n", err.Error())
-
-		if pfo.ExitOnFail == true {
-
-			signal.Stop(signals)
-			os.Exit(1)
-
-			return
-		}
-
-		// TODO Retry code here
-		fmt.Printf("Ignore failure.\n")
+		signal.Stop(signals)
+		return err
 	}
+
+	return nil
 }
 
 func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, error) {

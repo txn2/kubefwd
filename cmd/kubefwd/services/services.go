@@ -64,11 +64,12 @@ func init() {
 var Cmd = &cobra.Command{
 	Use:     "services",
 	Aliases: []string{"svcs", "svc"},
-	Short:   "Forward all services",
-	Long:    `Forward all Kubernetes services.`,
+	Short:   "Forward services",
+	Long:    `Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.`,
 	Example: "  kubefwd svc -n the-project\n" +
 		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
-		"  kubefwd svc -n default -n the-project\n",
+		"  kubefwd svc -n default -n the-project\n" +
+		"  kubefwd svc -n the-project -x prod-cluster\n",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		if !utils.CheckRoot() {
@@ -186,11 +187,17 @@ func fwdServices(opts FwdServiceOpts) error {
 
 		if err != nil {
 			fmt.Printf("No pods found for %s: %s\n", selector, err.Error())
+
+			// TODO: try again after a time
+
 			continue
 		}
 
 		if len(pods.Items) < 1 {
 			fmt.Printf("No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+
+			// TODO: try again after a time
+
 			continue
 		}
 
@@ -237,7 +244,6 @@ func fwdServices(opts FwdServiceOpts) error {
 				podPort,
 			)
 
-			opts.Wg.Add(1)
 			pfo := &utils.PortForwardOpts{
 				Out:        publisher,
 				Config:     opts.ClientConfig,
@@ -253,7 +259,14 @@ func fwdServices(opts FwdServiceOpts) error {
 				ExitOnFail: exitOnFail,
 			}
 
-			go utils.PortForward(opts.Wg, pfo)
+			opts.Wg.Add(1)
+			go func() {
+				err = utils.PortForward(pfo)
+				if err != nil {
+					log.Printf("ERROR: %s", err.Error())
+				}
+				opts.Wg.Done()
+			}()
 
 		}
 	}
