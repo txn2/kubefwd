@@ -37,9 +37,17 @@ type ClientCfg struct {
 	} `yaml:"users"`
 }
 
+// GetConfig parses the config yml supplied in cfgFilePath
+// and returns a populated config object.
+func GetConfig(cfgFilePath string) (*ClientCfg, error) {
+	clientCfg := &ClientCfg{}
+
+	return clientCfg, nil
+}
+
 // GetRestConfig uses the kubectl config file to connect to
 // a cluster.
-func GetRestConfig(cfgFilePath string, contexts []string) *restclient.Config {
+func GetRestConfig(cfgFilePath string, contexts []string) (*restclient.Config, error) {
 
 	overrides := &clientcmd.ConfigOverrides{}
 
@@ -53,8 +61,8 @@ func GetRestConfig(cfgFilePath string, contexts []string) *restclient.Config {
 		overrides,
 	).ClientConfig()
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 
-	return restConfig
+	return restConfig, nil
 }

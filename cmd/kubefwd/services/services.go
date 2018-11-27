@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/txn2/kubefwd/pkg/fwdhost"
+
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
@@ -76,7 +78,9 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n the-project -x prod-cluster\n",
 	Run: func(cmd *cobra.Command, args []string) {
 
-		if !utils.CheckRoot() {
+		hasRoot, err := utils.CheckRoot()
+
+		if !hasRoot {
 			fmt.Printf(`
 This program requires superuser privileges to run. These
 privileges are required to add IP address aliases to your
@@ -88,32 +92,49 @@ Try:
  - Running a shell with administrator rights (Windows)
 
 `)
+			if err != nil {
+				log.Fatalf("Root check failure: %s", err.Error())
+			}
 			return
 		}
 
-		fmt.Println("Press [Ctrl-C] to stop forwarding.")
-		fmt.Println("'cat /etc/hosts' to see all host entries.")
+		log.Println("Press [Ctrl-C] to stop forwarding.")
+		log.Println("'cat /etc/hosts' to see all host entries.")
 
-		hostfile, err := utils.GetHostFile()
-		if err != nil {
-			log.Fatal(err)
+		hostFile, errs := fwdhost.GetHostFile()
+		if errs != nil {
+			for _, err := range errs {
+				log.Printf("Hosfile error: %s", err.Error())
+			}
+
+			log.Fatal("Errors loading hostfile.")
 		}
+
+		log.Printf("Loaded hosts file %s\n", hostFile.Path)
+
+		msg, err := fwdhost.BackupHostFile(hostFile)
+		if err != nil {
+			log.Fatalf("Error backing up hostfile: %s\n", err.Error())
+		}
+
+		log.Printf("Hostfile management: %s", msg)
 
 		// NOTE: may be using the default set in init()
 		cfgFilePath := cmd.Flag("kubeconfig").Value.String()
 		if cfgFilePath == "" {
-			fmt.Println("No config found. Use --kubeconfig to specify one")
-			os.Exit(1)
+			log.Fatalf("No config found. Use --kubeconfig to specify one")
 		}
 
-		// k8s rest config
-		// TODO: Future support for multiple contexts
-		restConfig := fwdcfg.GetRestConfig(cfgFilePath, contexts)
+		// k8s REST config
+		restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, contexts)
+		if err != nil {
+			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
+		}
 
-		// create the client set
+		// create the k8s REST client set
 		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
-			panic(err.Error())
+			log.Fatalf("Error creating k8s client: %s\n", err.Error())
 		}
 
 		// labels selector to filter services
@@ -126,7 +147,6 @@ Try:
 
 		// if no namespaces were specified, check config then
 		// explicitly set one to "default"
-
 		if len(namespaces) < 1 {
 			namespaces = []string{"default"}
 		}
@@ -143,14 +163,14 @@ Try:
 				ClientSet:    clientSet,
 				Namespace:    namespace,
 				ListOptions:  listOptions,
-				Hostfile:     hostfile,
+				Hostfile:     hostFile,
 				ClientConfig: restConfig,
 				ShortName:    i < 1, // only use shortname for the first namespace
 				IpC:          byte(ipC),
 				ExitOnFail:   exitOnFail,
 			})
 			if err != nil {
-				fmt.Printf("Error forwarding service: %s\n", err.Error())
+				log.Printf("Error forwarding service: %s\n", err.Error())
 			}
 
 			ipC = ipC + 1
@@ -158,10 +178,10 @@ Try:
 
 		wg.Wait()
 
-		fmt.Printf("\nDone...\n")
-		err = hostfile.Save()
+		log.Printf("Done...\n")
+		err = hostFile.Save()
 		if err != nil {
-			fmt.Printf("Error saving hostfile: %s\n", err.Error())
+			log.Fatalf("Error saving hostfile: %s\n", err.Error())
 		}
 	},
 }
