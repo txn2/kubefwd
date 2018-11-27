@@ -16,258 +16,58 @@ limitations under the License.
 package utils
 
 import (
-	"errors"
 	"fmt"
-	"net"
-	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
-	"runtime"
-	"strings"
-
-	"os/exec"
-
+	"io"
 	"log"
-
+	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 
 	"github.com/cbednarski/hostess"
-	"github.com/spf13/cobra"
-	"github.com/txn2/kubefwd/pkg/portforward"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/transport/spdy"
 )
 
-type Publisher struct {
-	Output        bool
-	PublisherName string
-	ProducerName  string
-}
+// GetHostFile returns a pointer to a hostess Hostfile object.
+func GetHostFile() (*hostess.Hostfile, error) {
+	hostfile, errs := hostess.LoadHostfile()
 
-func (p *Publisher) MakeProducer(producer string) Publisher {
-	p.ProducerName = producer
-	return *p
-}
+	fmt.Printf("Loading hosts file %s\n", hostfile.Path)
 
-func (p *Publisher) Write(b []byte) (int, error) {
-	readLine := string(b)
-	strings.TrimSuffix(readLine, "\n")
-
-	if p.Output {
-		fmt.Printf("%s, %s, %s", p.PublisherName, p.ProducerName, readLine)
-	}
-	return 0, nil
-}
-
-func K8sConfig(cmd *cobra.Command, contexts []string) *restclient.Config {
-
-	cfgFilePath := cmd.Flag("kubeconfig").Value.String()
-
-	if cfgFilePath == "" {
-		fmt.Println("No config found. Use --kubeconfig to specify one")
-		os.Exit(1)
+	if errs != nil {
+		fmt.Println("Can not load /etc/hosts")
+		for _, err := range errs {
+			return hostfile, err
+		}
 	}
 
-	overrides := &clientcmd.ConfigOverrides{}
-
-	if len(contexts) > 0 {
-		overrides = &clientcmd.ConfigOverrides{CurrentContext: contexts[0]}
-	}
-
-	// use the current context in kubeconfig
-	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: cfgFilePath},
-		overrides,
-	).ClientConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return restConfig
-}
-
-type PortForwardOpts struct {
-	Out        *Publisher
-	Config     *restclient.Config
-	ClientSet  *kubernetes.Clientset
-	Namespace  string
-	Service    string
-	PodName    string
-	PodPort    string
-	LocalIp    net.IP
-	LocalPort  string
-	Hostfile   *hostess.Hostfile
-	ExitOnFail bool
-	ShortName  bool
-}
-
-func PortForward(pfo *PortForwardOpts) error {
-
-	transport, upgrader, err := spdy.RoundTripperFor(pfo.Config)
-	if err != nil {
-		return err
-	}
-
-	// check that pod port can be strconv.ParseUint
-	_, err = strconv.ParseUint(pfo.PodPort, 10, 32)
-	if err != nil {
-		pfo.PodPort = pfo.LocalPort
-	}
-
-	fwdPorts := []string{fmt.Sprintf("%s:%s", pfo.LocalPort, pfo.PodPort)}
-
-	restClient := pfo.ClientSet.RESTClient()
-	req := restClient.Post().
-		Resource("pods").
-		Namespace(pfo.Namespace).
-		Name(pfo.PodName).
-		SubResource("portforward")
-
-	u := url.URL{
-		Scheme:   req.URL().Scheme,
-		Host:     req.URL().Host,
-		Path:     "/api/v1" + req.URL().Path,
-		RawQuery: "timeout=32s",
-	}
-
-	stopChannel := make(chan struct{}, 1)
-	readyChannel := make(chan struct{})
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-	defer signal.Stop(signals)
-
-	localIpEndPoint := fmt.Sprintf("%s:%s", pfo.LocalIp.String(), pfo.LocalPort)
-	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
-	localHost := pfo.Service
-	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
-	nsLocalHost := pfo.Service + "." + pfo.Namespace
-
-	if pfo.ShortName {
-		hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
-		pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
-		err := pfo.Hostfile.Hosts.Add(hostname)
+	// make backup of original hosts file if no previous backup exists
+	backupHostsPath := hostfile.Path + ".original"
+	if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
+		from, err := os.Open(hostfile.Path)
 		if err != nil {
-			return err
+			return hostfile, err
 		}
-	}
+		defer from.Close()
 
-	fullHostname := hostess.MustHostname(fullLocalHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(fullHostname.Domain)
-	err = pfo.Hostfile.Hosts.Add(fullHostname)
-	if err != nil {
-		return err
-	}
-
-	nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)
-	err = pfo.Hostfile.Hosts.Add(nsHostname)
-	if err != nil {
-		return err
-	}
-
-	err = pfo.Hostfile.Save()
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		<-signals
-		if stopChannel != nil {
-			fmt.Printf("Stopped forwarding %s and removing %s from hosts.\n", localIpEndPoint, localHost)
-			pfo.Hostfile.Hosts.RemoveDomain(localHost)
-			pfo.Hostfile.Hosts.RemoveDomain(nsLocalHost)
-			pfo.Hostfile.Hosts.RemoveDomain(fullLocalHost)
-			close(stopChannel)
+		to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			log.Fatal(err)
 		}
-	}()
+		defer to.Close()
 
-	p := pfo.Out.MakeProducer(localNamedEndPoint)
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", &u)
-
-	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
-	if err != nil {
-		signal.Stop(signals)
-		return err
+		_, err = io.Copy(to, from)
+		if err != nil {
+			return hostfile, err
+		}
+		fmt.Printf("Backing up your original hosts file %s to %s\n", hostfile.Path, backupHostsPath)
+	} else {
+		fmt.Printf("Original hosts backup already exists at %s\n", backupHostsPath)
 	}
 
-	fw.LocalIp(pfo.LocalIp)
-
-	err = fw.ForwardPorts()
-	if err != nil {
-		signal.Stop(signals)
-		return err
-	}
-
-	return nil
+	return hostfile, nil
 }
 
-func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, error) {
-
-	ip := net.IPv4(a, b, c, byte(d))
-
-	// lo means we are probably on linux and not mac
-	_, err := net.InterfaceByName("lo")
-	if err == nil || runtime.GOOS == "windows" {
-		// if no error then check to see if the ip:port are in use
-		_, err := net.Dial("tcp", ip.String()+":"+port)
-		if err != nil {
-			return ip, d + 1, nil
-		}
-
-		return ip, d + 1, errors.New("ip and port are in use")
-	}
-
-	for i := d; i < 255; i++ {
-
-		ip = net.IPv4(a, b, c, byte(i))
-
-		iface, err := net.InterfaceByName("lo0")
-		if err != nil {
-			return net.IP{}, i, err
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			return net.IP{}, i, err
-		}
-
-		// check the addresses already assigned to the interface
-		for _, addr := range addrs {
-
-			// found a match
-			if addr.String() == ip.String()+"/8" {
-				// found ip, now check for unused port
-				conn, err := net.Dial("tcp", ip.String()+":"+port)
-				if err != nil {
-					return net.IPv4(a, b, c, byte(i)), i + 1, nil
-				}
-				conn.Close()
-			}
-		}
-
-		// ip is not in the list of addrs for iface
-		cmd := "ifconfig"
-		args := []string{"lo0", "alias", ip.String(), "up"}
-		if err := exec.Command(cmd, args...).Run(); err != nil {
-			fmt.Println("Cannot ifconfig lo0 alias " + ip.String() + " up")
-			os.Exit(1)
-		}
-
-		conn, err := net.Dial("tcp", ip.String()+":"+port)
-		if err != nil {
-			return net.IPv4(a, b, c, byte(i)), i + 1, nil
-		}
-		conn.Close()
-
-	}
-
-	return net.IP{}, d, errors.New("unable to find an available IP/Port")
-}
-
+// CheckRoot determines if we have administrative privileges.
 func CheckRoot() bool {
 	if runtime.GOOS == "windows" {
 		// try to open a file which requires admin privileges

@@ -23,11 +23,15 @@ import (
 	"strconv"
 	"sync"
 
-	"k8s.io/api/core/v1"
+	"github.com/txn2/kubefwd/pkg/fwdcfg"
+	"github.com/txn2/kubefwd/pkg/fwdnet"
+	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/utils"
 
 	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
-	"github.com/txn2/kubefwd/pkg/utils"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -97,10 +101,10 @@ Try:
 
 		// k8s rest config
 		// TODO: Future support for multiple contexts
-		config := utils.K8sConfig(cmd, contexts)
+		restConfig := fwdcfg.K8sConfig(cmd, contexts)
 
 		// create the client set
-		clientSet, err := kubernetes.NewForConfig(config)
+		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			panic(err.Error())
 		}
@@ -113,8 +117,9 @@ Try:
 			listOptions.LabelSelector = selector
 		}
 
-		// if no namespaces were specified, explicitly set
-		// one to "default"
+		// if no namespaces were specified, check config then
+		// explicitly set one to "default"
+
 		if len(namespaces) < 1 {
 			namespaces = []string{"default"}
 		}
@@ -132,7 +137,7 @@ Try:
 				Namespace:    namespace,
 				ListOptions:  listOptions,
 				Hostfile:     hostfile,
-				ClientConfig: config,
+				ClientConfig: restConfig,
 				ShortName:    i < 1, // only use shortname for the first namespace
 				IpC:          byte(ipC),
 				ExitOnFail:   exitOnFail,
@@ -173,7 +178,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		return err
 	}
 
-	publisher := &utils.Publisher{
+	publisher := &fwdpub.Publisher{
 		PublisherName: "Services",
 		Output:        false,
 	}
@@ -205,7 +210,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		podPort := ""
 		podNamespace := ""
 
-		localIp, dInc, err := utils.ReadyInterface(127, 1, opts.IpC, d, podPort)
+		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, d, podPort)
 		d = dInc
 
 		for _, port := range svc.Spec.Ports {
@@ -244,7 +249,7 @@ func fwdServices(opts FwdServiceOpts) error {
 				podPort,
 			)
 
-			pfo := &utils.PortForwardOpts{
+			pfo := &fwdport.PortForwardOpts{
 				Out:        publisher,
 				Config:     opts.ClientConfig,
 				ClientSet:  opts.ClientSet,
@@ -261,7 +266,7 @@ func fwdServices(opts FwdServiceOpts) error {
 
 			opts.Wg.Add(1)
 			go func() {
-				err = utils.PortForward(pfo)
+				err = fwdport.PortForward(pfo)
 				if err != nil {
 					log.Printf("ERROR: %s", err.Error())
 				}
