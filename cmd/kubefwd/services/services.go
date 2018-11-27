@@ -23,9 +23,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/txn2/kubefwd/pkg/fwdhost"
-
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
+	"github.com/txn2/kubefwd/pkg/fwdhost"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -35,6 +34,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
@@ -43,8 +43,14 @@ import (
 var namespaces []string
 var contexts []string
 var exitOnFail bool
+var verbose bool
 
 func init() {
+	// override error output from k8s.io/apimachinery/pkg/util/runtime
+	runtime.ErrorHandlers[0] = func(err error) {
+		log.Printf("Runtime error: %s", err.Error())
+	}
+
 	cfgFilePath := ""
 
 	if home := homeDir(); home != "" {
@@ -65,6 +71,8 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
+	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
+
 }
 
 var Cmd = &cobra.Command{
@@ -218,7 +226,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
 
 		if err != nil {
-			fmt.Printf("No pods found for %s: %s\n", selector, err.Error())
+			log.Printf("WARNING: No pods found for %s: %s\n", selector, err.Error())
 
 			// TODO: try again after a time
 
@@ -226,7 +234,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		}
 
 		if len(pods.Items) < 1 {
-			fmt.Printf("No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+			log.Printf("WARNING: No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 
 			// TODO: try again after a time
 
@@ -256,7 +264,7 @@ func fwdServices(opts FwdServiceOpts) error {
 
 			_, err = opts.ClientSet.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
 			if err != nil {
-				fmt.Printf("Error getting pod: %s\n", err.Error())
+				log.Printf("WARNING: Error getting pod: %s\n", err.Error())
 				break
 			}
 
@@ -266,9 +274,15 @@ func fwdServices(opts FwdServiceOpts) error {
 				full = fmt.Sprintf(".%s.svc.cluster.local", podNamespace)
 			}
 
-			fmt.Printf("Fwd %s:%s as %s%s:%d to pod %s:%s\n",
-				localIp.String(),
-				localPort,
+			if verbose {
+				log.Printf("Resolving:  %s%s to %s\n",
+					svc.Name,
+					full,
+					localIp.String(),
+				)
+			}
+
+			log.Printf("Forwarding: %s%s:%d to pod %s:%s\n",
 				svc.Name,
 				full,
 				port.Port,
@@ -293,10 +307,13 @@ func fwdServices(opts FwdServiceOpts) error {
 
 			opts.Wg.Add(1)
 			go func() {
-				err = fwdport.PortForward(pfo)
+				err := fwdport.PortForward(pfo)
 				if err != nil {
 					log.Printf("ERROR: %s", err.Error())
 				}
+
+				log.Printf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
+
 				opts.Wg.Done()
 			}()
 

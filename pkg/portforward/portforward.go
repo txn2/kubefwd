@@ -17,7 +17,7 @@ limitations under the License.
 /*
 This is a patched version of k8s.io/client-go/tools/portforward
 to allow assignment of IP addresses other than the default
-127.0.0.1. This lib attempts to maintain compatibility with the original.
+127.0.0.1.
 */
 
 package portforward

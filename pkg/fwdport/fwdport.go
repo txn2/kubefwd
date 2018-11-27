@@ -69,7 +69,6 @@ func PortForward(pfo *PortForwardOpts) error {
 	signal.Notify(signals, os.Interrupt)
 	defer signal.Stop(signals)
 
-	localIpEndPoint := fmt.Sprintf("%s:%s", pfo.LocalIp.String(), pfo.LocalPort)
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 	localHost := pfo.Service
 	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
@@ -106,7 +105,6 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-signals
 		if stopChannel != nil {
-			fmt.Printf("Stopped forwarding %s and removing %s from hosts.\n", localIpEndPoint, localHost)
 			pfo.Hostfile.Hosts.RemoveDomain(localHost)
 			pfo.Hostfile.Hosts.RemoveDomain(nsLocalHost)
 			pfo.Hostfile.Hosts.RemoveDomain(fullLocalHost)
@@ -115,6 +113,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	}()
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
+
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", &u)
 
 	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
