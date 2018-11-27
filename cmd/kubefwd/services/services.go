@@ -99,9 +99,16 @@ Try:
 			log.Fatal(err)
 		}
 
+		// NOTE: may be using the default set in init()
+		cfgFilePath := cmd.Flag("kubeconfig").Value.String()
+		if cfgFilePath == "" {
+			fmt.Println("No config found. Use --kubeconfig to specify one")
+			os.Exit(1)
+		}
+
 		// k8s rest config
 		// TODO: Future support for multiple contexts
-		restConfig := fwdcfg.K8sConfig(cmd, contexts)
+		restConfig := fwdcfg.GetRestConfig(cfgFilePath, contexts)
 
 		// create the client set
 		clientSet, err := kubernetes.NewForConfig(restConfig)

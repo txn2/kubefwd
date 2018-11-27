@@ -1,16 +1,13 @@
 package fwdcfg
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// K8sCfg is the
-type K8sCfg struct {
+// ClientCfg is a configuration data structure for the
+// k8s client lib.
+type ClientCfg struct {
 	APIVersion string `yaml:"apiVersion"`
 	Clusters   []struct {
 		Cluster struct {
@@ -40,16 +37,9 @@ type K8sCfg struct {
 	} `yaml:"users"`
 }
 
-// K8sConfig uses the kubectl config file to connect to
+// GetRestConfig uses the kubectl config file to connect to
 // a cluster.
-func K8sConfig(cmd *cobra.Command, contexts []string) *restclient.Config {
-
-	cfgFilePath := cmd.Flag("kubeconfig").Value.String()
-
-	if cfgFilePath == "" {
-		fmt.Println("No config found. Use --kubeconfig to specify one")
-		os.Exit(1)
-	}
+func GetRestConfig(cfgFilePath string, contexts []string) *restclient.Config {
 
 	overrides := &clientcmd.ConfigOverrides{}
 
