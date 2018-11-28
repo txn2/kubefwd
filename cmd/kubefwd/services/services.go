@@ -162,9 +162,15 @@ Try:
 		// explicitly set one to "default"
 		if len(namespaces) < 1 {
 			namespaces = []string{"default"}
+			x := clientConfig.CurrentContext
+
+			// use the first context if specified
+			if len(contexts) > 0 {
+				x = contexts[0]
+			}
 
 			for _, ctx := range clientConfig.Contexts {
-				if ctx.Name == clientConfig.CurrentContext {
+				if ctx.Name == x {
 					if ctx.Context.Namespace != "" {
 						log.Printf("Using namespace %s from current context %s.", ctx.Context.Namespace, ctx.Name)
 						namespaces = []string{ctx.Context.Namespace}
