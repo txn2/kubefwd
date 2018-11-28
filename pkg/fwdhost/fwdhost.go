@@ -25,6 +25,8 @@ func GetHostFile() (*hostess.Hostfile, []error) {
 	hf, errs := hostess.LoadHostfile()
 
 	for _, err := range errs {
+
+		// auto-fixing hostfile problems.
 		if err.Error() == "Duplicate hostname entry for localhost -> ::1" {
 			_, err = BackupHostFile(hf)
 			if err != nil {
@@ -54,8 +56,8 @@ func GetHostFile() (*hostess.Hostfile, []error) {
 			}
 
 			return hostess.LoadHostfile()
-
 		}
+
 	}
 
 	return hf, errs
