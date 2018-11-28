@@ -16,6 +16,7 @@ limitations under the License.
 package main
 
 import (
+	"log"
 	"os"
 
 	"fmt"
@@ -53,14 +54,16 @@ func newRootCmd() *cobra.Command {
 }
 
 func main() {
-	fmt.Print(`
- _          _           __             _
-| | ___   _| |__   ___ / _|_      ____| |
-| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
-|   <| |_| | |_) |  __/  _|\ V  V / (_| |
-|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
 
-`)
+	log.Print(` _          _           __             _`)
+	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
+	log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
+	log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
+	log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
+	log.Print("")
+	log.Printf("Version %s", Version)
+	log.Print("https://github.com/txn2/kubefwd")
+	log.Print("")
 
 	cmd := newRootCmd()
 
