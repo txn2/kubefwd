@@ -133,6 +133,11 @@ Try:
 			log.Fatalf("No config found. Use --kubeconfig to specify one")
 		}
 
+		clientConfig, err := fwdcfg.GetConfig(cfgFilePath)
+		if err != nil {
+			log.Fatalf("Error reading configuration configuration: %s\n", err.Error())
+		}
+
 		// k8s REST config
 		restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, contexts)
 		if err != nil {
@@ -157,6 +162,16 @@ Try:
 		// explicitly set one to "default"
 		if len(namespaces) < 1 {
 			namespaces = []string{"default"}
+
+			for _, ctx := range clientConfig.Contexts {
+				if ctx.Name == clientConfig.CurrentContext {
+					if ctx.Context.Namespace != "" {
+						log.Printf("Using namespace %s from current context %s.", ctx.Context.Namespace, ctx.Name)
+						namespaces = []string{ctx.Context.Namespace}
+						break
+					}
+				}
+			}
 		}
 
 		// ipC is the class C for the local IP address

@@ -1,6 +1,9 @@
 package fwdcfg
 
 import (
+	"io/ioutil"
+
+	yaml "gopkg.in/yaml.v2"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -41,6 +44,16 @@ type ClientCfg struct {
 // and returns a populated config object.
 func GetConfig(cfgFilePath string) (*ClientCfg, error) {
 	clientCfg := &ClientCfg{}
+
+	ymlData, err := ioutil.ReadFile(cfgFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	err = yaml.Unmarshal([]byte(ymlData), &clientCfg)
+	if err != nil {
+		return nil, err
+	}
 
 	return clientCfg, nil
 }
