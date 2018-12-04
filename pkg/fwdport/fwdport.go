@@ -22,6 +22,7 @@ type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     *restclient.Config
 	ClientSet  *kubernetes.Clientset
+	Context    string
 	Namespace  string
 	Service    string
 	PodName    string
@@ -31,6 +32,7 @@ type PortForwardOpts struct {
 	Hostfile   *hostess.Hostfile
 	ExitOnFail bool
 	ShortName  bool
+	Remote     bool
 }
 
 func PortForward(pfo *PortForwardOpts) error {
@@ -71,7 +73,13 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 	localHost := pfo.Service
-	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
+
+	fullLocalHost := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+
+	if pfo.Remote {
+		fullLocalHost = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
+	}
+
 	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
 	if pfo.ShortName {
@@ -90,11 +98,13 @@ func PortForward(pfo *PortForwardOpts) error {
 		return err
 	}
 
-	nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)
-	err = pfo.Hostfile.Hosts.Add(nsHostname)
-	if err != nil {
-		return err
+	if pfo.Remote == false {
+		nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
+		pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)
+		err = pfo.Hostfile.Hosts.Add(nsHostname)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = pfo.Hostfile.Save()
