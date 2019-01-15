@@ -44,6 +44,17 @@ To upgrade:
 brew upgrade kubefwd
 ```
 
+## Windows Install / Update
+
+```batch
+scoop install kubefwd
+```
+
+To upgrade:
+```batch
+scoop update kubefwd
+```
+
 ## Docker
 
 Forward all services from the namespace **the-project** to a Docker container named **the-project**:
