@@ -111,8 +111,8 @@ Aliases:
 
 Examples:
   kubefwd svc -n the-project
-  kubefwd svc -n the-project -l app=wx,component=api
   kubefwd svc -n default -n the-project
+  kubefwd svc -n default -l "app in (ws, api)"
 
 
 Flags:
