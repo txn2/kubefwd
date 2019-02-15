@@ -9,9 +9,12 @@ import (
 	"os/signal"
 	"strconv"
 
+	"github.com/prometheus/common/log"
+
+	"github.com/txn2/txeh"
+
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 
-	"github.com/cbednarski/hostess"
 	"github.com/txn2/kubefwd/pkg/portforward"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -28,7 +31,7 @@ type PortForwardOpts struct {
 	PodPort    string
 	LocalIp    net.IP
 	LocalPort  string
-	Hostfile   *hostess.Hostfile
+	Hostfile   *txeh.Hosts
 	ExitOnFail bool
 	ShortName  bool
 }
@@ -75,27 +78,11 @@ func PortForward(pfo *PortForwardOpts) error {
 	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
 	if pfo.ShortName {
-		hostname := hostess.MustHostname(localHost, pfo.LocalIp.String(), true)
-		pfo.Hostfile.Hosts.RemoveDomain(hostname.Domain)
-		err := pfo.Hostfile.Hosts.Add(hostname)
-		if err != nil {
-			return err
-		}
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), localHost)
 	}
 
-	fullHostname := hostess.MustHostname(fullLocalHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(fullHostname.Domain)
-	err = pfo.Hostfile.Hosts.Add(fullHostname)
-	if err != nil {
-		return err
-	}
-
-	nsHostname := hostess.MustHostname(nsLocalHost, pfo.LocalIp.String(), true)
-	pfo.Hostfile.Hosts.RemoveDomain(nsHostname.Domain)
-	err = pfo.Hostfile.Hosts.Add(nsHostname)
-	if err != nil {
-		return err
-	}
+	pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullLocalHost)
+	pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsLocalHost)
 
 	err = pfo.Hostfile.Save()
 	if err != nil {
@@ -105,9 +92,14 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-signals
 		if stopChannel != nil {
-			pfo.Hostfile.Hosts.RemoveDomain(localHost)
-			pfo.Hostfile.Hosts.RemoveDomain(nsLocalHost)
-			pfo.Hostfile.Hosts.RemoveDomain(fullLocalHost)
+			pfo.Hostfile.RemoveHost(localHost)
+			pfo.Hostfile.RemoveHost(nsLocalHost)
+			pfo.Hostfile.RemoveHost(fullLocalHost)
+			err = pfo.Hostfile.Save()
+			if err != nil {
+				log.Error("Error saving hosts file", err)
+			}
+
 			close(stopChannel)
 		}
 	}()

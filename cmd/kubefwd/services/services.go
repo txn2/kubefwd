@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/txn2/txeh"
+
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -30,7 +32,6 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/kubefwd/pkg/utils"
 
-	"github.com/cbednarski/hostess"
 	"github.com/spf13/cobra"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,16 +110,12 @@ Try:
 		log.Println("Press [Ctrl-C] to stop forwarding.")
 		log.Println("'cat /etc/hosts' to see all host entries.")
 
-		hostFile, errs := fwdhost.GetHostFile()
-		if errs != nil {
-			for _, err := range errs {
-				log.Printf("Hosfile error: %s", err.Error())
-			}
-
-			log.Fatal("Errors loading hostfile.")
+		hostFile, err := txeh.NewHostsDefault()
+		if err != nil {
+			log.Fatal("Hosfile error: %s", err.Error())
 		}
 
-		log.Printf("Loaded hosts file %s\n", hostFile.Path)
+		log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
 
 		msg, err := fwdhost.BackupHostFile(hostFile)
 		if err != nil {
@@ -220,7 +217,7 @@ type FwdServiceOpts struct {
 	ClientSet    *kubernetes.Clientset
 	Namespace    string
 	ListOptions  metav1.ListOptions
-	Hostfile     *hostess.Hostfile
+	Hostfile     *txeh.Hosts
 	ClientConfig *restclient.Config
 	ShortName    bool
 	IpC          byte
