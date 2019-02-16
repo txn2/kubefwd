@@ -78,7 +78,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
 	if pfo.ShortName {
-		pfo.Hostfile.AddHost(pfo.LocalIp.String(), localHost)
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), pfo.Service)
 	}
 
 	pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullLocalHost)

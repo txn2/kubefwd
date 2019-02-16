@@ -1,5 +1,5 @@
-hash: 7c6e9e272376dab7c5835f0726bb4a2a512aac21ecf812d13fb312b53207120e
-updated: 2019-02-15T14:49:35.728306-08:00
+hash: bb0e35c957d64e3ebe8a19040045d1440e46138e4b3e5af9911b6ce92626bc08
+updated: 2019-02-15T16:34:00.480295-08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -88,7 +88,7 @@ imports:
 - name: github.com/spf13/pflag
   version: 24fa6976df40757dce6aea913e7b81ade90530e1
 - name: github.com/txn2/txeh
-  version: cb94e772c5494de03dc8d59d4ed802ffe5d32680
+  version: 90720eb66cd0ac81c9b21266e25e58c25970e1ad
 - name: golang.org/x/crypto
   version: de0752318171da717af4ce24d0a2e8626afaeb11
   subpackages:
