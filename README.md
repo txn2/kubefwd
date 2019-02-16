@@ -45,6 +45,17 @@ To upgrade:
 brew upgrade kubefwd
 ```
 
+## Windows Install / Update
+
+```batch
+scoop install kubefwd
+```
+
+To upgrade:
+```batch
+scoop update kubefwd
+```
+
 ## Docker
 
 Forward all services from the namespace **the-project** to a Docker container named **the-project**:
@@ -101,8 +112,8 @@ Aliases:
 
 Examples:
   kubefwd svc -n the-project
-  kubefwd svc -n the-project -l app=wx,component=api
   kubefwd svc -n default -n the-project
+  kubefwd svc -n default -l "app in (ws, api)"
 
 
 Flags:
