@@ -112,7 +112,7 @@ Try:
 
 		hostFile, err := txeh.NewHostsDefault()
 		if err != nil {
-			log.Fatal("Hosfile error: %s", err.Error())
+			log.Fatal("Hostfile error: %s", err.Error())
 		}
 
 		log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
