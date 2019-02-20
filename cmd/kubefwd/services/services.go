@@ -96,7 +96,7 @@ privileges are required to add IP address aliases to your
 loopback interface. Superuser privileges are also needed
 to listen on low port numbers for these IP addresses.
 
-Try: 
+Try:
  - sudo -E kubefwd services (Unix)
  - Running a shell with administrator rights (Windows)
 
@@ -112,7 +112,7 @@ Try:
 
 		hostFile, err := txeh.NewHostsDefault()
 		if err != nil {
-			log.Fatal("Hostfile error: %s", err.Error())
+			log.Fatalf("Hostfile error: %s", err.Error())
 		}
 
 		log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)

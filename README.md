@@ -134,16 +134,16 @@ go run ./cmd/kubefwd/kubefwd.go
 
 ### Build Run in Docker
 
-Run in the [golang:1.10.3] docker container:
+Run in the [golang:1.11.5] docker container:
 ```bash
 docker run -it --rm --privileged \
-    -v "$(pwd)":/go/src/github.com/txn2/kubefwd \
+    -v "$(pwd)":/kubefwd \
     -v "$(echo $HOME)/.kube/":/root/.kube/ \
-    -w /go/src/github.com/txn2/kubefwd golang:1.10.3 bash
+    -w /kubefwd golang:1.11.5 bash
 ```
 
 ```bash
-sudo go run ./cmd/kubefwd/kubefwd.go svc
+sudo go run -mod vendor ./cmd/kubefwd/kubefwd.go svc
 ```
 
 ### Build Release
@@ -170,5 +170,5 @@ Opens source utility proudly sponsored by [Deasil Works, Inc.]
 [Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
 [homebrew]:https://brew.sh/
 [txn2]:https://txn2.com/
-[golang:1.10.3]:https://hub.docker.com/_/golang/
+[golang:1.11.5]:https://hub.docker.com/_/golang/
 [Deasil Works Inc]:https://deasil.works/
