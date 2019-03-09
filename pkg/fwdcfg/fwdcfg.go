@@ -60,13 +60,9 @@ func GetConfig(cfgFilePath string) (*ClientCfg, error) {
 
 // GetRestConfig uses the kubectl config file to connect to
 // a cluster.
-func GetRestConfig(cfgFilePath string, contexts []string) (*restclient.Config, error) {
+func GetRestConfig(cfgFilePath string, context string) (*restclient.Config, error) {
 
-	overrides := &clientcmd.ConfigOverrides{}
-
-	if len(contexts) > 0 {
-		overrides = &clientcmd.ConfigOverrides{CurrentContext: contexts[0]}
-	}
+	overrides := &clientcmd.ConfigOverrides{CurrentContext: context}
 
 	// use the current context in kubeconfig
 	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
