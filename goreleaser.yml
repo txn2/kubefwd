@@ -133,7 +133,7 @@ snapcraft:
 
   publish: true
 
-  grade: edge
+  grade: stable
   confinement: strict
 
   apps:
