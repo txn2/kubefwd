@@ -164,11 +164,12 @@ Apache License 2.0
 
 ### Sponsor
 
-Opens source utility proudly sponsored by [Deasil Works, Inc.]
+Opens source utility proudly sponsored by [Deasil Works, Inc.] &
+[Craig Johnston](https://imti.co)
 
 [Kubernetes]:https://kubernetes.io/
 [Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
 [homebrew]:https://brew.sh/
 [txn2]:https://txn2.com/
 [golang:1.11.5]:https://hub.docker.com/_/golang/
-[Deasil Works Inc]:https://deasil.works/
+[Deasil Works, Inc.]:https://deasil.works/

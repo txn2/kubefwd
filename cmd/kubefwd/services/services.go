@@ -54,7 +54,7 @@ func init() {
 
 	cfgFilePath := ""
 
-	if home := homeDir(); home != "" {
+	if home := fwdhost.HomeDir(); home != "" {
 		cfgFilePath = filepath.Join(home, ".kube", "config")
 	}
 
@@ -372,13 +372,6 @@ func portSearch(portName string, containers []v1.Container) (string, bool) {
 	}
 
 	return "", false
-}
-
-func homeDir() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("USERPROFILE") // windows
 }
 
 func mapToSelectorStr(msel map[string]string) string {
