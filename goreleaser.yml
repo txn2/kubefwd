@@ -131,33 +131,36 @@ snapcraft:
     darwin: macOS
     linux: Tux
 
-  grade: stable
+  publish: true
+
+  grade: edge
   confinement: strict
 
   apps:
     kubefwd:
-      plugs: ["home", "network","network-bind","personal-files"]
+      plugs: ["home", "network", "network-bind"]
+
 
 dockers:
 -
   goos: linux
   goarch: amd64
   goarm: ''
-  binary: kubefwd
-  image: txn2/kubefwd
+  binaries:
+    - kubefwd
   dockerfile: Dockerfile
   tag_templates:
-  - "{{ .Tag }}"
-  - "v{{ .Major }}"
+  - "txn2/kubefwd:{{ .Tag }}"
+  - "txn2/kubefwd:v{{ .Major }}"
   - latest
 -
   goos: linux
   goarch: arm
   goarm: 6
-  binary: kubefwd
-  image: txn2/kubefwd
+  binaries:
+    - kubefwd
   dockerfile: Dockerfile
   tag_templates:
-  - "armv6-{{ .Tag }}"
-  - "armv6-v{{ .Major }}"
+  - "txn2/kubefwd:armv6-{{ .Tag }}"
+  - "txn2/kubefwd:armv6-v{{ .Major }}"
   - arm-latest

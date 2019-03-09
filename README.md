@@ -158,6 +158,17 @@ Build and release:
 GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 ```
 
+### Testing Snap
+
+```bash
+multipass launch -n testvm
+cd ./dist
+multipass copy-files *.snap testvm:
+multipass shell testvm
+sudo snap install --dangerous kubefwd_64-bit.snap
+```
+
+
 ### License 
 
 Apache License 2.0  
