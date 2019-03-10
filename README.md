@@ -81,15 +81,15 @@ Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Gi
 
 ## Usage
 
-Forward all services for the namespace `the-project`:
+Forward all services for the namespace `the-project`. Kubefwd finds the first Pod associated with each Kubernetes service found in the Namespace and port forwards it based on the Service spec to a local IP  address and port. A domain name is added to your /etc/hosts file pointing to the local IP.
 ```bash
-sudo kubefwd services -n the-project
+sudo kubefwd svc -n the-project
 ```
 
-Forward all services for the namespace `the-project` where labeled `system: wx`:
+Forward all svc for the namespace `the-project` where labeled `system: wx`:
 
 ```bash
-sudo kubefwd services -l system=wx -n the-project
+sudo kubefwd svc -l system=wx -n the-project
 ```
 
 ## Help
