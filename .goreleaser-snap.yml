@@ -1,0 +1,58 @@
+# Build customization
+build:
+  # Path to main.go file.
+  # Default is `main.go`
+  main: ./cmd/kubefwd/kubefwd.go
+  binary: kubefwd
+
+  env:
+    - CGO_ENABLED=0
+
+  # GOOS list to build in.
+  # For more info refer to https://golang.org/doc/install/source#environment
+  # Defaults are darwin and linux
+  goos:
+    - linux
+    - darwin
+    - arm
+    - windows
+
+  # GOARCH to build in.
+  # For more info refer to https://golang.org/doc/install/source#environment
+  # Defaults are 386 and amd64
+  goarch:
+    - amd64
+    - arm
+
+  ldflags: -s -w -X main.Version={{.Version}}
+
+snapcraft:
+  name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+  summary: Kubernetes bulk port forwarding command link utility for local development.
+  description: |
+    Kubernetes bulk port forwarding utility for local development.
+    kubefwd allows you to port forward all Kubernetes Pods connected to Services on one or more
+    Namespaces and contexts (clusters).
+    See https://github.com/txn2/kubefwd
+
+  replacements:
+    amd64: 64-bit
+    386: 32-bit
+    darwin: macOS
+    linux: Tux
+
+  publish: true
+
+  grade: stable
+  confinement: strict
+
+  apps:
+    kubefwd:
+      plugs: ["home", "network", "network-bind", "personal-files", "system-files"]
+
+  plugs:
+    personal-files:
+      read: ["$HOME/.kube"]
+    system-files:
+      read: ["/etc/hosts"]
+      write: ["/etc/hosts"]

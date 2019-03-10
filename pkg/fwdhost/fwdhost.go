@@ -12,7 +12,7 @@ import (
 // BackupHostFile
 func BackupHostFile(hostfile *txeh.Hosts) (string, error) {
 
-	backupHostsPath := hostfile.WriteFilePath + ".original"
+	backupHostsPath := HomeDir() + "/hosts.original"
 	if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
 		from, err := os.Open(hostfile.WriteFilePath)
 		if err != nil {
@@ -34,4 +34,11 @@ func BackupHostFile(hostfile *txeh.Hosts) (string, error) {
 	} else {
 		return fmt.Sprintf("Original hosts backup already exists at %s\n", backupHostsPath), nil
 	}
+}
+
+func HomeDir() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	return os.Getenv("USERPROFILE") // windows
 }

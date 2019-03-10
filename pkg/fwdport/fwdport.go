@@ -25,6 +25,7 @@ type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     *restclient.Config
 	ClientSet  *kubernetes.Clientset
+	Context    string
 	Namespace  string
 	Service    string
 	PodName    string
@@ -34,6 +35,7 @@ type PortForwardOpts struct {
 	Hostfile   *txeh.Hosts
 	ExitOnFail bool
 	ShortName  bool
+	Remote     bool
 }
 
 func PortForward(pfo *PortForwardOpts) error {
@@ -74,15 +76,32 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 	localHost := pfo.Service
-	fullLocalHost := pfo.Service + "." + pfo.Namespace + ".svc.cluster.local"
+
+	fullLocalHost := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+
+	if pfo.Remote {
+		fullLocalHost = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
+	}
+
 	nsLocalHost := pfo.Service + "." + pfo.Namespace
 
 	if pfo.ShortName {
+		pfo.Hostfile.RemoveHost(pfo.Service)
 		pfo.Hostfile.AddHost(pfo.LocalIp.String(), pfo.Service)
 	}
 
+	pfo.Hostfile.RemoveHost(fullLocalHost)
+	pfo.Hostfile.RemoveHost(nsLocalHost)
+
 	pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullLocalHost)
-	pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsLocalHost)
+
+	if pfo.Remote == false {
+		pfo.Hostfile.RemoveHost(fullLocalHost)
+		pfo.Hostfile.RemoveHost(nsLocalHost)
+
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsLocalHost)
+
+	}
 
 	err = pfo.Hostfile.Save()
 	if err != nil {

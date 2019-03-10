@@ -54,7 +54,7 @@ func init() {
 
 	cfgFilePath := ""
 
-	if home := homeDir(); home != "" {
+	if home := fwdhost.HomeDir(); home != "" {
 		cfgFilePath = filepath.Join(home, ".kube", "config")
 	}
 
@@ -135,18 +135,6 @@ Try:
 			log.Fatalf("Error reading configuration configuration: %s\n", err.Error())
 		}
 
-		// k8s REST config
-		restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, contexts)
-		if err != nil {
-			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
-		}
-
-		// create the k8s REST client set
-		clientSet, err := kubernetes.NewForConfig(restConfig)
-		if err != nil {
-			log.Fatalf("Error creating k8s client: %s\n", err.Error())
-		}
-
 		// labels selector to filter services
 		// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 		selector := cmd.Flag("selector").Value.String()
@@ -183,23 +171,46 @@ Try:
 
 		wg := &sync.WaitGroup{}
 
-		for i, namespace := range namespaces {
-			err = fwdServices(FwdServiceOpts{
-				Wg:           wg,
-				ClientSet:    clientSet,
-				Namespace:    namespace,
-				ListOptions:  listOptions,
-				Hostfile:     hostFile,
-				ClientConfig: restConfig,
-				ShortName:    i < 1, // only use shortname for the first namespace
-				IpC:          byte(ipC),
-				ExitOnFail:   exitOnFail,
-			})
+		// if no context override
+		if len(contexts) < 1 {
+			contexts = append(contexts, clientConfig.CurrentContext)
+		}
+
+		for i, ctx := range contexts {
+
+			// k8s REST config
+			restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, ctx)
 			if err != nil {
-				log.Printf("Error forwarding service: %s\n", err.Error())
+				log.Fatalf("Error generating REST configuration: %s\n", err.Error())
 			}
 
-			ipC = ipC + 1
+			// create the k8s REST client set
+			clientSet, err := kubernetes.NewForConfig(restConfig)
+			if err != nil {
+				log.Fatalf("Error creating k8s client: %s\n", err.Error())
+			}
+
+			for ii, namespace := range namespaces {
+				err = fwdServices(FwdServiceOpts{
+					Wg:           wg,
+					ClientSet:    clientSet,
+					Context:      ctx,
+					Namespace:    namespace,
+					ListOptions:  listOptions,
+					Hostfile:     hostFile,
+					ClientConfig: restConfig,
+					// only use short name for the first namespace and context
+					ShortName:  i < 1 && ii < 1,
+					Remote:     i > 0,
+					IpC:        byte(ipC),
+					ExitOnFail: exitOnFail,
+				})
+				if err != nil {
+					log.Printf("Error forwarding service: %s\n", err.Error())
+				}
+
+				ipC = ipC + 1
+			}
 		}
 
 		wg.Wait()
@@ -216,11 +227,13 @@ Try:
 type FwdServiceOpts struct {
 	Wg           *sync.WaitGroup
 	ClientSet    *kubernetes.Clientset
+	Context      string
 	Namespace    string
 	ListOptions  metav1.ListOptions
 	Hostfile     *txeh.Hosts
 	ClientConfig *restclient.Config
 	ShortName    bool
+	Remote       bool
 	IpC          byte
 	ExitOnFail   bool
 }
@@ -293,6 +306,10 @@ func fwdServices(opts FwdServiceOpts) error {
 				full = fmt.Sprintf(".%s.svc.cluster.local", podNamespace)
 			}
 
+			if opts.Remote {
+				full = fmt.Sprintf(".%s.svc.cluster.%s", podNamespace, opts.Context)
+			}
+
 			if verbose {
 				log.Printf("Resolving:  %s%s to %s\n",
 					svc.Name,
@@ -313,6 +330,7 @@ func fwdServices(opts FwdServiceOpts) error {
 				Out:        publisher,
 				Config:     opts.ClientConfig,
 				ClientSet:  opts.ClientSet,
+				Context:    opts.Context,
 				Namespace:  podNamespace,
 				Service:    svc.Name,
 				PodName:    podName,
@@ -321,6 +339,7 @@ func fwdServices(opts FwdServiceOpts) error {
 				LocalPort:  localPort,
 				Hostfile:   opts.Hostfile,
 				ShortName:  opts.ShortName,
+				Remote:     opts.Remote,
 				ExitOnFail: exitOnFail,
 			}
 
@@ -353,13 +372,6 @@ func portSearch(portName string, containers []v1.Container) (string, bool) {
 	}
 
 	return "", false
-}
-
-func homeDir() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("USERPROFILE") // windows
 }
 
 func mapToSelectorStr(msel map[string]string) string {
