@@ -95,14 +95,18 @@ sudo kubefwd services -l system=wx -n the-project
 ## Help
 
 ```bash
-$ kubefwd services --help
- _          _           __             _
-| | ___   _| |__   ___ / _|_      ____| |
-| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
-|   <| |_| | |_) |  __/  _|\ V  V / (_| |
-|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
+$ kubefwd svc --help
 
-Forward all Kubernetes services.
+2019/03/09 21:13:18  _          _           __             _
+2019/03/09 21:13:18 | | ___   _| |__   ___ / _|_      ____| |
+2019/03/09 21:13:18 | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
+2019/03/09 21:13:18 |   <| |_| | |_) |  __/  _|\ V  V / (_| |
+2019/03/09 21:13:18 |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
+2019/03/09 21:13:18
+2019/03/09 21:13:18 Version 1.7.3
+2019/03/09 21:13:18 https://github.com/txn2/kubefwd
+2019/03/09 21:13:18
+Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.
 
 Usage:
   kubefwd services [flags]
@@ -112,15 +116,20 @@ Aliases:
 
 Examples:
   kubefwd svc -n the-project
-  kubefwd svc -n default -n the-project
+  kubefwd svc -n the-project -l env=dev,component=api
   kubefwd svc -n default -l "app in (ws, api)"
+  kubefwd svc -n default -n the-project
+  kubefwd svc -n the-project -x prod-cluster
 
 
 Flags:
+  -x, --context strings     specify a context to override the current context
+      --exitonfailure       Exit(1) on failure. Useful for forcing a container restart.
   -h, --help                help for services
-  -c, --kubeconfig string   absolute path to the kubeconfig file (default "/Users/cjimti/.kube/config")
+  -c, --kubeconfig string   absolute path to a kubectl config fil (default "/Users/cjimti/.kube/config")
   -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
   -l, --selector string     Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
+  -v, --verbose             Verbose output.
 ```
 
 ## Development

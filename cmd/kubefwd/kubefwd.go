@@ -34,7 +34,8 @@ func newRootCmd() *cobra.Command {
 		Short: "Expose Kubernetes services for local development.",
 		Example: " kubefwd services --help\n" +
 			"  kubefwd svc -n the-project\n" +
-			"  kubefwd svc -n the-project -l app=wx,component=api\n" +
+			"  kubefwd svc -n the-project -l env=dev,component=api\n" +
+			"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 			"  kubefwd svc -n default -n the-project\n",
 		Long: globalUsage,
 	}
