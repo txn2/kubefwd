@@ -255,6 +255,13 @@ func fwdServices(opts FwdServiceOpts) error {
 	// loop through the services
 	for _, svc := range services.Items {
 		selector := mapToSelectorStr(svc.Spec.Selector)
+
+		if selector == "" {
+			log.Printf("WARNING: No backing pods for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+
+			continue
+		}
+
 		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
 
 		if err != nil {
