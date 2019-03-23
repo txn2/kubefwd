@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/common/log"
 
@@ -63,7 +64,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	u := url.URL{
 		Scheme:   req.URL().Scheme,
 		Host:     req.URL().Host,
-		Path:     "/api/v1" + req.URL().Path,
+		Path:     buildPath(req),
 		RawQuery: "timeout=32s",
 	}
 
@@ -142,4 +143,10 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	return nil
+}
+
+func buildPath(req *restclient.Request) string {
+	splitted := strings.Split(req.URL().Path, "/namespaces")
+	path := splitted[0] + "/api/v1/namespaces" + splitted[1]
+	return path
 }
