@@ -1,6 +1,6 @@
 Kubernetes port forwarding for local development, Contributions welcome!
 
-![kubefwd - kubernetes bulk port forwarding](kubefwd-mast2.jpg)
+![kubefwd - kubernetes bulk port forwarding](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
 
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
 [![Maintainability](https://api.codeclimate.com/v1/badges/bc696045260db8e0ba89/maintainability)](https://codeclimate.com/github/txn2/kubefwd/maintainability)
