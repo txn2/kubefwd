@@ -131,7 +131,7 @@ snapcraft:
     darwin: macOS
     linux: Tux
 
-  publish: true
+  publish: false
 
   grade: stable
   confinement: strict
