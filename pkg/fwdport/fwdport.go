@@ -76,31 +76,29 @@ func PortForward(pfo *PortForwardOpts) error {
 	defer signal.Stop(signals)
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
-	localHost := pfo.Service
 
-	fullLocalHost := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+	localServiceName := pfo.Service
+	nsServiceName := pfo.Service + "." + pfo.Namespace
+	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
 
 	if pfo.Remote {
-		fullLocalHost = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
-	}
+		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
 
-	nsLocalHost := pfo.Service + "." + pfo.Namespace
-
-	if pfo.ShortName {
-		pfo.Hostfile.RemoveHost(pfo.Service)
+		pfo.Hostfile.RemoveHost(fullServiceName)
 		pfo.Hostfile.AddHost(pfo.LocalIp.String(), pfo.Service)
-	}
 
-	pfo.Hostfile.RemoveHost(fullLocalHost)
-	pfo.Hostfile.RemoveHost(nsLocalHost)
+	} else {
 
-	pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullLocalHost)
+		if pfo.ShortName {
+			pfo.Hostfile.RemoveHost(localServiceName)
+			pfo.Hostfile.AddHost(pfo.LocalIp.String(), localServiceName)
+		}
 
-	if pfo.Remote == false {
-		pfo.Hostfile.RemoveHost(fullLocalHost)
-		pfo.Hostfile.RemoveHost(nsLocalHost)
+		pfo.Hostfile.RemoveHost(nsServiceName)
+		pfo.Hostfile.RemoveHost(fullServiceName)
 
-		pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsLocalHost)
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsServiceName)
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullServiceName)
 
 	}
 
@@ -112,9 +110,11 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-signals
 		if stopChannel != nil {
-			pfo.Hostfile.RemoveHost(localHost)
-			pfo.Hostfile.RemoveHost(nsLocalHost)
-			pfo.Hostfile.RemoveHost(fullLocalHost)
+			if pfo.Remote == false {
+				pfo.Hostfile.RemoveHost(localServiceName)
+				pfo.Hostfile.RemoveHost(nsServiceName)
+			}
+			pfo.Hostfile.RemoveHost(fullServiceName)
 			err = pfo.Hostfile.Save()
 			if err != nil {
 				log.Error("Error saving hosts file", err)

@@ -20,7 +20,7 @@ require (
 	github.com/prometheus/common v0.0.0-20190124163007-cfeb6f9992ff
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/pflag v0.0.0-20181223182923-24fa6976df40 // indirect
-	github.com/txn2/txeh v0.1.3
+	github.com/txn2/txeh v1.1.0
 	golang.org/x/oauth2 v0.0.0-20170412232759-a6bd8cefa181 // indirect
 	golang.org/x/time v0.0.0-20161028155119-f51c12702a4d // indirect
 	google.golang.org/appengine v0.0.0-20190215204344-54a98f90d1c4 // indirect

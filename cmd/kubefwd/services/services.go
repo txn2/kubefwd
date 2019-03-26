@@ -307,27 +307,26 @@ func fwdServices(opts FwdServiceOpts) error {
 				break
 			}
 
-			full := ""
+			serviceHostName := svc.Name
 
 			if opts.ShortName != true {
-				full = fmt.Sprintf(".%s.svc.cluster.local", podNamespace)
+				serviceHostName = serviceHostName + "." + podNamespace
 			}
 
 			if opts.Remote {
-				full = fmt.Sprintf(".%s.svc.cluster.%s", podNamespace, opts.Context)
+				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
 			}
 
 			if verbose {
 				log.Printf("Resolving:  %s%s to %s\n",
 					svc.Name,
-					full,
+					serviceHostName,
 					localIp.String(),
 				)
 			}
 
-			log.Printf("Forwarding: %s%s:%d to pod %s:%s\n",
-				svc.Name,
-				full,
+			log.Printf("Forwarding: %s:%d to pod %s:%s\n",
+				serviceHostName,
 				port.Port,
 				podName,
 				podPort,
