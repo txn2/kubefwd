@@ -6,6 +6,8 @@ build:
   binary: kubefwd
 
   env:
+  - GO111MODULE=on
+  - GOPROXY=https://gocenter.io
   - CGO_ENABLED=0
 
   # GOOS list to build in.
