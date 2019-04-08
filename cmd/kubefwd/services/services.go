@@ -280,87 +280,97 @@ func fwdServices(opts FwdServiceOpts) error {
 			continue
 		}
 
-		podName := ""
-		podPort := ""
-		podNamespace := ""
+		if svc.Spec.ClusterIP != "None" {
+			pods.Items = pods.Items[:1]
+		}
 
-		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, d, podPort)
-		d = dInc
+		for _, pod := range pods.Items {
 
-		for _, port := range svc.Spec.Ports {
+			podPort := ""
+			svcName := ""
 
-			podName = pods.Items[0].Name
-			podNamespace = pods.Items[0].Namespace
-			podPort = port.TargetPort.String()
-			localPort := strconv.Itoa(int(port.Port))
+			localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, d, podPort)
+			d = dInc
 
-			if _, err := strconv.Atoi(podPort); err != nil {
-				// search a pods containers for the named port
-				if namedPodPort, ok := portSearch(podPort, pods.Items[0].Spec.Containers); ok == true {
-					podPort = namedPodPort
+			for _, port := range svc.Spec.Ports {
+
+				podPort = port.TargetPort.String()
+				localPort := strconv.Itoa(int(port.Port))
+
+				if _, err := strconv.Atoi(podPort); err != nil {
+					// search a pods containers for the named port
+					if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok == true {
+						podPort = namedPodPort
+					}
 				}
-			}
 
-			_, err = opts.ClientSet.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
-			if err != nil {
-				log.Printf("WARNING: Error getting pod: %s\n", err.Error())
-				break
-			}
-
-			serviceHostName := svc.Name
-
-			if opts.ShortName != true {
-				serviceHostName = serviceHostName + "." + podNamespace
-			}
-
-			if opts.Remote {
-				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
-			}
-
-			if verbose {
-				log.Printf("Resolving:  %s%s to %s\n",
-					svc.Name,
-					serviceHostName,
-					localIp.String(),
-				)
-			}
-
-			log.Printf("Forwarding: %s:%d to pod %s:%s\n",
-				serviceHostName,
-				port.Port,
-				podName,
-				podPort,
-			)
-
-			pfo := &fwdport.PortForwardOpts{
-				Out:        publisher,
-				Config:     opts.ClientConfig,
-				ClientSet:  opts.ClientSet,
-				Context:    opts.Context,
-				Namespace:  podNamespace,
-				Service:    svc.Name,
-				PodName:    podName,
-				PodPort:    podPort,
-				LocalIp:    localIp,
-				LocalPort:  localPort,
-				Hostfile:   opts.Hostfile,
-				ShortName:  opts.ShortName,
-				Remote:     opts.Remote,
-				ExitOnFail: exitOnFail,
-			}
-
-			opts.Wg.Add(1)
-			go func() {
-				err := fwdport.PortForward(pfo)
+				_, err = opts.ClientSet.CoreV1().Pods(pod.Namespace).Get(pod.Name, metav1.GetOptions{})
 				if err != nil {
-					log.Printf("ERROR: %s", err.Error())
+					log.Printf("WARNING: Error getting pod: %s\n", err.Error())
+					break
 				}
 
-				log.Printf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
+				serviceHostName := svc.Name
 
-				opts.Wg.Done()
-			}()
+				if svc.Spec.ClusterIP == "None" {
+					serviceHostName = pod.Name + "." + serviceHostName
+				}
 
+				svcName = serviceHostName
+
+				if opts.ShortName != true {
+					serviceHostName = serviceHostName + "." + pod.Namespace
+				}
+
+				if opts.Remote {
+					serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
+				}
+
+				if verbose {
+					log.Printf("Resolving:  %s%s to %s\n",
+						svc.Name,
+						serviceHostName,
+						localIp.String(),
+					)
+				}
+
+				log.Printf("Forwarding: %s:%d to pod %s:%s\n",
+					serviceHostName,
+					port.Port,
+					pod.Name,
+					podPort,
+				)
+
+				pfo := &fwdport.PortForwardOpts{
+					Out:        publisher,
+					Config:     opts.ClientConfig,
+					ClientSet:  opts.ClientSet,
+					Context:    opts.Context,
+					Namespace:  pod.Namespace,
+					Service:    svcName,
+					PodName:    pod.Name,
+					PodPort:    podPort,
+					LocalIp:    localIp,
+					LocalPort:  localPort,
+					Hostfile:   opts.Hostfile,
+					ShortName:  opts.ShortName,
+					Remote:     opts.Remote,
+					ExitOnFail: exitOnFail,
+				}
+
+				opts.Wg.Add(1)
+				go func() {
+					err := fwdport.PortForward(pfo)
+					if err != nil {
+						log.Printf("ERROR: %s", err.Error())
+					}
+
+					log.Printf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
+
+					opts.Wg.Done()
+				}()
+
+			}
 		}
 	}
 
