@@ -244,6 +244,10 @@ func fwdServices(opts FwdServiceOpts) error {
 	if err != nil {
 		return err
 	}
+	if len(services.Items) < 1 {
+		log.Printf("WARNING: No services found for namespace %s.\n", opts.Namespace)
+		return nil
+	}
 
 	publisher := &fwdpub.Publisher{
 		PublisherName: "Services",
