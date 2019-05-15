@@ -119,11 +119,13 @@ Examples:
   kubefwd svc -n the-project -l env=dev,component=api
   kubefwd svc -n default -l "app in (ws, api)"
   kubefwd svc -n default -n the-project
+  kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
 
 
 Flags:
   -x, --context strings     specify a context to override the current context
+  -d, --domain string       Append a pseudo domain name to generated host names.
       --exitonfailure       Exit(1) on failure. Useful for forcing a container restart.
   -h, --help                help for services
   -c, --kubeconfig string   absolute path to a kubectl config fil (default "/Users/cjimti/.kube/config")

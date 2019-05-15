@@ -45,6 +45,7 @@ var namespaces []string
 var contexts []string
 var exitOnFail bool
 var verbose bool
+var domain string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -73,6 +74,7 @@ func init() {
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
+	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 
 }
 
@@ -84,6 +86,7 @@ var Cmd = &cobra.Command{
 	Example: "  kubefwd svc -n the-project\n" +
 		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
 		"  kubefwd svc -n default -n the-project\n" +
+		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n",
 	Run: func(cmd *cobra.Command, args []string) {
 
@@ -204,6 +207,7 @@ Try:
 					Remote:     i > 0,
 					IpC:        byte(ipC),
 					ExitOnFail: exitOnFail,
+					Domain:     domain,
 				})
 				if err != nil {
 					log.Printf("Error forwarding service: %s\n", err.Error())
@@ -236,6 +240,7 @@ type FwdServiceOpts struct {
 	Remote       bool
 	IpC          byte
 	ExitOnFail   bool
+	Domain       string
 }
 
 func fwdServices(opts FwdServiceOpts) error {
@@ -326,6 +331,13 @@ func fwdServices(opts FwdServiceOpts) error {
 					serviceHostName = serviceHostName + "." + pod.Namespace
 				}
 
+				if opts.Domain != "" {
+					if verbose {
+						log.Printf("Using domain %s in generated hostnames", opts.Domain)
+					}
+					serviceHostName = serviceHostName + "." + opts.Domain
+				}
+
 				if opts.Remote {
 					serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
 				}
@@ -360,6 +372,7 @@ func fwdServices(opts FwdServiceOpts) error {
 					ShortName:  opts.ShortName,
 					Remote:     opts.Remote,
 					ExitOnFail: exitOnFail,
+					Domain:     domain,
 				}
 
 				opts.Wg.Add(1)
