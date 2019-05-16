@@ -37,6 +37,7 @@ type PortForwardOpts struct {
 	ExitOnFail bool
 	ShortName  bool
 	Remote     bool
+	Domain     string
 }
 
 func PortForward(pfo *PortForwardOpts) error {
@@ -85,20 +86,30 @@ func PortForward(pfo *PortForwardOpts) error {
 		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
 
 		pfo.Hostfile.RemoveHost(fullServiceName)
+		if pfo.Domain != "" {
+			pfo.Hostfile.AddHost(pfo.LocalIp.String(), pfo.Service+"."+pfo.Domain)
+		}
 		pfo.Hostfile.AddHost(pfo.LocalIp.String(), pfo.Service)
 
 	} else {
 
 		if pfo.ShortName {
+			if pfo.Domain != "" {
+				pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
+				pfo.Hostfile.AddHost(pfo.LocalIp.String(), localServiceName+"."+pfo.Domain)
+			}
 			pfo.Hostfile.RemoveHost(localServiceName)
 			pfo.Hostfile.AddHost(pfo.LocalIp.String(), localServiceName)
 		}
 
-		pfo.Hostfile.RemoveHost(nsServiceName)
 		pfo.Hostfile.RemoveHost(fullServiceName)
-
-		pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsServiceName)
 		pfo.Hostfile.AddHost(pfo.LocalIp.String(), fullServiceName)
+		if pfo.Domain != "" {
+			pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
+			pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsServiceName+"."+pfo.Domain)
+		}
+		pfo.Hostfile.RemoveHost(nsServiceName)
+		pfo.Hostfile.AddHost(pfo.LocalIp.String(), nsServiceName)
 
 	}
 
@@ -111,6 +122,10 @@ func PortForward(pfo *PortForwardOpts) error {
 		<-signals
 		if stopChannel != nil {
 			if pfo.Remote == false {
+				if pfo.Domain != "" {
+					pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
+					pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
+				}
 				pfo.Hostfile.RemoveHost(localServiceName)
 				pfo.Hostfile.RemoveHost(nsServiceName)
 			}
