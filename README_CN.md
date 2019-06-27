@@ -1,3 +1,4 @@
+[English](https://github.com/txn2/kubefwd/blob/master/README.md)|[中文](https://github.com/txn2/kubefwd/blob/master/README_CN.md)
 实现批量端口转发让本地能方便访问远程Kubernetes服务, 欢迎贡献！
 
 ![kubefwd - kubernetes批量端口转发](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
