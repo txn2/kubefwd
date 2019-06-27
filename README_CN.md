@@ -1,8 +1,8 @@
 [English](https://github.com/txn2/kubefwd/blob/master/README.md)|[中文](https://github.com/txn2/kubefwd/blob/master/README_CN.md)
 
-Kubernetes port forwarding for local development, Contributions welcome!
+实现批量端口转发让本地能方便访问远程Kubernetes服务, 欢迎贡献！
 
-![kubefwd - kubernetes bulk port forwarding](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
+![kubefwd - kubernetes批量端口转发](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
 
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
 [![Maintainability](https://api.codeclimate.com/v1/badges/bc696045260db8e0ba89/maintainability)](https://codeclimate.com/github/txn2/kubefwd/maintainability)
@@ -11,13 +11,13 @@ Kubernetes port forwarding for local development, Contributions welcome!
 
 # kubefwd (Kube Forward)
 
-Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. 
+阅读 [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) 的背景资料和**kubefwd**的详细指南。
 
-**kubefwd** is a command line utility built to port forward some or all pods within a [Kubernetes namespace]. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
+**kubefwd** 是一个用于端口转发Kubernetes中指定namespace下的全部或者部分pod的命令行工具。 **kubefwd** 使用本地的环回IP地址转发需要访问的service，并且使用与service相同的端口。 **kubefwd** 会临时将service的域条目添加到 `/etc/hosts` 文件中。
 
-When working on our local workstation, my team and I often build applications that access services through their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
+启动**kubefwd**后，在本地就能像在Kubernetes集群中一样使用service名字与端口访问对应的应用程序。
 
-![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
+![kubefwd - kubernetes批量端口转发](kubefwd_ani.gif)
 
 <p align="center">
   <img width="654" height="684" src="https://mk.imti.co/images/content/kubefwd-net.png" alt="kubefwd - Kubernetes Port Forward Diagram">
@@ -25,42 +25,42 @@ When working on our local workstation, my team and I often build applications th
 
 ## OS
 
-Tested directly on **macOS** and **Linux** based docker containers.
+直接在**macOS**或者**Linux**的docker容器上测试。
 
-## MacOs Install / Update
+## MacOs 安装 / 升级
 
-**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used. However, its configuration is needed to access a Kubernetes cluster.
+**kubefwd** 默认你已经安装了 **kubectl** 工具并且也已经设置好了访问Kubernetes集群的配置文件。**kubefwd** 使用 **kubectl** 的上下文运行环境. **kubectl** 工具并不会用到，但是它的配置文件会被用来访问Kubernetes集群。
 
-Ensure you have a context by running:
+确保你有上下文运行环境配置：
 ```bash
 kubectl config current-context
 ```
 
-If you are running MacOS and use [homebrew] you can install **kubefwd** directly from the [txn2] tap:
+如果你使用MacOs，并且安装了 [homebrew] ，那么你可以直接使用下面的命令来安装**kubefwd**:
 
 ```bash
 brew install txn2/tap/kubefwd
 ```
 
-To upgrade:
+升级:
 ```bash
 brew upgrade kubefwd
 ```
 
-## Windows Install / Update
+## Windows 安装 / 升级
 
 ```batch
 scoop install kubefwd
 ```
 
-To upgrade:
+升级:
 ```batch
 scoop update kubefwd
 ```
 
 ## Docker
 
-Forward all services from the namespace **the-project** to a Docker container named **the-project**:
+将namespace为**the-project**的所有服务转发到名为**the-project**的Docker容器：
 
 ```bash
 docker run -it --rm --privileged --name the-project \
@@ -69,32 +69,32 @@ docker run -it --rm --privileged --name the-project \
 ```
 
 
-Execute a curl call to an Elasticsearch service in your Kubernetes cluster:
+通过curl命令访问Kubernetes集群下的Elasticsearch service :
 
 ```bash
 docker exec the-project curl -s elasticsearch:9200
 ```
 
-## Alternative Installs (tar.gz, RPM, deb, snap)
-Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries.
+## 其它安装方式 (tar.gz, RPM, deb, snap)
+查看在Github上 [releases](https://github.com/txn2/kubefwd/releases) 部分的二进制包。
 
-## Contribute
-[Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version. We welcome any useful pull requests.
+## 贡献
+[Fork kubefwd](https://github.com/txn2/kubefwd) 并构建自定义版本。我们也非常欢迎大家贡献自己的智慧。
 
-## Usage
+## 用法
 
-Forward all services for the namespace `the-project`. Kubefwd finds the first Pod associated with each Kubernetes service found in the Namespace and port forwards it based on the Service spec to a local IP  address and port. A domain name is added to your /etc/hosts file pointing to the local IP.
+转发namespace `the-project`下的所有服务。 Kubefwd找到Kubernetess集群中，该namespace下对应的Service端口匹配的第一个Pod，并将其转发到本地IP地址和端口。同时service的域名将被添加到本地的 hosts文件中。
 ```bash
 sudo kubefwd svc -n the-project
 ```
 
-Forward all svc for the namespace `the-project` where labeled `system: wx`:
+转发namespace `the-project`下所有的带有label为`system: wx`的service：
 
 ```bash
 sudo kubefwd svc -l system=wx -n the-project
 ```
 
-## Help
+## 帮助说明
 
 ```bash
 $ kubefwd svc --help
@@ -136,18 +136,18 @@ Flags:
   -v, --verbose             Verbose output.
 ```
 
-## Development
+## 开发
 
-### Build and Run
- Local
+### 构建并运行
+ 本地
 
 ```bash
 go run ./cmd/kubefwd/kubefwd.go
 ```
 
-### Build Run in Docker
+### 使用Docker构建并运行
 
-Run in the [golang:1.11.5] docker container:
+使用镜像 [golang:1.11.5] 运行容器:
 ```bash
 docker run -it --rm --privileged \
     -v "$(pwd)":/kubefwd \
@@ -159,19 +159,19 @@ docker run -it --rm --privileged \
 sudo go run -mod vendor ./cmd/kubefwd/kubefwd.go svc
 ```
 
-### Build Release
+### 构建版本
 
-Build test release:
+构建并测试：
 ```bash
 goreleaser --skip-publish --rm-dist --skip-validate
 ```
 
-Build and release:
+构建并发布:
 ```bash
 GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 ```
 
-### Testing Snap
+### 使用Snap测试
 
 ```bash
 multipass launch -n testvm
@@ -182,14 +182,14 @@ sudo snap install --dangerous kubefwd_64-bit.snap
 ```
 
 
-### License 
+### 开源协议 
 
 Apache License 2.0  
 
-### Sponsor
+### 赞助
 
-Opens source utility proudly sponsored by [Deasil Works, Inc.] &
-[Craig Johnston](https://imti.co)
+由 [Deasil Works, Inc.] &
+[Craig Johnston](https://imti.co) 赞助的开源工具
 
 [Kubernetes]:https://kubernetes.io/
 [Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
