@@ -17,13 +17,10 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-
-	"github.com/txn2/txeh"
 
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
@@ -31,7 +28,9 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/kubefwd/pkg/utils"
+	"github.com/txn2/txeh"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,9 +47,10 @@ var verbose bool
 var domain string
 
 func init() {
+
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
 	runtime.ErrorHandlers[0] = func(err error) {
-		log.Printf("Runtime error: %s", err.Error())
+		log.Errorf("Runtime error: %s", err.Error())
 	}
 
 	cfgFilePath := ""
@@ -250,7 +250,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		return err
 	}
 	if len(services.Items) < 1 {
-		log.Printf("WARNING: No services found for namespace %s.\n", opts.Namespace)
+		log.Warnf("WARNING: No services found for namespace %s.\n", opts.Namespace)
 		return nil
 	}
 
@@ -266,7 +266,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		selector := mapToSelectorStr(svc.Spec.Selector)
 
 		if selector == "" {
-			log.Printf("WARNING: No backing pods for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+			log.Warnf("WARNING: No backing pods for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 
 			continue
 		}
@@ -274,7 +274,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
 
 		if err != nil {
-			log.Printf("WARNING: No pods found for %s: %s\n", selector, err.Error())
+			log.Warnf("WARNING: No pods found for %s: %s\n", selector, err.Error())
 
 			// TODO: try again after a time
 
@@ -282,7 +282,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		}
 
 		if len(pods.Items) < 1 {
-			log.Printf("WARNING: No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+			log.Warnf("WARNING: No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 
 			// TODO: try again after a time
 
@@ -312,7 +312,7 @@ func fwdServices(opts FwdServiceOpts) error {
 
 					_, err = opts.ClientSet.CoreV1().Pods(pod.Namespace).Get(pod.Name, metav1.GetOptions{})
 					if err != nil {
-						log.Printf("WARNING: Error getting pod: %s\n", err.Error())
+						log.Warnf("WARNING: Error getting pod: %s\n", err.Error())
 						break
 					}
 

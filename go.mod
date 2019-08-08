@@ -4,6 +4,7 @@ require (
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/prometheus/common v0.0.0-20190124163007-cfeb6f9992ff
+	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.3
 	github.com/txn2/txeh v1.1.0
 	gopkg.in/yaml.v2 v2.2.2
