@@ -16,11 +16,11 @@ limitations under the License.
 package main
 
 import (
-	"log"
+	"bytes"
+	"fmt"
 	"os"
 
-	"fmt"
-
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
 )
@@ -54,7 +54,24 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
+type LogOutputSplitter struct{}
+
+func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
+	if bytes.Contains(p, []byte("level=error")) || bytes.Contains(p, []byte("level=warn")) {
+		return os.Stderr.Write(p)
+	}
+	return os.Stdout.Write(p)
+}
+
 func main() {
+
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		ForceColors:     true,
+		TimestampFormat: "15:04:05",
+	})
+
+	log.SetOutput(&LogOutputSplitter{})
 
 	log.Print(` _          _           __             _`)
 	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)

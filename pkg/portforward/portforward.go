@@ -289,7 +289,7 @@ func (pf *PortForwarder) handleConnection(conn net.Conn, port ForwardedPort) {
 	headers.Set(v1.PortForwardRequestIDHeader, strconv.Itoa(requestID))
 	errorStream, err := pf.streamConn.CreateStream(headers)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error creating error stream for port %d -> %d: %v", port.Local, port.Remote, err))
+		runtime.HandleError(fmt.Errorf("error creating error stream for %s -> %s: %v", conn.LocalAddr(), conn.RemoteAddr(), err))
 		return
 	}
 	// we're not writing to this stream
@@ -300,9 +300,9 @@ func (pf *PortForwarder) handleConnection(conn net.Conn, port ForwardedPort) {
 		message, err := ioutil.ReadAll(errorStream)
 		switch {
 		case err != nil:
-			errorChan <- fmt.Errorf("error reading from error stream for port %d -> %d: %v", port.Local, port.Remote, err)
+			errorChan <- fmt.Errorf("error reading from error stream for port %s -> %s: %v", conn.LocalAddr(), conn.RemoteAddr(), err)
 		case len(message) > 0:
-			errorChan <- fmt.Errorf("an error occurred forwarding %d -> %d: %v", port.Local, port.Remote, string(message))
+			errorChan <- fmt.Errorf("an error occurred forwarding %s -> %s: %v", conn.LocalAddr(), conn.RemoteAddr(), string(message))
 		}
 		close(errorChan)
 	}()
@@ -311,7 +311,7 @@ func (pf *PortForwarder) handleConnection(conn net.Conn, port ForwardedPort) {
 	headers.Set(v1.StreamType, v1.StreamTypeData)
 	dataStream, err := pf.streamConn.CreateStream(headers)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error creating forwarding stream for port %d -> %d: %v", port.Local, port.Remote, err))
+		runtime.HandleError(fmt.Errorf("error creating forwarding stream for port %s -> %s: %v", conn.LocalAddr(), conn.RemoteAddr(), err))
 		return
 	}
 
