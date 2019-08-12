@@ -266,15 +266,20 @@ func fwdServices(opts FwdServiceOpts) error {
 		selector := mapToSelectorStr(svc.Spec.Selector)
 
 		if selector == "" {
-			log.Warnf("WARNING: No backing pods for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+			log.Warnf("WARNING: No Pod selector for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 
 			continue
 		}
 
-		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(metav1.ListOptions{LabelSelector: selector})
+		listOpts := metav1.ListOptions{
+			LabelSelector: selector,
+			FieldSelector: "status.phase=Running",
+		}
+
+		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(listOpts)
 
 		if err != nil {
-			log.Warnf("WARNING: No pods found for %s: %s\n", selector, err.Error())
+			log.Warnf("WARNING: No Running Pods found for %s: %s\n", selector, err.Error())
 
 			// TODO: try again after a time
 
@@ -282,7 +287,7 @@ func fwdServices(opts FwdServiceOpts) error {
 		}
 
 		if len(pods.Items) < 1 {
-			log.Warnf("WARNING: No pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+			log.Warnf("WARNING: No Running Pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 
 			// TODO: try again after a time
 
