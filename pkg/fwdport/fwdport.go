@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/prometheus/common/log"
-
 	"github.com/txn2/txeh"
 
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -113,28 +111,22 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	}
 
-	err = pfo.Hostfile.Save()
-	if err != nil {
-		return err
+	cleanupHostfile := func() {
+		if pfo.Remote == false {
+			if pfo.Domain != "" {
+		 		pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
+		 		pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
+		 	}
+		 	pfo.Hostfile.RemoveHost(localServiceName)
+		 	pfo.Hostfile.RemoveHost(nsServiceName)
+		}
+		pfo.Hostfile.RemoveHost(fullServiceName)
 	}
 
 	go func() {
 		<-signals
 		if stopChannel != nil {
-			if pfo.Remote == false {
-				if pfo.Domain != "" {
-					pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
-					pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
-				}
-				pfo.Hostfile.RemoveHost(localServiceName)
-				pfo.Hostfile.RemoveHost(nsServiceName)
-			}
-			pfo.Hostfile.RemoveHost(fullServiceName)
-			err = pfo.Hostfile.Save()
-			if err != nil {
-				log.Error("Error saving hosts file", err)
-			}
-
+			cleanupHostfile()
 			close(stopChannel)
 		}
 	}()
@@ -146,6 +138,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
 	if err != nil {
 		signal.Stop(signals)
+		cleanupHostfile()
 		return err
 	}
 
@@ -154,6 +147,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	err = fw.ForwardPorts()
 	if err != nil {
 		signal.Stop(signals)
+		cleanupHostfile()
 		return err
 	}
 
