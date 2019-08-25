@@ -10,11 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/txn2/txeh"
-
+	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
-
 	"github.com/txn2/kubefwd/pkg/portforward"
+	"github.com/txn2/txeh"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/transport/spdy"
@@ -112,15 +111,28 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	cleanupHostfile := func() {
+		// other applications or process may have written to /etc/hosts
+		// since it was originally updated.
+		err := pfo.Hostfile.Reload()
+		if err != nil {
+			log.Error("Unable to reload /etc/hosts: " + err.Error())
+			return
+		}
+
 		if pfo.Remote == false {
 			if pfo.Domain != "" {
-		 		pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
-		 		pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
-		 	}
-		 	pfo.Hostfile.RemoveHost(localServiceName)
-		 	pfo.Hostfile.RemoveHost(nsServiceName)
+				pfo.Hostfile.RemoveHost(localServiceName + "." + pfo.Domain)
+				pfo.Hostfile.RemoveHost(nsServiceName + "." + pfo.Domain)
+			}
+			pfo.Hostfile.RemoveHost(localServiceName)
+			pfo.Hostfile.RemoveHost(nsServiceName)
 		}
 		pfo.Hostfile.RemoveHost(fullServiceName)
+
+		err = pfo.Hostfile.Save()
+		if err != nil {
+			log.Error("Error saving /etc/hosts: %s\n", err.Error())
+		}
 	}
 
 	go func() {

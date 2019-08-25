@@ -226,12 +226,6 @@ Try:
 		wg.Wait()
 
 		log.Printf("Done...\n")
-
-		log.Printf("Restoring hosts file\n")
-		err = hostFile.Save()
-		if err != nil {
-			log.Fatalf("Error saving hostfile: %s\n", err.Error())
-		}
 	},
 }
 
