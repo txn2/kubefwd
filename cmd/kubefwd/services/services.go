@@ -302,6 +302,9 @@ func fwdServices(opts FwdServiceOpts) error {
 				svcName := ""
 
 				localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, d, podPort)
+				if err != nil {
+					log.Warnf("WARNING: error readying interface: %s\n", err)
+				}
 				d = dInc
 
 				for _, port := range svc.Spec.Ports {
