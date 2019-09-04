@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
@@ -216,8 +217,19 @@ Try:
 				ipC = ipC + 1
 			}
 		}
-
 		log.Printf("Saving hosts file\n")
+		err = hostFile.Save()
+		if err != nil {
+			log.Error("Error saving hosts file", err)
+		}
+
+		// @TODO this needs a better solution
+		// from here it is not possible to determine if all host entries have
+		// be written. This race condition was introduced in:
+		// https://github.com/txn2/kubefwd/pull/76
+		// Introducing a two second wait-and-save should cover most if
+		// not all use cases for now.
+		time.Sleep(2 * time.Second)
 		err = hostFile.Save()
 		if err != nil {
 			log.Error("Error saving hosts file", err)
