@@ -131,7 +131,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 		err = pfo.Hostfile.Save()
 		if err != nil {
-			log.Error("Error saving /etc/hosts: %s\n", err.Error())
+			log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
 		}
 	}
 
