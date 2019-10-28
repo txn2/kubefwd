@@ -1,8 +1,10 @@
 module github.com/txn2/kubefwd
 
+go 1.13
+
 require (
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
-	github.com/prometheus/common v0.0.0-20190124163007-cfeb6f9992ff
+	github.com/gogo/protobuf v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	github.com/txn2/txeh v1.2.1
