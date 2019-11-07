@@ -83,7 +83,7 @@ archive:
   replacements:
     amd64: amd64
     386: 386
-    darwin: macOS
+    darwin: Darwin
     linux: linux
 
   format_overrides:
