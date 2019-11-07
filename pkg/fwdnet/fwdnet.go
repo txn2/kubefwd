@@ -60,6 +60,7 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 		args := []string{"lo0", "alias", ip.String(), "up"}
 		if err := exec.Command(cmd, args...).Run(); err != nil {
 			fmt.Println("Cannot ifconfig lo0 alias " + ip.String() + " up")
+			fmt.Println("Error: " + err.Error())
 			os.Exit(1)
 		}
 
