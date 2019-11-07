@@ -17,8 +17,6 @@ package services
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -33,7 +31,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -54,22 +52,7 @@ func init() {
 		log.Errorf("Runtime error: %s", err.Error())
 	}
 
-	cfgFilePath := ""
-
-	if home := fwdhost.HomeDir(); home != "" {
-		cfgFilePath = filepath.Join(home, ".kube", "config")
-	}
-
-	// if sudo -E is used and the KUBECONFIG environment variable is set
-	// make it the default, override with command line.
-	envCfg, ok := os.LookupEnv("KUBECONFIG")
-	if ok {
-		if envCfg != "" {
-			cfgFilePath = envCfg
-		}
-	}
-
-	Cmd.Flags().StringP("kubeconfig", "c", cfgFilePath, "absolute path to a kubectl config file")
+	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
 	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
@@ -128,15 +111,23 @@ Try:
 
 		log.Printf("Hostfile management: %s", msg)
 
-		// NOTE: may be using the default set in init()
-		cfgFilePath := cmd.Flag("kubeconfig").Value.String()
-		if cfgFilePath == "" {
-			log.Fatalf("No config found. Use --kubeconfig to specify one")
+		// if sudo -E is used and the KUBECONFIG environment variable is set
+		// it's easy to merge with kubeconfig files in env automatic.
+		// if KUBECONFIG is blank, ToRawKubeConfigLoader() will use the
+		// default kubeconfig file in $HOME/.kube/config
+		cfgFilePath := ""
+
+		// if we set the option --kubeconfig, It will have a higher priority
+		// than KUBECONFIG environment. so it will override the KubeConfig options.
+		flagCfgFilePath := cmd.Flag("kubeconfig").Value.String()
+		if flagCfgFilePath != "" {
+			cfgFilePath = flagCfgFilePath
 		}
 
-		clientConfig, err := fwdcfg.GetConfig(cfgFilePath)
+		// build the ClientConfig
+		rawConfig, err := fwdcfg.GetClientConfig(cfgFilePath)
 		if err != nil {
-			log.Fatalf("Error reading configuration configuration: %s\n", err.Error())
+			log.Fatalf("Error in get rawConfig: %s\n", err.Error())
 		}
 
 		// labels selector to filter services
@@ -151,18 +142,17 @@ Try:
 		// explicitly set one to "default"
 		if len(namespaces) < 1 {
 			namespaces = []string{"default"}
-			x := clientConfig.CurrentContext
-
+			x := rawConfig.CurrentContext
 			// use the first context if specified
 			if len(contexts) > 0 {
 				x = contexts[0]
 			}
 
-			for _, ctx := range clientConfig.Contexts {
-				if ctx.Name == x {
-					if ctx.Context.Namespace != "" {
-						log.Printf("Using namespace %s from current context %s.", ctx.Context.Namespace, ctx.Name)
-						namespaces = []string{ctx.Context.Namespace}
+			for ctxName, ctxConfig := range rawConfig.Contexts {
+				if ctxName == x {
+					if ctxConfig.Namespace != "" {
+						log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
+						namespaces = []string{ctxConfig.Namespace}
 						break
 					}
 				}
@@ -177,11 +167,10 @@ Try:
 
 		// if no context override
 		if len(contexts) < 1 {
-			contexts = append(contexts, clientConfig.CurrentContext)
+			contexts = append(contexts, rawConfig.CurrentContext)
 		}
 
 		for i, ctx := range contexts {
-
 			// k8s REST config
 			restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, ctx)
 			if err != nil {

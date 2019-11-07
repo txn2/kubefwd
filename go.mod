@@ -4,12 +4,12 @@ go 1.13
 
 require (
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
-	github.com/gogo/protobuf v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	github.com/txn2/txeh v1.2.1
-	gopkg.in/yaml.v2 v2.2.2
-	k8s.io/api v0.0.0-20190620084959-7cf5895f2711
-	k8s.io/apimachinery v0.0.0-20190612205821-1799e75a0719
-	k8s.io/client-go v0.0.0-20190620085101-78d2af792bab
+	gopkg.in/yaml.v2 v2.2.4
+	k8s.io/api v0.0.0-20191031065753-b19d8caf39be
+	k8s.io/apimachinery v0.0.0-20191102025618-50aa20a7b23f
+	k8s.io/cli-runtime v0.0.0-20191102031428-d1199d98239f
+	k8s.io/client-go v0.0.0-20191101230044-e9766ae82012
 )
