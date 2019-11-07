@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/apimachinery/pkg/api/errors"
 )
 
 var namespaces []string
@@ -281,7 +282,11 @@ func fwdServices(opts FwdServiceOpts) error {
 		pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(listOpts)
 
 		if err != nil {
-			log.Warnf("WARNING: No Running Pods found for %s: %s\n", selector, err.Error())
+			if errors.IsNotFound(err) {
+				log.Warnf("WARNING: No Running Pods found for %s: %s\n", selector, err.Error())
+			} else {
+				log.Warnf("WARNING: Error in List pods for %s: %s\n", selector, err.Error())
+			}
 
 			// TODO: try again after a time
 
