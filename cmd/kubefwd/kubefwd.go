@@ -28,6 +28,15 @@ import (
 var globalUsage = ``
 var Version = "0.0.0"
 
+func init() {
+	// quiet version
+	args := os.Args[1:]
+	if len(args) == 2 && args[0] == "version" && args[1] == "quiet" {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+}
+
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kubefwd",
@@ -43,7 +52,9 @@ func newRootCmd() *cobra.Command {
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of Kubefwd",
-		Long:  ``,
+		Example: " kubefwd version\n" +
+			" kubefwd version quiet\n",
+		Long: ``,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
 		},
@@ -64,7 +75,6 @@ func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
 }
 
 func main() {
-
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,
