@@ -320,12 +320,6 @@ func fwdServices(opts FwdServiceOpts) error {
 						}
 					}
 
-					_, err = opts.ClientSet.CoreV1().Pods(pod.Namespace).Get(pod.Name, metav1.GetOptions{})
-					if err != nil {
-						log.Warnf("WARNING: Error getting pod: %s\n", err.Error())
-						break
-					}
-
 					serviceHostName := svc.Name
 
 					if podName {
