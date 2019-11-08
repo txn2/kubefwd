@@ -12,10 +12,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
-	"github.com/txn2/kubefwd/pkg/portforward"
 	"github.com/txn2/txeh"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
 
@@ -147,14 +147,19 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", &u)
 
-	fw, err := portforward.New(dialer, fwdPorts, stopChannel, readyChannel, &p, &p)
+	var address []string
+	if pfo.LocalIp != nil {
+		address = []string{pfo.LocalIp.To4().String(), pfo.LocalIp.To16().String()}
+	} else {
+		address = []string{"localhost"}
+	}
+
+	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, stopChannel, readyChannel, &p, &p)
 	if err != nil {
 		signal.Stop(signals)
 		cleanupHostfile()
 		return err
 	}
-
-	fw.LocalIp(pfo.LocalIp)
 
 	err = fw.ForwardPorts()
 	if err != nil {
