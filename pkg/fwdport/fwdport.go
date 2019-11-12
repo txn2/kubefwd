@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -23,6 +21,7 @@ type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     *restclient.Config
 	ClientSet  *kubernetes.Clientset
+	RESTClient *restclient.RESTClient
 	Context    string
 	Namespace  string
 	Service    string
@@ -52,19 +51,14 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	fwdPorts := []string{fmt.Sprintf("%s:%s", pfo.LocalPort, pfo.PodPort)}
 
-	restClient := pfo.ClientSet.RESTClient()
+	restClient := pfo.RESTClient
+	// if need to set timeout, set it here.
+	// restClient.Client.Timeout = 32
 	req := restClient.Post().
 		Resource("pods").
 		Namespace(pfo.Namespace).
 		Name(pfo.PodName).
 		SubResource("portforward")
-
-	u := url.URL{
-		Scheme:   req.URL().Scheme,
-		Host:     req.URL().Host,
-		Path:     buildPath(req),
-		RawQuery: "timeout=32s",
-	}
 
 	stopChannel := make(chan struct{}, 1)
 	readyChannel := make(chan struct{})
@@ -145,7 +139,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", &u)
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
 
 	var address []string
 	if pfo.LocalIp != nil {
@@ -169,10 +163,4 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	return nil
-}
-
-func buildPath(req *restclient.Request) string {
-	splitted := strings.Split(req.URL().Path, "/namespaces")
-	path := splitted[0] + "/api/v1/namespaces" + splitted[1]
-	return path
 }

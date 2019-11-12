@@ -32,12 +32,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/apimachinery/pkg/api/errors"
 )
 
 var namespaces []string
@@ -125,8 +125,10 @@ Try:
 			cfgFilePath = flagCfgFilePath
 		}
 
+		// create a ConfigGetter
+		configGetter := fwdcfg.NewConfigGetter()
 		// build the ClientConfig
-		rawConfig, err := fwdcfg.GetClientConfig(cfgFilePath)
+		rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
 		if err != nil {
 			log.Fatalf("Error in get rawConfig: %s\n", err.Error())
 		}
@@ -173,7 +175,7 @@ Try:
 
 		for i, ctx := range contexts {
 			// k8s REST config
-			restConfig, err := fwdcfg.GetRestConfig(cfgFilePath, ctx)
+			restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
 			if err != nil {
 				log.Fatalf("Error generating REST configuration: %s\n", err.Error())
 			}
@@ -181,7 +183,13 @@ Try:
 			// create the k8s REST client set
 			clientSet, err := kubernetes.NewForConfig(restConfig)
 			if err != nil {
-				log.Fatalf("Error creating k8s client: %s\n", err.Error())
+				log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
+			}
+
+			// create the k8s REST client
+			restClient, err := configGetter.GetRESTClient()
+			if err != nil {
+				log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
 			}
 
 			for ii, namespace := range namespaces {
@@ -193,6 +201,7 @@ Try:
 					ListOptions:  listOptions,
 					Hostfile:     hostFile,
 					ClientConfig: restConfig,
+					RESTClient:   restClient,
 					// only use short name for the first namespace and context
 					ShortName:  i < 1 && ii < 1,
 					Remote:     i > 0,
@@ -239,6 +248,7 @@ type FwdServiceOpts struct {
 	ListOptions  metav1.ListOptions
 	Hostfile     *txeh.Hosts
 	ClientConfig *restclient.Config
+	RESTClient   *restclient.RESTClient
 	ShortName    bool
 	Remote       bool
 	IpC          byte
@@ -367,6 +377,7 @@ func fwdServices(opts FwdServiceOpts) error {
 						Out:        publisher,
 						Config:     opts.ClientConfig,
 						ClientSet:  opts.ClientSet,
+						RESTClient: opts.RESTClient,
 						Context:    opts.Context,
 						Namespace:  pod.Namespace,
 						Service:    svcName,
