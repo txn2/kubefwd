@@ -408,10 +408,12 @@ func fwdServices(opts FwdServiceOpts) error {
 			}
 		}
 
-		podLoop(pods.Items[:1], false)
-
+		// headless service portforward all pods.
+		// normal service portforward the first pod.
 		if svc.Spec.ClusterIP == "None" {
 			podLoop(pods.Items, true)
+		} else {
+			podLoop([]v1.Pod{pods.Items[0]}, false)
 		}
 
 	}
