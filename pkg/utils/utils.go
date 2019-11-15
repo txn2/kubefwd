@@ -14,3 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 package utils
+
+import (
+	"sync"
+
+	"github.com/txn2/kubefwd/pkg/fwdport"
+)
+
+var lock sync.Mutex
+
+func ThreadSafeAppend(a []*fwdport.PortForwardOpts, b ...*fwdport.PortForwardOpts) []*fwdport.PortForwardOpts {
+	lock.Lock()
+	c := append(a, b...)
+	lock.Unlock()
+	return c
+}
