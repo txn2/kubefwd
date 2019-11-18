@@ -1,7 +1,6 @@
 package fwdport
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/txeh"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -33,24 +33,25 @@ type HostsParams struct {
 }
 
 type PortForwardOpts struct {
-	Out         *fwdpub.Publisher
-	Config      *restclient.Config
-	ClientSet   *kubernetes.Clientset
-	RESTClient  *restclient.RESTClient
-	Context     string
-	Namespace   string
-	Service     string
-	PodName     string
-	PodPort     string
-	LocalIp     net.IP
-	LocalPort   string
-	Hostfile    *HostFileWithLock
-	ExitOnFail  bool
-	ShortName   bool
-	Remote      bool
-	Domain      string
-	HostsParams *HostsParams
-	stopSignals chan os.Signal
+	Out               *fwdpub.Publisher
+	Config            *restclient.Config
+	ClientSet         *kubernetes.Clientset
+	RESTClient        *restclient.RESTClient
+	Context           string
+	Namespace         string
+	Service           string
+	NativeServiceName string
+	PodName           string
+	PodPort           string
+	LocalIp           net.IP
+	LocalPort         string
+	Hostfile          *HostFileWithLock
+	ExitOnFail        bool
+	ShortName         bool
+	Remote            bool
+	Domain            string
+	HostsParams       *HostsParams
+	ManualStopChan    chan struct{}
 }
 
 func (pfo *PortForwardOpts) PortForward() error {
@@ -77,12 +78,13 @@ func (pfo *PortForwardOpts) PortForward() error {
 		Name(pfo.PodName).
 		SubResource("portforward")
 
-	stopChannel := make(chan struct{}, 1)
-	readyChannel := make(chan struct{})
+	pfStopChannel := make(chan struct{}, 1)
+	pfReadyChannel := make(chan struct{})
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
-	pfo.stopSignals = signals
+	pfo.ManualStopChan = make(chan struct{})
+
 	defer signal.Stop(signals)
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
@@ -91,16 +93,18 @@ func (pfo *PortForwardOpts) PortForward() error {
 	pfo.AddHosts()
 
 	go func() {
-		<-signals
-		if stopChannel != nil {
+		select {
+		case <-signals:
+		case <-pfo.ManualStopChan:
+		}
+		if pfStopChannel != nil {
 			pfo.removeHosts()
-			close(stopChannel)
+			close(pfStopChannel)
 		}
 	}()
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
-	fmt.Printf("%+v\r\n", *req.URL())
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
 
 	var address []string
@@ -110,13 +114,13 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, stopChannel, readyChannel, &p, &p)
+	err = pfo.WaitForPodRunning(signals)
 	if err != nil {
 		pfo.Stop()
 		return err
 	}
 
-	err = pfo.WaitForPodRunning()
+	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, pfReadyChannel, &p, &p)
 	if err != nil {
 		pfo.Stop()
 		return err
@@ -202,20 +206,20 @@ func (pfo *PortForwardOpts) removeHosts() {
 
 	if pfo.Remote == false {
 		if pfo.Domain != "" {
-			fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.localServiceName + "." + pfo.Domain))
-			fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.nsServiceName + "." + pfo.Domain))
+			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.localServiceName + "." + pfo.Domain))
+			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.nsServiceName + "." + pfo.Domain))
 			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
 			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
 		}
-		fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.localServiceName)
-		fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.nsServiceName)
+		// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.localServiceName)
+		// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.nsServiceName)
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
 	}
-	fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.fullServiceName)
+	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.fullServiceName)
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
 
-	fmt.Printf("Delete Host And Save !\r\n")
+	// fmt.Printf("Delete Host And Save !\r\n")
 	err = pfo.Hostfile.Hosts.Save()
 	if err != nil {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
@@ -224,24 +228,56 @@ func (pfo *PortForwardOpts) removeHosts() {
 }
 
 // Waiting for the pod running
-func (pfo *PortForwardOpts) WaitForPodRunning() error {
-	// default timetout settings is 5s * 60 == 300s
-	// TODO: change it to watch for pod running
-	for i := 0; i < 60; i++ {
-		pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(pfo.PodName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if pod.Status.Phase != "running" {
-			time.Sleep(5 * time.Second)
-		} else {
-			return nil
-		}
+func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) error {
+	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(pfo.PodName, metav1.GetOptions{})
+	if err != nil {
+		return err
 	}
-	return errors.New("Error: waiting for pod running time out!")
+
+	if pod.Status.Phase == v1.PodRunning {
+		return nil
+	}
+
+	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
+	if err != nil {
+		return err
+	}
+	RunningChannel := make(chan struct{})
+
+	defer close(RunningChannel)
+
+	// if the os.signal (we enter the Ctrl+C)
+	// or RunningChannel channel (the watch for pod runnings is done)
+	// or timeout after 300s
+	// we'll stop the watcher
+	// TODO: change the 300s timeout to custom settings.
+	go func() {
+		defer watcher.Stop()
+		select {
+		case <-signals:
+		case <-RunningChannel:
+		case <-time.After(time.Second * 300):
+		}
+	}()
+
+	// watcher until the pod status is running
+	for {
+		event := <-watcher.ResultChan()
+		// switch event.Type {
+		// case watch.Deleted:
+		// 	return fmt.Errorf("%s/%s is deleted!", pfo.Namespace, pfo.PodName)
+		// }
+		if event.Object != nil {
+			changedPod := event.Object.(*v1.Pod)
+			if changedPod.Status.Phase == v1.PodRunning {
+				return nil
+			}
+		}
+		time.Sleep(time.Second * 3)
+	}
 }
 
 // this method to stop PortForward for the pfo
 func (pfo *PortForwardOpts) Stop() {
-	signal.Stop(pfo.stopSignals)
+	close(pfo.ManualStopChan)
 }

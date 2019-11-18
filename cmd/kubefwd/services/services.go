@@ -49,6 +49,7 @@ var exitOnFail bool
 var verbose bool
 var domain string
 var AllPortForwardOpts []*fwdport.PortForwardOpts
+var lock sync.Mutex
 
 func init() {
 
@@ -221,30 +222,12 @@ Try:
 					Domain:       domain,
 				}
 				go fwdServiceOpts.StartListen(stopListenCh)
-				// if err != nil {
-				// 	log.Printf("Error forwarding service: %s\n", err.Error())
-				// }
 
 				ipC = ipC + 1
 			}
 		}
-		// log.Printf("Saving hosts file\n")
-		// err = hostFile.Save()
-		// if err != nil {
-		// 	log.Error("Error saving hosts file", err)
-		// }
 
-		// @TODO this needs a better solution
-		// from here it is not possible to determine if all host entries have
-		// be written. This race condition was introduced in:
-		// https://github.com/txn2/kubefwd/pull/76
-		// Introducing a two second wait-and-save should cover most if
-		// not all use cases for now.
 		time.Sleep(2 * time.Second)
-		// err = hostFile.Save()
-		// if err != nil {
-		// 	log.Error("Error saving hosts file", err)
-		// }
 
 		wg.Wait()
 
@@ -295,7 +278,10 @@ func (opts *FwdServiceOpts) AddServiceHandler(obj interface{}) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Add service %s namespace %s !\r\n", svcName, svcNamespace)
+
+	if verbose {
+		fmt.Printf("Add service %s namespace %s !\r\n", svcName, svcNamespace)
+	}
 
 	opts.ForwardService(svcName, svcNamespace)
 }
@@ -309,7 +295,10 @@ func (opts *FwdServiceOpts) DeleteServiceHandler(obj interface{}) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Delete service %s namespace %s !\r\n", svcName, svcNamespace)
+
+	if verbose {
+		fmt.Printf("Delete service %s namespace %s !\r\n", svcName, svcNamespace)
+	}
 
 	opts.UnForwardService(svcName, svcNamespace)
 }
@@ -341,15 +330,10 @@ func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Warnf("WARNING: No Running Pods found for %s: %s\n", selector, err.Error())
+			log.Warnf("WARNING: No Pods found for %s: %s\n", selector, err.Error())
 		} else {
 			log.Warnf("WARNING: Error in List pods for %s: %s\n", selector, err.Error())
 		}
-		return
-	}
-
-	if len(pods.Items) < 1 {
-		log.Warnf("WARNING: No Running Pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
 		return
 	}
 
@@ -366,16 +350,18 @@ func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) 
 
 func (opts *FwdServiceOpts) UnForwardService(svcName string, svcNamespace string) {
 
+	lock.Lock()
 	// search for the PortForwardOpts if the svc should be unForward.
 	// stop the PortForward and threadSafe delete the PortForward obj.
 	for i := 0; i < len(AllPortForwardOpts); i++ {
 		pfo := AllPortForwardOpts[i]
-		if pfo.Service == svcName && pfo.Namespace == svcNamespace {
+		if pfo.NativeServiceName == svcName && pfo.Namespace == svcNamespace {
 			pfo.Stop()
-			utils.ThreadSafeAppend(AllPortForwardOpts[:i], AllPortForwardOpts[i+1:]...)
+			AllPortForwardOpts = append(AllPortForwardOpts[:i], AllPortForwardOpts[i+1:]...)
 			i--
 		}
 	}
+	lock.Unlock()
 	return
 }
 
@@ -446,28 +432,26 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 			)
 
 			pfo := &fwdport.PortForwardOpts{
-				Out:        publisher,
-				Config:     opts.ClientConfig,
-				ClientSet:  opts.ClientSet,
-				RESTClient: opts.RESTClient,
-				Context:    opts.Context,
-				Namespace:  pod.Namespace,
-				Service:    svcName,
-				PodName:    pod.Name,
-				PodPort:    podPort,
-				LocalIp:    localIp,
-				LocalPort:  localPort,
-				Hostfile:   opts.Hostfile,
-				ShortName:  opts.ShortName,
-				Remote:     opts.Remote,
-				ExitOnFail: exitOnFail,
-				Domain:     domain,
+				Out:               publisher,
+				Config:            opts.ClientConfig,
+				ClientSet:         opts.ClientSet,
+				RESTClient:        opts.RESTClient,
+				Context:           opts.Context,
+				Namespace:         pod.Namespace,
+				Service:           svcName,
+				NativeServiceName: svc.Name,
+				PodName:           pod.Name,
+				PodPort:           podPort,
+				LocalIp:           localIp,
+				LocalPort:         localPort,
+				Hostfile:          opts.Hostfile,
+				ShortName:         opts.ShortName,
+				Remote:            opts.Remote,
+				ExitOnFail:        exitOnFail,
+				Domain:            domain,
 			}
 			AllPortForwardOpts = utils.ThreadSafeAppend(AllPortForwardOpts, pfo)
-			for _, fff := range AllPortForwardOpts {
-				fmt.Printf("%s\n", fff.Service)
-				fmt.Printf("%s\n", fff.PodName)
-			}
+
 			opts.Wg.Add(1)
 			go func() {
 				err := pfo.PortForward()
