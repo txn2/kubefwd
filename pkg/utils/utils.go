@@ -21,11 +21,11 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdport"
 )
 
-var lock sync.Mutex
+var Lock sync.Mutex
 
 func ThreadSafeAppend(a []*fwdport.PortForwardOpts, b ...*fwdport.PortForwardOpts) []*fwdport.PortForwardOpts {
-	lock.Lock()
+	Lock.Lock()
 	c := append(a, b...)
-	lock.Unlock()
+	Lock.Unlock()
 	return c
 }

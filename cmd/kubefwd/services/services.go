@@ -49,7 +49,6 @@ var exitOnFail bool
 var verbose bool
 var domain string
 var AllPortForwardOpts []*fwdport.PortForwardOpts
-var lock sync.Mutex
 
 func init() {
 
@@ -78,12 +77,15 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: runCmd,
+}
 
-		hasRoot, err := utils.CheckRoot()
+func runCmd(cmd *cobra.Command, args []string) {
 
-		if !hasRoot {
-			fmt.Printf(`
+	hasRoot, err := utils.CheckRoot()
+
+	if !hasRoot {
+		fmt.Printf(`
 This program requires superuser privileges to run. These
 privileges are required to add IP address aliases to your
 loopback interface. Superuser privileges are also needed
@@ -94,145 +96,144 @@ Try:
  - Running a shell with administrator rights (Windows)
 
 `)
-			if err != nil {
-				log.Fatalf("Root check failure: %s", err.Error())
-			}
-			return
-		}
-
-		log.Println("Press [Ctrl-C] to stop forwarding.")
-		log.Println("'cat /etc/hosts' to see all host entries.")
-
-		hostFile, err := txeh.NewHostsDefault()
 		if err != nil {
-			log.Fatalf("Hostfile error: %s", err.Error())
+			log.Fatalf("Root check failure: %s", err.Error())
+		}
+		return
+	}
+
+	log.Println("Press [Ctrl-C] to stop forwarding.")
+	log.Println("'cat /etc/hosts' to see all host entries.")
+
+	hostFile, err := txeh.NewHostsDefault()
+	if err != nil {
+		log.Fatalf("Hostfile error: %s", err.Error())
+	}
+
+	log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
+
+	msg, err := fwdhost.BackupHostFile(hostFile)
+	if err != nil {
+		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
+	}
+
+	log.Printf("Hostfile management: %s", msg)
+
+	// if sudo -E is used and the KUBECONFIG environment variable is set
+	// it's easy to merge with kubeconfig files in env automatic.
+	// if KUBECONFIG is blank, ToRawKubeConfigLoader() will use the
+	// default kubeconfig file in $HOME/.kube/config
+	cfgFilePath := ""
+
+	// if we set the option --kubeconfig, It will have a higher priority
+	// than KUBECONFIG environment. so it will override the KubeConfig options.
+	flagCfgFilePath := cmd.Flag("kubeconfig").Value.String()
+	if flagCfgFilePath != "" {
+		cfgFilePath = flagCfgFilePath
+	}
+
+	// create a ConfigGetter
+	configGetter := fwdcfg.NewConfigGetter()
+	// build the ClientConfig
+	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
+	if err != nil {
+		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
+	}
+
+	// labels selector to filter services
+	// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+	selector := cmd.Flag("selector").Value.String()
+	listOptions := metav1.ListOptions{}
+	if selector != "" {
+		listOptions.LabelSelector = selector
+	}
+
+	// if no namespaces were specified, check config then
+	// explicitly set one to "default"
+	if len(namespaces) < 1 {
+		namespaces = []string{"default"}
+		x := rawConfig.CurrentContext
+		// use the first context if specified
+		if len(contexts) > 0 {
+			x = contexts[0]
 		}
 
-		log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
-
-		msg, err := fwdhost.BackupHostFile(hostFile)
-		if err != nil {
-			log.Fatalf("Error backing up hostfile: %s\n", err.Error())
-		}
-
-		log.Printf("Hostfile management: %s", msg)
-
-		// if sudo -E is used and the KUBECONFIG environment variable is set
-		// it's easy to merge with kubeconfig files in env automatic.
-		// if KUBECONFIG is blank, ToRawKubeConfigLoader() will use the
-		// default kubeconfig file in $HOME/.kube/config
-		cfgFilePath := ""
-
-		// if we set the option --kubeconfig, It will have a higher priority
-		// than KUBECONFIG environment. so it will override the KubeConfig options.
-		flagCfgFilePath := cmd.Flag("kubeconfig").Value.String()
-		if flagCfgFilePath != "" {
-			cfgFilePath = flagCfgFilePath
-		}
-
-		// create a ConfigGetter
-		configGetter := fwdcfg.NewConfigGetter()
-		// build the ClientConfig
-		rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
-		if err != nil {
-			log.Fatalf("Error in get rawConfig: %s\n", err.Error())
-		}
-
-		// labels selector to filter services
-		// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-		selector := cmd.Flag("selector").Value.String()
-		listOptions := metav1.ListOptions{}
-		if selector != "" {
-			listOptions.LabelSelector = selector
-		}
-
-		// if no namespaces were specified, check config then
-		// explicitly set one to "default"
-		if len(namespaces) < 1 {
-			namespaces = []string{"default"}
-			x := rawConfig.CurrentContext
-			// use the first context if specified
-			if len(contexts) > 0 {
-				x = contexts[0]
-			}
-
-			for ctxName, ctxConfig := range rawConfig.Contexts {
-				if ctxName == x {
-					if ctxConfig.Namespace != "" {
-						log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
-						namespaces = []string{ctxConfig.Namespace}
-						break
-					}
+		for ctxName, ctxConfig := range rawConfig.Contexts {
+			if ctxName == x {
+				if ctxConfig.Namespace != "" {
+					log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
+					namespaces = []string{ctxConfig.Namespace}
+					break
 				}
 			}
 		}
+	}
 
-		// ipC is the class C for the local IP address
-		// increment this for each cluster
-		// ipD is the class D for the local IP address
-		// increment this for each service in each cluster
-		ipC := 27
-		ipD := 1
+	// ipC is the class C for the local IP address
+	// increment this for each cluster
+	// ipD is the class D for the local IP address
+	// increment this for each service in each cluster
+	ipC := 27
+	ipD := 1
 
-		wg := &sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 
-		stopListenCh := make(chan struct{})
-		defer close(stopListenCh)
+	stopListenCh := make(chan struct{})
+	defer close(stopListenCh)
 
-		// if no context override
-		if len(contexts) < 1 {
-			contexts = append(contexts, rawConfig.CurrentContext)
+	// if no context override
+	if len(contexts) < 1 {
+		contexts = append(contexts, rawConfig.CurrentContext)
+	}
+
+	for i, ctx := range contexts {
+		// k8s REST config
+		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
+		if err != nil {
+			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
 		}
 
-		for i, ctx := range contexts {
-			// k8s REST config
-			restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
-			if err != nil {
-				log.Fatalf("Error generating REST configuration: %s\n", err.Error())
-			}
-
-			// create the k8s clientSet
-			clientSet, err := kubernetes.NewForConfig(restConfig)
-			if err != nil {
-				log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
-			}
-
-			// create the k8s RESTclient
-			restClient, err := configGetter.GetRESTClient()
-			if err != nil {
-				log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
-			}
-
-			for ii, namespace := range namespaces {
-				// ShortName field only use short name for the first namespace and context
-				fwdServiceOpts := FwdServiceOpts{
-					Wg:           wg,
-					ClientSet:    clientSet,
-					Context:      ctx,
-					Namespace:    namespace,
-					ListOptions:  listOptions,
-					Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
-					ClientConfig: restConfig,
-					RESTClient:   restClient,
-					ShortName:    i < 1 && ii < 1,
-					Remote:       i > 0,
-					IpC:          byte(ipC),
-					IpD:          ipD,
-					ExitOnFail:   exitOnFail,
-					Domain:       domain,
-				}
-				go fwdServiceOpts.StartListen(stopListenCh)
-
-				ipC = ipC + 1
-			}
+		// create the k8s clientSet
+		clientSet, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
 		}
 
-		time.Sleep(2 * time.Second)
+		// create the k8s RESTclient
+		restClient, err := configGetter.GetRESTClient()
+		if err != nil {
+			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
+		}
 
-		wg.Wait()
+		for ii, namespace := range namespaces {
+			// ShortName field only use short name for the first namespace and context
+			fwdServiceOpts := FwdServiceOpts{
+				Wg:           wg,
+				ClientSet:    clientSet,
+				Context:      ctx,
+				Namespace:    namespace,
+				ListOptions:  listOptions,
+				Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
+				ClientConfig: restConfig,
+				RESTClient:   restClient,
+				ShortName:    i < 1 && ii < 1,
+				Remote:       i > 0,
+				IpC:          byte(ipC),
+				IpD:          ipD,
+				ExitOnFail:   exitOnFail,
+				Domain:       domain,
+			}
+			go fwdServiceOpts.StartListen(stopListenCh)
 
-		log.Printf("Done...\n")
-	},
+			ipC = ipC + 1
+		}
+	}
+
+	time.Sleep(2 * time.Second)
+
+	wg.Wait()
+
+	log.Printf("Done...\n")
 }
 
 type FwdServiceOpts struct {
@@ -254,7 +255,11 @@ type FwdServiceOpts struct {
 
 func (opts *FwdServiceOpts) StartListen(stopListenCh <-chan struct{}) {
 
-	watchlist := cache.NewListWatchFromClient(opts.RESTClient, "services", v1.NamespaceDefault, fields.Everything())
+	optionsModifier := func(options *metav1.ListOptions) {
+		options.FieldSelector = fields.Everything().String()
+		options.LabelSelector = opts.ListOptions.LabelSelector
+	}
+	watchlist := cache.NewFilteredListWatchFromClient(opts.RESTClient, "services", v1.NamespaceDefault, optionsModifier)
 	_, controller := cache.NewInformer(watchlist, &v1.Service{}, 0, cache.ResourceEventHandlerFuncs{
 		AddFunc:    opts.AddServiceHandler,
 		DeleteFunc: opts.DeleteServiceHandler,
@@ -350,7 +355,7 @@ func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) 
 
 func (opts *FwdServiceOpts) UnForwardService(svcName string, svcNamespace string) {
 
-	lock.Lock()
+	utils.Lock.Lock()
 	// search for the PortForwardOpts if the svc should be unForward.
 	// stop the PortForward and threadSafe delete the PortForward obj.
 	for i := 0; i < len(AllPortForwardOpts); i++ {
@@ -361,7 +366,7 @@ func (opts *FwdServiceOpts) UnForwardService(svcName string, svcNamespace string
 			i--
 		}
 	}
-	lock.Unlock()
+	utils.Lock.Unlock()
 	return
 }
 
