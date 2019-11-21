@@ -15,6 +15,7 @@ import (
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
@@ -37,6 +38,7 @@ type PortForwardOpts struct {
 	Config            *restclient.Config
 	ClientSet         *kubernetes.Clientset
 	RESTClient        *restclient.RESTClient
+	ServiceOperator   OperatorInterface
 	Context           string
 	Namespace         string
 	Service           string
@@ -52,6 +54,11 @@ type PortForwardOpts struct {
 	Domain            string
 	HostsParams       *HostsParams
 	ManualStopChan    chan struct{}
+}
+
+type OperatorInterface interface {
+	ForwardService(svcName string, svcNamespace string)
+	UnForwardService(svcName string, svcNamespace string)
 }
 
 func (pfo *PortForwardOpts) PortForward() error {
@@ -114,11 +121,15 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	err = pfo.WaitForPodRunning(signals)
+	// Waiting for the pod is runnning
+	pod, err := pfo.WaitForPodRunning(signals)
 	if err != nil {
 		pfo.Stop()
 		return err
 	}
+
+	// Listen for pod is deleted
+	go pfo.ListenUntilPodDeleted(signals, pod)
 
 	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, pfReadyChannel, &p, &p)
 	if err != nil {
@@ -228,25 +239,26 @@ func (pfo *PortForwardOpts) removeHosts() {
 }
 
 // Waiting for the pod running
-func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) error {
+func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) (*v1.Pod, error) {
 	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(pfo.PodName, metav1.GetOptions{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if pod.Status.Phase == v1.PodRunning {
-		return nil
+		return pod, nil
 	}
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	RunningChannel := make(chan struct{})
 
 	defer close(RunningChannel)
 
 	// if the os.signal (we enter the Ctrl+C)
+	// or ManualStop (service delete or some thing wrong)
 	// or RunningChannel channel (the watch for pod runnings is done)
 	// or timeout after 300s
 	// we'll stop the watcher
@@ -256,6 +268,7 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) error {
 		select {
 		case <-signals:
 		case <-RunningChannel:
+		case <-pfo.ManualStopChan:
 		case <-time.After(time.Second * 300):
 		}
 	}()
@@ -263,17 +276,49 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) error {
 	// watcher until the pod status is running
 	for {
 		event := <-watcher.ResultChan()
-		// switch event.Type {
-		// case watch.Deleted:
-		// 	return fmt.Errorf("%s/%s is deleted!", pfo.Namespace, pfo.PodName)
-		// }
 		if event.Object != nil {
 			changedPod := event.Object.(*v1.Pod)
 			if changedPod.Status.Phase == v1.PodRunning {
-				return nil
+				return changedPod, nil
 			}
 		}
-		time.Sleep(time.Second * 3)
+	}
+}
+
+// listen for pod is deleted
+func (pfo *PortForwardOpts) ListenUntilPodDeleted(signals chan os.Signal, pod *v1.Pod) {
+
+	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
+	if err != nil {
+		return
+	}
+
+	go func() {
+		defer watcher.Stop()
+		select {
+		case <-pfo.ManualStopChan:
+		case <-signals:
+		}
+	}()
+
+	// watcher until the pod is deleted,
+	// then remove forward service and forward service again.
+	// TODO:
+	// now if the service is normal service it's ok, the firstPod
+	// deleted event will forward service again.
+	// but if the service is headless service, all pod will be forward.
+	// so every pod deleted event will trigger a forward service again function.
+	// we'll get a pure /etc/hosts few times after.
+	// maybe we can fix here later.
+	for {
+		event := <-watcher.ResultChan()
+		switch event.Type {
+		case watch.Deleted:
+			fmt.Println("Pod deleted!")
+			pfo.ServiceOperator.UnForwardService(pfo.NativeServiceName, pfo.Namespace)
+			pfo.ServiceOperator.ForwardService(pfo.NativeServiceName, pfo.Namespace)
+			return
+		}
 	}
 }
 

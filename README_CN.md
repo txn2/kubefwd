@@ -88,7 +88,7 @@ docker exec the-project curl -s elasticsearch:9200
 ### 更新 
 当前已支持headlesss Service的转发,Kubefwd将转发所有headlesss Service的Pod;
 
-同时支持namespace级服务监听,当namespace下有新Service创建或旧Service删除时,Kubefwd能够自动完成转发/结束转发;
+同时支持namespace级服务监听,当namespace下有新Service创建或旧Service删除时,Kubefwd能够自动完成转发/结束转发;支持Pod级转发监听,当转发的Pod被删除时(如更新deployment等情况),自动重启该pod所属Service的转发;
 ```bash
 sudo kubefwd svc -n the-project
 ```

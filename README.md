@@ -87,7 +87,7 @@ Forward all services for the namespace `the-project`. Kubefwd finds the first Po
 ### Update
 Forwarding of headlesss Service is currently supported, Kubefwd forward all Pods for headless service;
 
-At the same time, the namespace-level service monitoring is supported. When a new service is created or the old service is deleted under the namespace, kubefwd can automatically start/end forwarding.
+At the same time, the namespace-level service monitoring is supported. When a new service is created or the old service is deleted under the namespace, kubefwd can automatically start/end forwarding; Supports Pod-level forwarding monitoring. When the forwarded Pod is deleted (such as updating the deployment, etc.), the forwarding of the service to which the pod belongs is automatically restarted;
 ```bash
 sudo kubefwd svc -n the-project
 ```

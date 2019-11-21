@@ -441,6 +441,7 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 				Config:            opts.ClientConfig,
 				ClientSet:         opts.ClientSet,
 				RESTClient:        opts.RESTClient,
+				ServiceOperator:   opts,
 				Context:           opts.Context,
 				Namespace:         pod.Namespace,
 				Service:           svcName,
