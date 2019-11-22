@@ -329,7 +329,7 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(signalsChan chan struct{}, pod
 		}
 		switch event.Type {
 		case watch.Deleted:
-			fmt.Printf("%s Pod deleted, restart the %s service portforward.", pod.ObjectMeta.Name, pfo.NativeServiceName)
+			log.Warnf("%s Pod deleted, restart the %s service portforward.", pod.ObjectMeta.Name, pfo.NativeServiceName)
 			pfo.ServiceOperator.UnForwardService(pfo.NativeServiceName, pfo.Namespace)
 			pfo.ServiceOperator.ForwardService(pfo.NativeServiceName, pfo.Namespace)
 			return

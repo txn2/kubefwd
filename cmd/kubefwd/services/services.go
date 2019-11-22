@@ -82,10 +82,14 @@ var Cmd = &cobra.Command{
 
 func runCmd(cmd *cobra.Command, args []string) {
 
+	if verbose {
+		log.SetLevel(log.DebugLevel)
+	}
+
 	hasRoot, err := utils.CheckRoot()
 
 	if !hasRoot {
-		fmt.Printf(`
+		log.Errorf(`
 This program requires superuser privileges to run. These
 privileges are required to add IP address aliases to your
 loopback interface. Superuser privileges are also needed
@@ -284,9 +288,7 @@ func (opts *FwdServiceOpts) AddServiceHandler(obj interface{}) {
 		return
 	}
 
-	if verbose {
-		fmt.Printf("Add service %s namespace %s !\r\n", svcName, svcNamespace)
-	}
+	log.Debugf("Add service %s namespace %s.", svcName, svcNamespace)
 
 	opts.ForwardService(svcName, svcNamespace)
 }
@@ -301,9 +303,7 @@ func (opts *FwdServiceOpts) DeleteServiceHandler(obj interface{}) {
 		return
 	}
 
-	if verbose {
-		fmt.Printf("Delete service %s namespace %s !\r\n", svcName, svcNamespace)
-	}
+	log.Debugf("Delete service %s namespace %s.", svcName, svcNamespace)
 
 	opts.UnForwardService(svcName, svcNamespace)
 }
@@ -311,7 +311,7 @@ func (opts *FwdServiceOpts) DeleteServiceHandler(obj interface{}) {
 func (opts *FwdServiceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
-		fmt.Printf("update service %s !\r\n", key)
+		log.Printf("update service %s.", key)
 	}
 }
 
@@ -412,9 +412,9 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 			}
 
 			if opts.Domain != "" {
-				if verbose {
-					log.Printf("Using domain %s in generated hostnames", opts.Domain)
-				}
+
+				log.Debugf("Using domain %s in generated hostnames", opts.Domain)
+
 				serviceHostName = serviceHostName + "." + opts.Domain
 			}
 
@@ -422,13 +422,11 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
 			}
 
-			if verbose {
-				log.Printf("Resolving:  %s%s to %s\n",
-					svc.Name,
-					serviceHostName,
-					localIp.String(),
-				)
-			}
+			log.Debugf("Resolving:  %s%s to %s\n",
+				svc.Name,
+				serviceHostName,
+				localIp.String(),
+			)
 
 			log.Printf("Forwarding: %s:%d to pod %s:%s\n",
 				serviceHostName,
@@ -466,7 +464,7 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 					log.Printf("ERROR: %s", err.Error())
 				}
 
-				log.Printf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
+				log.Warnf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
 
 				opts.Wg.Done()
 			}()
