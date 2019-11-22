@@ -84,6 +84,11 @@ docker exec the-project curl -s elasticsearch:9200
 ## 用法
 
 转发namespace `the-project`下的所有服务。 Kubefwd找到Kubernetess集群中，该namespace下对应的Service端口匹配的第一个Pod，并将其转发到本地IP地址和端口。同时service的域名将被添加到本地的 hosts文件中。
+
+### 更新 
+当前已支持headlesss Service的转发,Kubefwd将转发所有headlesss Service的Pod;
+
+同时支持namespace级服务监听,当namespace下有新Service创建或旧Service删除时,Kubefwd能够自动完成转发/结束转发;支持Pod级转发监听,当转发的Pod被删除时(如更新deployment等情况),自动重启该pod所属Service的转发;
 ```bash
 sudo kubefwd svc -n the-project
 ```
