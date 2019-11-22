@@ -84,6 +84,10 @@ Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Gi
 ## Usage
 
 Forward all services for the namespace `the-project`. Kubefwd finds the first Pod associated with each Kubernetes service found in the Namespace and port forwards it based on the Service spec to a local IP  address and port. A domain name is added to your /etc/hosts file pointing to the local IP.
+### Update
+Forwarding of headlesss Service is currently supported, Kubefwd forward all Pods for headless service;
+
+At the same time, the namespace-level service monitoring is supported. When a new service is created or the old service is deleted under the namespace, kubefwd can automatically start/end forwarding; Supports Pod-level forwarding monitoring. When the forwarded Pod is deleted (such as updating the deployment, etc.), the forwarding of the service to which the pod belongs is automatically restarted;
 ```bash
 sudo kubefwd svc -n the-project
 ```
