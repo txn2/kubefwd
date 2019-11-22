@@ -25,15 +25,17 @@ import (
 // then test to http get the service.
 func TestMainPipe(t *testing.T) {
 
-	opts := buildFwdServiceOpts(t)
+	// we can change the namespace here
+	namespace := "default"
+	opts := buildFwdServiceOpts(t, namespace)
 
 	stopListenCh := make(chan struct{})
 	defer close(stopListenCh)
-	defer deleteTestService(t, opts.ClientSet)
+	defer deleteTestService(t, opts.ClientSet, namespace)
 
 	go opts.StartListen(stopListenCh)
 
-	go testFwd(t, opts.ClientSet, opts.Wg)
+	go testFwd(t, opts.ClientSet, opts.Wg, namespace)
 
 	time.Sleep(2 * time.Second)
 	opts.Wg.Wait()
@@ -41,7 +43,7 @@ func TestMainPipe(t *testing.T) {
 }
 
 // build the FwdServiceOpts struct
-func buildFwdServiceOpts(t *testing.T) *FwdServiceOpts {
+func buildFwdServiceOpts(t *testing.T, namespace string) *FwdServiceOpts {
 
 	hasRoot, err := utils.CheckRoot()
 
@@ -103,7 +105,7 @@ func buildFwdServiceOpts(t *testing.T) *FwdServiceOpts {
 		t.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
 	}
 	// create the test service
-	createTestService(t, clientSet)
+	createTestService(t, clientSet, namespace)
 
 	listOptions := metav1.ListOptions{
 		LabelSelector: "app=kubefwd-test-nginx-service",
@@ -115,7 +117,7 @@ func buildFwdServiceOpts(t *testing.T) *FwdServiceOpts {
 		Wg:           wg,
 		ClientSet:    clientSet,
 		Context:      rawConfig.CurrentContext,
-		Namespace:    "default",
+		Namespace:    namespace,
 		ListOptions:  listOptions,
 		Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
 		ClientConfig: restConfig,
@@ -130,14 +132,15 @@ func buildFwdServiceOpts(t *testing.T) *FwdServiceOpts {
 }
 
 // create a test nginx service and deployments
-func createTestService(t *testing.T, clientset *kubernetes.Clientset) {
+func createTestService(t *testing.T, clientset *kubernetes.Clientset, namespace string) {
 
 	// create the test nginx deployements
 	// default namespace is "default"
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubefwd-test-nginx-deployment",
+			Name:      "kubefwd-test-nginx-deployment",
+			Namespace: namespace,
 			Labels: map[string]string{
 				"app": "kubefwd-test-nginx-deployment",
 			},
@@ -174,7 +177,7 @@ func createTestService(t *testing.T, clientset *kubernetes.Clientset) {
 		},
 	}
 
-	_, err := clientset.AppsV1().Deployments("default").Create(deployment)
+	_, err := clientset.AppsV1().Deployments(namespace).Create(deployment)
 	if err != nil {
 		t.Fatalf("Error creating the test nginx deployment: %s\n", err.Error())
 	}
@@ -183,7 +186,8 @@ func createTestService(t *testing.T, clientset *kubernetes.Clientset) {
 	// default namespace is "default"
 	service := &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubefwd-test-nginx-service",
+			Name:      "kubefwd-test-nginx-service",
+			Namespace: namespace,
 		},
 		Spec: apiv1.ServiceSpec{
 			Selector: map[string]string{
@@ -201,7 +205,7 @@ func createTestService(t *testing.T, clientset *kubernetes.Clientset) {
 		},
 	}
 
-	_, err = clientset.CoreV1().Services("default").Create(service)
+	_, err = clientset.CoreV1().Services(namespace).Create(service)
 	if err != nil {
 		t.Fatalf("Error creating the test nginx deployment: %s\n", err.Error())
 	}
@@ -209,16 +213,16 @@ func createTestService(t *testing.T, clientset *kubernetes.Clientset) {
 }
 
 // delete the test nginx service and deployments
-func deleteTestService(t *testing.T, clientset *kubernetes.Clientset) {
-	clientset.AppsV1().Deployments("default").Delete("kubefwd-test-nginx-deployment", &metav1.DeleteOptions{})
-	clientset.CoreV1().Services("default").Delete("kubefwd-test-nginx-service", &metav1.DeleteOptions{})
+func deleteTestService(t *testing.T, clientset *kubernetes.Clientset, namespace string) {
+	clientset.AppsV1().Deployments(namespace).Delete("kubefwd-test-nginx-deployment", &metav1.DeleteOptions{})
+	clientset.CoreV1().Services(namespace).Delete("kubefwd-test-nginx-service", &metav1.DeleteOptions{})
 	t.Log("Delete test nginx service and deployment success")
 }
 
 // http get to test if the forward is success
-func testFwd(t *testing.T, clientset *kubernetes.Clientset, wg *sync.WaitGroup) {
-	pod := findFirstPodOfService(t, clientset)
-	if waitPodRunning(t, clientset, pod) {
+func testFwd(t *testing.T, clientset *kubernetes.Clientset, wg *sync.WaitGroup, namespace string) {
+	pod := findFirstPodOfService(t, clientset, namespace)
+	if waitPodRunning(t, clientset, pod, namespace) {
 		resp, err := http.Get("http://kubefwd-test-nginx-service/")
 		if err != nil {
 			t.Fatalf("Forward Test nginx service faild, http get is err: %s", err.Error())
@@ -232,8 +236,8 @@ func testFwd(t *testing.T, clientset *kubernetes.Clientset, wg *sync.WaitGroup) 
 
 }
 
-func findFirstPodOfService(t *testing.T, clientset *kubernetes.Clientset) *apiv1.Pod {
-	pods, err := clientset.CoreV1().Pods("default").List(metav1.ListOptions{
+func findFirstPodOfService(t *testing.T, clientset *kubernetes.Clientset, namespace string) *apiv1.Pod {
+	pods, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{
 		LabelSelector: "app=kubefwd-test-nginx-deployment",
 	})
 	if err != nil {
@@ -242,13 +246,13 @@ func findFirstPodOfService(t *testing.T, clientset *kubernetes.Clientset) *apiv1
 	return &pods.Items[0]
 }
 
-func waitPodRunning(t *testing.T, clientset *kubernetes.Clientset, pod *apiv1.Pod) bool {
+func waitPodRunning(t *testing.T, clientset *kubernetes.Clientset, pod *apiv1.Pod, namespace string) bool {
 
 	if pod.Status.Phase == apiv1.PodRunning {
 		return true
 	}
 
-	watcher, err := clientset.CoreV1().Pods("default").Watch(metav1.SingleObject(pod.ObjectMeta))
+	watcher, err := clientset.CoreV1().Pods(namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
 		t.Fatalf("error in create pod watcher, err: %s", err.Error())
 	}

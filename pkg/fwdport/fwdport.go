@@ -91,6 +91,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 	pfo.ManualStopChan = make(chan struct{})
+	signalChan := make(chan struct{})
 
 	defer signal.Stop(signals)
 
@@ -104,6 +105,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		case <-signals:
 		case <-pfo.ManualStopChan:
 		}
+		close(signalChan)
 		if pfStopChannel != nil {
 			pfo.removeHosts()
 			close(pfStopChannel)
@@ -122,14 +124,20 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Waiting for the pod is runnning
-	pod, err := pfo.WaitForPodRunning(signals)
+	pod, err := pfo.WaitForPodRunning(signalChan)
 	if err != nil {
 		pfo.Stop()
 		return err
 	}
+	// if err is not nil but pod is nil
+	// mean service deleted but pod is not runnning.
+	// the pfo.Stop() has called yet, needn't call again
+	if pod == nil {
+		return nil
+	}
 
 	// Listen for pod is deleted
-	go pfo.ListenUntilPodDeleted(signals, pod)
+	go pfo.ListenUntilPodDeleted(signalChan, pod)
 
 	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, pfReadyChannel, &p, &p)
 	if err != nil {
@@ -239,7 +247,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 }
 
 // Waiting for the pod running
-func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) (*v1.Pod, error) {
+func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Pod, error) {
 	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(pfo.PodName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
@@ -266,7 +274,7 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) (*v1.Pod, 
 	go func() {
 		defer watcher.Stop()
 		select {
-		case <-signals:
+		case <-signalsChan:
 		case <-RunningChannel:
 		case <-pfo.ManualStopChan:
 		case <-time.After(time.Second * 300):
@@ -275,7 +283,10 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) (*v1.Pod, 
 
 	// watcher until the pod status is running
 	for {
-		event := <-watcher.ResultChan()
+		event, ok := <-watcher.ResultChan()
+		if !ok {
+			break
+		}
 		if event.Object != nil {
 			changedPod := event.Object.(*v1.Pod)
 			if changedPod.Status.Phase == v1.PodRunning {
@@ -283,10 +294,11 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signals chan os.Signal) (*v1.Pod, 
 			}
 		}
 	}
+	return nil, nil
 }
 
 // listen for pod is deleted
-func (pfo *PortForwardOpts) ListenUntilPodDeleted(signals chan os.Signal, pod *v1.Pod) {
+func (pfo *PortForwardOpts) ListenUntilPodDeleted(signalsChan chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
@@ -297,7 +309,7 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(signals chan os.Signal, pod *v
 		defer watcher.Stop()
 		select {
 		case <-pfo.ManualStopChan:
-		case <-signals:
+		case <-signalsChan:
 		}
 	}()
 
@@ -311,15 +323,19 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(signals chan os.Signal, pod *v
 	// we'll get a pure /etc/hosts few times after.
 	// maybe we can fix here later.
 	for {
-		event := <-watcher.ResultChan()
+		event, ok := <-watcher.ResultChan()
+		if !ok {
+			break
+		}
 		switch event.Type {
 		case watch.Deleted:
-			fmt.Println("Pod deleted!")
+			fmt.Printf("%s Pod deleted, restart the %s service portforward.", pod.ObjectMeta.Name, pfo.NativeServiceName)
 			pfo.ServiceOperator.UnForwardService(pfo.NativeServiceName, pfo.Namespace)
 			pfo.ServiceOperator.ForwardService(pfo.NativeServiceName, pfo.Namespace)
 			return
 		}
 	}
+	return
 }
 
 // this method to stop PortForward for the pfo

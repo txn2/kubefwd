@@ -259,7 +259,7 @@ func (opts *FwdServiceOpts) StartListen(stopListenCh <-chan struct{}) {
 		options.FieldSelector = fields.Everything().String()
 		options.LabelSelector = opts.ListOptions.LabelSelector
 	}
-	watchlist := cache.NewFilteredListWatchFromClient(opts.RESTClient, "services", v1.NamespaceDefault, optionsModifier)
+	watchlist := cache.NewFilteredListWatchFromClient(opts.RESTClient, "services", opts.Namespace, optionsModifier)
 	_, controller := cache.NewInformer(watchlist, &v1.Service{}, 0, cache.ResourceEventHandlerFuncs{
 		AddFunc:    opts.AddServiceHandler,
 		DeleteFunc: opts.DeleteServiceHandler,
