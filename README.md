@@ -11,9 +11,9 @@ Kubernetes port forwarding for local development, Contributions welcome!
 
 # kubefwd (Kube Forward)
 
-Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**.
+Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. Follow [Craig Johnston](https://twitter.com/cjimti) on Twitter for project updates.
 
-**kubefwd** is a command line utility built to port forward some or all pods within a [Kubernetes namespace]. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
+**kubefwd** is a command line utility built to port forward multiple [services] within one or more [namespaces] on one or more Kubernetes clusters. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporally adds domain entries to your `/etc/hosts` file with the service names it forwards.
 
 When working on our local workstation, my team and I often build applications that access services through their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
 
@@ -84,10 +84,10 @@ Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Gi
 ## Usage
 
 Forward all services for the namespace `the-project`. Kubefwd finds the first Pod associated with each Kubernetes service found in the Namespace and port forwards it based on the Service spec to a local IP  address and port. A domain name is added to your /etc/hosts file pointing to the local IP.
-### Update
-Forwarding of headlesss Service is currently supported, Kubefwd forward all Pods for headless service;
 
-At the same time, the namespace-level service monitoring is supported. When a new service is created or the old service is deleted under the namespace, kubefwd can automatically start/end forwarding; Supports Pod-level forwarding monitoring. When the forwarded Pod is deleted (such as updating the deployment, etc.), the forwarding of the service to which the pod belongs is automatically restarted;
+### Update
+Forwarding of headlesss Service is currently supported, Kubefwd forward all Pods for headless service; At the same time, the namespace-level service monitoring is supported. When a new service is created or the old service is deleted under the namespace, kubefwd can automatically start/end forwarding; Supports Pod-level forwarding monitoring. When the forwarded Pod is deleted (such as updating the deployment, etc.), the forwarding of the service to which the pod belongs is automatically restarted;
+
 ```bash
 sudo kubefwd svc -n the-project
 ```
@@ -103,15 +103,15 @@ sudo kubefwd svc -l system=wx -n the-project
 ```bash
 $ kubefwd svc --help
 
-2019/03/09 21:13:18  _          _           __             _
-2019/03/09 21:13:18 | | ___   _| |__   ___ / _|_      ____| |
-2019/03/09 21:13:18 | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
-2019/03/09 21:13:18 |   <| |_| | |_) |  __/  _|\ V  V / (_| |
-2019/03/09 21:13:18 |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
-2019/03/09 21:13:18
-2019/03/09 21:13:18 Version 1.7.3
-2019/03/09 21:13:18 https://github.com/txn2/kubefwd
-2019/03/09 21:13:18
+INFO[20:48:38]  _          _           __             _
+INFO[20:48:38] | | ___   _| |__   ___ / _|_      ____| |
+INFO[20:48:38] | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
+INFO[20:48:38] |   <| |_| | |_) |  __/  _|\ V  V / (_| |
+INFO[20:48:38] |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
+INFO[20:48:38]
+INFO[20:48:38] Version 1.11.0
+INFO[20:48:38] https://github.com/txn2/kubefwd
+INFO[20:48:38]
 Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.
 
 Usage:
@@ -122,8 +122,7 @@ Aliases:
 
 Examples:
   kubefwd svc -n the-project
-  kubefwd svc -n the-project -l env=dev,component=api
-  kubefwd svc -n default -l "app in (ws, api)"
+  kubefwd svc -n the-project -l app=wx,component=api
   kubefwd svc -n default -n the-project
   kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
@@ -134,7 +133,7 @@ Flags:
   -d, --domain string       Append a pseudo domain name to generated host names.
       --exitonfailure       Exit(1) on failure. Useful for forcing a container restart.
   -h, --help                help for services
-  -c, --kubeconfig string   absolute path to a kubectl config fil (default "/Users/cjimti/.kube/config")
+  -c, --kubeconfig string   absolute path to a kubectl config file
   -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
   -l, --selector string     Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
   -v, --verbose             Verbose output.
@@ -149,20 +148,6 @@ Flags:
 go run ./cmd/kubefwd/kubefwd.go
 ```
 
-### Build Run in Docker
-
-Run in the [golang:1.11.5] docker container:
-```bash
-docker run -it --rm --privileged \
-    -v "$(pwd)":/kubefwd \
-    -v "$(echo $HOME)/.kube/":/root/.kube/ \
-    -w /kubefwd golang:1.11.5 bash
-```
-
-```bash
-sudo go run -mod vendor ./cmd/kubefwd/kubefwd.go svc
-```
-
 ### Build Release
 
 Build test release:
@@ -175,28 +160,18 @@ Build and release:
 GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 ```
 
-### Testing Snap
-
-```bash
-multipass launch -n testvm
-cd ./dist
-multipass copy-files *.snap testvm:
-multipass shell testvm
-sudo snap install --dangerous kubefwd_64-bit.snap
-```
-
-
 ### License
 
 Apache License 2.0
 
 ### Sponsor
 
-Opens source utility proudly sponsored by [Deasil Works, Inc.] &
-[Craig Johnston](https://imti.co)
+Opens source utility by [Craig Johnston](https://imti.co) and sponsored by [Deasil Works, Inc.]
+
 
 [Kubernetes]:https://kubernetes.io/
-[Kubernetes namespace]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+[namespaces]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+[services]:https://kubernetes.io/docs/concepts/services-networking/service/
 [homebrew]:https://brew.sh/
 [txn2]:https://txn2.com/
 [golang:1.11.5]:https://hub.docker.com/_/golang/
