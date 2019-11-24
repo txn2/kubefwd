@@ -3,6 +3,7 @@
 Kubernetes port forwarding for local development, Contributions welcome!
 
 ![kubefwd - kubernetes bulk port forwarding](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Ftxn2%2Fkubefwd.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Ftxn2%2Fkubefwd?ref=badge_shield)
 
 [![Build Status](https://travis-ci.com/txn2/kubefwd.svg?branch=master)](https://travis-ci.com/txn2/kubefwd)
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
@@ -163,6 +164,9 @@ GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 ### License
 
 Apache License 2.0
+
+
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Ftxn2%2Fkubefwd.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Ftxn2%2Fkubefwd?ref=badge_large)
 
 ### Sponsor
 
