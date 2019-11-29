@@ -166,7 +166,7 @@ Apache License 2.0
 
 ### Sponsor
 
-Opens source utility by [Craig Johnston](https://imti.co) and sponsored by [Deasil Works, Inc.]
+Open source utility by [Craig Johnston](https://twitter.com/cjimti), [imti blog](http://imti.co/) and sponsored by [Deasil Works, Inc.]
 
 
 ## Similar projects, products, alternatives and complementary utilities
