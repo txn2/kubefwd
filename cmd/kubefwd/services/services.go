@@ -342,6 +342,14 @@ func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) 
 		return
 	}
 
+	// for issue #99
+	// add this check for the service scale down to 0 situation.
+	// TODO: a better way to do this check.
+	if len(pods.Items) < 1 {
+		log.Warnf("WARNING: No Running Pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
+		return
+	}
+
 	// normal service portforward the first pod as service name.
 	// headless service not only forward first Pod as service name, but also portforward all pods.
 	if svc.Spec.ClusterIP == "None" {
