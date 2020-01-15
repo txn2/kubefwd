@@ -74,3 +74,13 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 
 	return net.IP{}, d, errors.New("unable to find an available IP/Port")
 }
+
+// RemoveInterfaceAlias can remove the Interface alias after port forwarding.
+// if -alias command get err, just print the error and continue.
+func RemoveInterfaceAlias(ip net.IP) {
+	cmd := "ifconfig"
+	args := []string{"lo0", "-alias", ip.String()}
+	if err := exec.Command(cmd, args...).Run(); err != nil {
+		fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
+	}
+}
