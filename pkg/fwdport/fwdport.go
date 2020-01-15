@@ -11,6 +11,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
@@ -108,6 +109,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		close(signalChan)
 		if pfStopChannel != nil {
 			pfo.removeHosts()
+			pfo.removeInterfaceAlias()
 			close(pfStopChannel)
 		}
 	}()
@@ -244,6 +246,10 @@ func (pfo *PortForwardOpts) removeHosts() {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
 	}
 	pfo.Hostfile.Unlock()
+}
+
+func (pfo *PortForwardOpts) removeInterfaceAlias() {
+	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
 }
 
 // Waiting for the pod running
