@@ -233,7 +233,11 @@ Try:
 		}
 	}
 
-	time.Sleep(2 * time.Second)
+	// for issue #105
+	// increase time sleep here for no pod service
+	// TODO: better way to solve the problem
+	// maybe the wg.Add(1) move to AddServiceHandler and wg.Done() before return?
+	time.Sleep(4 * time.Second)
 
 	wg.Wait()
 
