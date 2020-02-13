@@ -81,6 +81,7 @@ func RemoveInterfaceAlias(ip net.IP) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "-alias", ip.String()}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
+		// suppress for now and @todo research why this would fail
+		//fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
 	}
 }
