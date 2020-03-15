@@ -32,6 +32,7 @@ type HostsParams struct {
 	localServiceName string
 	nsServiceName    string
 	fullServiceName  string
+	svcServiceName   string
 }
 
 type PortForwardOpts struct {
@@ -162,12 +163,14 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 	localServiceName := pfo.Service
 	nsServiceName := pfo.Service + "." + pfo.Namespace
 	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+	svcServiceName := fmt.Sprintf("%s.%s.svc", pfo.Service, pfo.Namespace)
 	if pfo.Remote {
 		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
 	}
 	pfo.HostsParams.localServiceName = localServiceName
 	pfo.HostsParams.nsServiceName = nsServiceName
 	pfo.HostsParams.fullServiceName = fullServiceName
+	pfo.HostsParams.svcServiceName = svcServiceName
 	return
 }
 
@@ -178,6 +181,7 @@ func (pfo *PortForwardOpts) AddHosts() {
 	if pfo.Remote {
 
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
 		if pfo.Domain != "" {
 			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service+"."+pfo.Domain)
 		}
@@ -196,6 +200,10 @@ func (pfo *PortForwardOpts) AddHosts() {
 
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
 		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.fullServiceName)
+
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
+		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.svcServiceName)
+
 		if pfo.Domain != "" {
 			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
 			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName+"."+pfo.Domain)
@@ -239,6 +247,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 	}
 	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.fullServiceName)
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
 
 	// fmt.Printf("Delete Host And Save !\r\n")
 	err = pfo.Hostfile.Hosts.Save()
