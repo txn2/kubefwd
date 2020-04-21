@@ -299,10 +299,10 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Po
 	// watcher until the pod status is running
 	for {
 		event, ok := <-watcher.ResultChan()
-		if !ok {
+		if !ok || event.Type == "ERROR" {
 			break
 		}
-		if event.Object != nil {
+		if event.Object != nil && event.Type == "MODIFIED" {
 			changedPod := event.Object.(*v1.Pod)
 			if changedPod.Status.Phase == v1.PodRunning {
 				return changedPod, nil
