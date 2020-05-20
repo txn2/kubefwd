@@ -9,10 +9,14 @@ import (
 	"github.com/txn2/txeh"
 )
 
-// BackupHostFile
+// BackupHostFile will write a backup of the pre-modified hostfile to your home directory, if it does not exist already.
 func BackupHostFile(hostfile *txeh.Hosts) (string, error) {
+	homeDirLocation, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
 
-	backupHostsPath := HomeDir() + "/hosts.original"
+	backupHostsPath := homeDirLocation + "/hosts.original"
 	if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
 		from, err := os.Open(hostfile.WriteFilePath)
 		if err != nil {
@@ -34,11 +38,4 @@ func BackupHostFile(hostfile *txeh.Hosts) (string, error) {
 	} else {
 		return fmt.Sprintf("Original hosts backup already exists at %s\n", backupHostsPath), nil
 	}
-}
-
-func HomeDir() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("USERPROFILE") // windows
 }
