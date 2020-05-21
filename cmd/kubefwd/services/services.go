@@ -257,26 +257,26 @@ Try:
 		}
 
 		for ii, namespace := range namespaces {
-			// ShortName field only use short name for the first namespace and context
-			fwdServiceOpts := FwdServiceOpts{
-				Wg:           wg,
-				ClientSet:    clientSet,
-				Context:      ctx,
-				Namespace:    namespace,
-				ListOptions:  listOptions,
-				Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
-				ClientConfig: restConfig,
-				RESTClient:   restClient,
-				ShortName:    i < 1 && ii < 1,
-				Remote:       i > 0,
-				IpC:          byte(ipC),
-				IpD:          ipD,
-				ExitOnFail:   exitOnFail,
-				Domain:       domain,
-			}
-			go fwdServiceOpts.StartListen(stopListenCh)
-
-			ipC = ipC + 1
+			go func(ii int) {
+				// ShortName field only use short name for the first namespace and context
+				fwdServiceOpts := FwdServiceOpts{
+					Wg:           wg,
+					ClientSet:    clientSet,
+					Context:      ctx,
+					Namespace:    namespace,
+					ListOptions:  listOptions,
+					Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
+					ClientConfig: restConfig,
+					RESTClient:   restClient,
+					ShortName:    i < 1 && ii < 1,
+					Remote:       i > 0,
+					IpC:          byte(ipC + ii),
+					IpD:          ipD,
+					ExitOnFail:   exitOnFail,
+					Domain:       domain,
+				}
+				fwdServiceOpts.StartListen(stopListenCh)
+			}(ii)
 		}
 	}
 
@@ -337,9 +337,11 @@ func (opts *FwdServiceOpts) AddServiceHandler(obj interface{}) {
 		return
 	}
 
-	log.Debugf("Add service %s namespace %s.", svc.Name, svc.Namespace)
+	// log.Debugf("Add service %s namespace %s.", svc.Name, svc.Namespace)
 
-	opts.ForwardService(svc)
+	// a := time.Now()
+	go opts.ForwardService(svc)
+	// log.Infof("ForwardService took %s", time.Since(a))
 }
 
 // DeleteServiceHandler is the event handler for when a service gets deleted in k8s.
@@ -375,7 +377,18 @@ func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
 
 	listOpts := metav1.ListOptions{LabelSelector: selector}
 
+	// Only a single pod is required here
+	if svc.Spec.ClusterIP == "None" {
+		listOpts.Limit = 1
+	}
+
+	a := time.Now()
 	pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(listOpts)
+	log.Infof("QueryPods for %d pods took %s (%s)", len(pods.Items), time.Since(a), selector)
+
+	// for i, pod := range pods.Items {
+	// 	log.Infof("%i: %s", i, pod.Name)
+	// }
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -396,7 +409,7 @@ func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
 
 	// normal service portforward the first pod as service name.
 	// headless service not only forward first Pod as service name, but also portforward all pods.
-	if svc.Spec.ClusterIP == "None" {
+	if svc.Spec.ClusterIP == "None" || true {
 		opts.ForwardFirstPodInService(pods, svc)
 		opts.ForwardAllPodInService(pods, svc)
 	} else {
@@ -420,6 +433,8 @@ func (opts *FwdServiceOpts) UnForwardService(svc *v1.Service) {
 	utils.Lock.Unlock()
 }
 
+var ReadyInterfaceLock sync.Mutex
+
 // LoopPodsToForward starts the portforwarding for each pod
 func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 	publisher := &fwdpub.Publisher{
@@ -430,16 +445,20 @@ func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 	// If multiple pods need to be forwarded, they all get their own host entry
 	includePodNameInHost := len(pods) > 1
 
+	// a := time.Now()
 	for _, pod := range pods {
 
 		podPort := ""
 		svcName := ""
 
+		// Ip address handout is a critical section for synchronization. Use lock. TODO: do better than dumb lock?
+		ReadyInterfaceLock.Lock()
 		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, opts.IpD, podPort)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
 		opts.IpD = dInc
+		ReadyInterfaceLock.Unlock()
 
 		for _, port := range svc.Spec.Ports {
 
@@ -473,17 +492,17 @@ func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
 			}
 
-			log.Debugf("Resolving:    %s to %s\n",
-				serviceHostName,
-				localIp.String(),
-			)
+			// log.Debugf("Resolving:    %s to %s\n",
+			// 	serviceHostName,
+			// 	localIp.String(),
+			// )
 
-			log.Printf("Port-Forward: %s:%d to pod %s:%s\n",
-				serviceHostName,
-				port.Port,
-				pod.Name,
-				podPort,
-			)
+			// log.Printf("Port-Forward: %s:%d to pod %s:%s\n",
+			// 	serviceHostName,
+			// 	port.Port,
+			// 	pod.Name,
+			// 	podPort,
+			// )
 
 			pfo := &fwdport.PortForwardOpts{
 				Out:               publisher,
@@ -522,6 +541,7 @@ func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 		}
 
 	}
+	// log.Infof("Took %s for %d pods", time.Since(a), len(pods))
 }
 
 // ForwardFirstPodInService will set up portforwarding to a single pod of the service.
