@@ -17,11 +17,11 @@ func (p *Publisher) MakeProducer(producer string) Publisher {
 }
 
 func (p *Publisher) Write(b []byte) (int, error) {
-	readLine := string(b)
-	strings.TrimSuffix(readLine, "\n")
+	outputString := string(b)
+	outputString = strings.TrimSuffix(outputString, "\n")
 
 	if p.Output {
-		fmt.Printf("Out: %s, %s, %s", p.PublisherName, p.ProducerName, readLine)
+		fmt.Printf("Out: %s, %s, %s", p.PublisherName, p.ProducerName, outputString)
 	}
 	return 0, nil
 }

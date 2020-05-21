@@ -59,8 +59,8 @@ type PortForwardOpts struct {
 }
 
 type OperatorInterface interface {
-	ForwardService(svcName string, svcNamespace string)
-	UnForwardService(svcName string, svcNamespace string)
+	ForwardService(svc *v1.Service)
+	UnForwardService(svc *v1.Service)
 }
 
 func (pfo *PortForwardOpts) PortForward() error {
@@ -171,7 +171,6 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 	pfo.HostsParams.nsServiceName = nsServiceName
 	pfo.HostsParams.fullServiceName = fullServiceName
 	pfo.HostsParams.svcServiceName = svcServiceName
-	return
 }
 
 // this method to add hosts obj in /etc/hosts
@@ -217,7 +216,6 @@ func (pfo *PortForwardOpts) AddHosts() {
 		log.Error("Error saving hosts file", err)
 	}
 	pfo.Hostfile.Unlock()
-	return
 }
 
 // this method to remove hosts obj in /etc/hosts
@@ -233,7 +231,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 		return
 	}
 
-	if pfo.Remote == false {
+	if !pfo.Remote {
 		if pfo.Domain != "" {
 			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.localServiceName + "." + pfo.Domain))
 			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.nsServiceName + "." + pfo.Domain))
@@ -345,12 +343,17 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(signalsChan chan struct{}, pod
 		switch event.Type {
 		case watch.Deleted:
 			log.Warnf("%s Pod deleted, restart the %s service portforward.", pod.ObjectMeta.Name, pfo.NativeServiceName)
-			pfo.ServiceOperator.UnForwardService(pfo.NativeServiceName, pfo.Namespace)
-			pfo.ServiceOperator.ForwardService(pfo.NativeServiceName, pfo.Namespace)
+
+			svc, err := pfo.ClientSet.CoreV1().Services(pfo.Namespace).Get(pfo.NativeServiceName, metav1.GetOptions{})
+			if err != nil {
+				return
+			}
+
+			pfo.ServiceOperator.UnForwardService(svc)
+			pfo.ServiceOperator.ForwardService(svc)
 			return
 		}
 	}
-	return
 }
 
 // this method to stop PortForward for the pfo

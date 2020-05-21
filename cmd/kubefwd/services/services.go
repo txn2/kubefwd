@@ -31,6 +31,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +81,41 @@ var Cmd = &cobra.Command{
 	Run: runCmd,
 }
 
+// checkConnection tests if you can connect to the cluster in your config,
+// and if you have the necessary permissions to use kubefwd.
+func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error {
+	// Check simple connectivity: can you connect to the api server
+	_, err := clientSet.Discovery().ServerVersion()
+	if err != nil {
+		return err
+	}
+
+	// Check RBAC permissions for each of the requested namespaces
+	requiredPermissions := []authorizationv1.ResourceAttributes{
+		{Verb: "list", Resource: "pods"}, {Verb: "get", Resource: "pods"}, {Verb: "watch", Resource: "pods"},
+		{Verb: "get", Resource: "services"},
+	}
+	for _, namespace := range namespaces {
+		for _, perm := range requiredPermissions {
+			perm.Namespace = namespace
+			ssar := &authorizationv1.SelfSubjectAccessReview{
+				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+					ResourceAttributes: &perm,
+				},
+			}
+			ssar, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(ssar)
+			if err != nil {
+				return err
+			}
+			if !ssar.Status.Allowed {
+				return fmt.Errorf("Missing RBAC permission: %v", perm)
+			}
+		}
+	}
+
+	return nil
+}
+
 func runCmd(cmd *cobra.Command, args []string) {
 
 	if verbose {
@@ -122,6 +158,10 @@ Try:
 	}
 
 	log.Printf("Hostfile management: %s", msg)
+
+	if domain != "" {
+		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)
+	}
 
 	// if sudo -E is used and the KUBECONFIG environment variable is set
 	// it's easy to merge with kubeconfig files in env automatic.
@@ -203,6 +243,13 @@ Try:
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
 		}
 
+		// check connectivity
+		err = checkConnection(clientSet, namespaces)
+		if err != nil {
+			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
+		}
+		log.Infof("Succesfully connected context: %v", ctx)
+
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
 		if err != nil {
@@ -261,6 +308,7 @@ type FwdServiceOpts struct {
 	Domain       string
 }
 
+// StartListen sets up event handlers to act on service-related events.
 func (opts *FwdServiceOpts) StartListen(stopListenCh <-chan struct{}) {
 
 	optionsModifier := func(options *metav1.ListOptions) {
@@ -282,36 +330,32 @@ func (opts *FwdServiceOpts) StartListen(stopListenCh <-chan struct{}) {
 	<-stopListenCh
 }
 
+// AddServiceHandler is the event handler for when a new service comes in from k8s.
 func (opts *FwdServiceOpts) AddServiceHandler(obj interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		return
-	}
-	svcNamespace, svcName, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
+	svc, ok := obj.(*v1.Service)
+	if !ok {
 		return
 	}
 
-	log.Debugf("Add service %s namespace %s.", svcName, svcNamespace)
+	log.Debugf("Add service %s namespace %s.", svc.Name, svc.Namespace)
 
-	opts.ForwardService(svcName, svcNamespace)
+	opts.ForwardService(svc)
 }
 
+// DeleteServiceHandler is the event handler for when a service gets deleted in k8s.
 func (opts *FwdServiceOpts) DeleteServiceHandler(obj interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		return
-	}
-	svcNamespace, svcName, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
+	svc, ok := obj.(*v1.Service)
+	if !ok {
 		return
 	}
 
-	log.Debugf("Delete service %s namespace %s.", svcName, svcNamespace)
+	log.Debugf("Delete service %s namespace %s.", svc.Name, svc.Namespace)
 
-	opts.UnForwardService(svcName, svcNamespace)
+	opts.UnForwardService(svc)
 }
 
+// UpdateServiceHandler is the event handler to deal with service changes from k8s.
+// It currently does not do anything.
 func (opts *FwdServiceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
@@ -319,12 +363,8 @@ func (opts *FwdServiceOpts) UpdateServiceHandler(old interface{}, new interface{
 	}
 }
 
-func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) {
-	svc, err := opts.ClientSet.CoreV1().Services(opts.Namespace).Get(svcName, metav1.GetOptions{})
-	if err != nil {
-		return
-	}
-
+// ForwardService selects one or all pods behind a service, and invokes the forwarding setup for that or those pod(s).
+func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
 	set := labels.Set(svc.Spec.Selector)
 	selector := set.AsSelector().String()
 
@@ -362,32 +402,34 @@ func (opts *FwdServiceOpts) ForwardService(svcName string, svcNamespace string) 
 	} else {
 		opts.ForwardFirstPodInService(pods, svc)
 	}
-
-	return
 }
 
-func (opts *FwdServiceOpts) UnForwardService(svcName string, svcNamespace string) {
+func (opts *FwdServiceOpts) UnForwardService(svc *v1.Service) {
 
 	utils.Lock.Lock()
-	// search for the PortForwardOpts if the svc should be unForward.
-	// stop the PortForward and threadSafe delete the PortForward obj.
+	// Search in the PortForwardOpts entries for for this service. If it is currently active,
+	// stop the forwarding and threadSafe delete the PortForward obj.
 	for i := 0; i < len(AllPortForwardOpts); i++ {
 		pfo := AllPortForwardOpts[i]
-		if pfo.NativeServiceName == svcName && pfo.Namespace == svcNamespace {
+		if pfo.NativeServiceName == svc.Name && pfo.Namespace == svc.Namespace {
 			pfo.Stop()
 			AllPortForwardOpts = append(AllPortForwardOpts[:i], AllPortForwardOpts[i+1:]...)
 			i--
 		}
 	}
 	utils.Lock.Unlock()
-	return
 }
 
-func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v1.Service) {
+// LoopPodsToForward starts the portforwarding for each pod
+func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 	publisher := &fwdpub.Publisher{
 		PublisherName: "Services",
 		Output:        false,
 	}
+
+	// If multiple pods need to be forwarded, they all get their own host entry
+	includePodNameInHost := len(pods) > 1
+
 	for _, pod := range pods {
 
 		podPort := ""
@@ -406,27 +448,24 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 
 			if _, err := strconv.Atoi(podPort); err != nil {
 				// search a pods containers for the named port
-				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok == true {
+				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok {
 					podPort = namedPodPort
 				}
 			}
 
 			serviceHostName := svc.Name
 
-			if podName {
+			if includePodNameInHost {
 				serviceHostName = pod.Name + "." + serviceHostName
 			}
 
 			svcName = serviceHostName
 
-			if opts.ShortName != true {
+			if !opts.ShortName {
 				serviceHostName = serviceHostName + "." + pod.Namespace
 			}
 
 			if opts.Domain != "" {
-
-				log.Debugf("Using domain %s in generated hostnames", opts.Domain)
-
 				serviceHostName = serviceHostName + "." + opts.Domain
 			}
 
@@ -434,13 +473,12 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
 			}
 
-			log.Debugf("Resolving:  %s%s to %s\n",
-				svc.Name,
+			log.Debugf("Resolving:    %s to %s\n",
 				serviceHostName,
 				localIp.String(),
 			)
 
-			log.Printf("Forwarding: %s:%d to pod %s:%s\n",
+			log.Printf("Port-Forward: %s:%d to pod %s:%s\n",
 				serviceHostName,
 				port.Port,
 				pod.Name,
@@ -482,15 +520,20 @@ func (opts *FwdServiceOpts) LoopPodToForward(pods []v1.Pod, podName bool, svc *v
 			}()
 
 		}
+
 	}
 }
 
+// ForwardFirstPodInService will set up portforwarding to a single pod of the service.
+// A single entry for the service will be added to the hosts file.
 func (opts *FwdServiceOpts) ForwardFirstPodInService(pods *v1.PodList, svc *v1.Service) {
-	opts.LoopPodToForward([]v1.Pod{pods.Items[0]}, false, svc)
+	opts.LoopPodsToForward([]v1.Pod{pods.Items[0]}, svc)
 }
 
+// ForwardAllPodInService will set up portforwarding for each pod in the service. A separate entry
+// for every pod will thus be added to the hosts file and individual pods can be addressed.
 func (opts *FwdServiceOpts) ForwardAllPodInService(pods *v1.PodList, svc *v1.Service) {
-	opts.LoopPodToForward(pods.Items, true, svc)
+	opts.LoopPodsToForward(pods.Items, svc)
 }
 
 func portSearch(portName string, containers []v1.Container) (string, bool) {
