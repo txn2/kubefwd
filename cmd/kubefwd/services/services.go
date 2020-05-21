@@ -257,26 +257,27 @@ Try:
 		}
 
 		for ii, namespace := range namespaces {
-			go func(ii int) {
+			go func(ii int, namespace string) {
 				// ShortName field only use short name for the first namespace and context
 				fwdServiceOpts := FwdServiceOpts{
-					Wg:           wg,
-					ClientSet:    clientSet,
-					Context:      ctx,
-					Namespace:    namespace,
-					ListOptions:  listOptions,
-					Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
-					ClientConfig: restConfig,
-					RESTClient:   restClient,
-					ShortName:    i < 1 && ii < 1,
-					Remote:       i > 0,
-					IpC:          byte(ipC + ii),
-					IpD:          ipD,
-					ExitOnFail:   exitOnFail,
-					Domain:       domain,
+					Wg:              wg,
+					ClientSet:       clientSet,
+					Context:         ctx,
+					Namespace:       namespace,
+					NamespaceIPLock: sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
+					ListOptions:     listOptions,
+					Hostfile:        &fwdport.HostFileWithLock{Hosts: hostFile},
+					ClientConfig:    restConfig,
+					RESTClient:      restClient,
+					ShortName:       i < 1 && ii < 1,
+					Remote:          i > 0,
+					IpC:             byte(ipC + ii),
+					IpD:             ipD,
+					ExitOnFail:      exitOnFail,
+					Domain:          domain,
 				}
 				fwdServiceOpts.StartListen(stopListenCh)
-			}(ii)
+			}(ii, namespace)
 		}
 	}
 
@@ -292,20 +293,21 @@ Try:
 }
 
 type FwdServiceOpts struct {
-	Wg           *sync.WaitGroup
-	ClientSet    *kubernetes.Clientset
-	Context      string
-	Namespace    string
-	ListOptions  metav1.ListOptions
-	Hostfile     *fwdport.HostFileWithLock
-	ClientConfig *restclient.Config
-	RESTClient   *restclient.RESTClient
-	ShortName    bool
-	Remote       bool
-	IpC          byte
-	IpD          int
-	ExitOnFail   bool
-	Domain       string
+	Wg              *sync.WaitGroup
+	ClientSet       *kubernetes.Clientset
+	Context         string
+	Namespace       string
+	NamespaceIPLock sync.Mutex
+	ListOptions     metav1.ListOptions
+	Hostfile        *fwdport.HostFileWithLock
+	ClientConfig    *restclient.Config
+	RESTClient      *restclient.RESTClient
+	ShortName       bool
+	Remote          bool
+	IpC             byte
+	IpD             int
+	ExitOnFail      bool
+	Domain          string
 }
 
 // StartListen sets up event handlers to act on service-related events.
@@ -425,8 +427,6 @@ func (opts *FwdServiceOpts) UnForwardService(svc *v1.Service) {
 	utils.Lock.Unlock()
 }
 
-var ReadyInterfaceLock sync.Mutex
-
 // LoopPodsToForward starts the portforwarding for each pod
 func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 	publisher := &fwdpub.Publisher{
@@ -442,14 +442,14 @@ func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
 		podPort := ""
 		svcName := ""
 
-		// Ip address handout is a critical section for synchronization. Use lock. TODO: do better than dumb lock?
-		ReadyInterfaceLock.Lock()
+		// Ip address handout is a critical section for synchronization, use a lock which synchronizes inside each namespace.
+		opts.NamespaceIPLock.Lock()
 		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, opts.IpD, podPort)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
 		opts.IpD = dInc
-		ReadyInterfaceLock.Unlock()
+		opts.NamespaceIPLock.Unlock()
 
 		for _, port := range svc.Spec.Ports {
 
