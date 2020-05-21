@@ -403,7 +403,7 @@ func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
 
 	// normal service portforward the first pod as service name.
 	// headless service not only forward first Pod as service name, but also portforward all pods.
-	if svc.Spec.ClusterIP == "None" || true {
+	if svc.Spec.ClusterIP == "None" {
 		opts.ForwardFirstPodInService(pods, svc)
 		opts.ForwardAllPodInService(pods, svc)
 	} else {
