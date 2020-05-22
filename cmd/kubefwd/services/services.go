@@ -264,7 +264,7 @@ Try:
 					ClientSet:       clientSet,
 					Context:         ctx,
 					Namespace:       namespace,
-					NamespaceIPLock: sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
+					NamespaceIPLock: &sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
 					ListOptions:     listOptions,
 					Hostfile:        &fwdport.HostFileWithLock{Hosts: hostFile},
 					ClientConfig:    restConfig,
@@ -297,7 +297,7 @@ type FwdServiceOpts struct {
 	ClientSet       *kubernetes.Clientset
 	Context         string
 	Namespace       string
-	NamespaceIPLock sync.Mutex
+	NamespaceIPLock *sync.Mutex
 	ListOptions     metav1.ListOptions
 	Hostfile        *fwdport.HostFileWithLock
 	ClientConfig    *restclient.Config
