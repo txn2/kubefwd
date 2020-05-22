@@ -8,24 +8,26 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var addrs []net.Addr
 var initAddresses sync.Once
 
 // getLocalListenAddrs returns the listen addresses for the lo0 interface.
-// It will panic if these could not be determined. TODO: panic ok or other handling?
+// It will exit if these could not be determined.
 func getLocalListenAddrs() []net.Addr {
 	initAddresses.Do(func() {
 		if addrs == nil {
 			iface, err := net.InterfaceByName("lo0")
 			if err != nil {
-				panic(fmt.Sprintf("Could not get lo0 netInterface: %s", err))
+				log.Fatalf("Could not get lo0 netInterface: %s", err)
 			}
 
 			addrs, err = iface.Addrs()
 			if err != nil {
-				panic(fmt.Sprintf("Could not get lo0 listen addresses: %s", err))
+				log.Fatalf("Could not get lo0 listen addresses: %s", err)
 			}
 		}
 	})
