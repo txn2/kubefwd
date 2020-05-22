@@ -377,7 +377,7 @@ func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
 
 	listOpts := metav1.ListOptions{LabelSelector: selector}
 
-	// Only a single pod is required in this case
+	// Only a single pod (which will be setup for forwarding) is required in this case
 	if svc.Spec.ClusterIP == "None" {
 		listOpts.Limit = 1
 	}
