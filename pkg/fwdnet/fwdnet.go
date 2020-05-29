@@ -7,7 +7,33 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
+
+var addrs []net.Addr
+var initAddresses sync.Once
+
+// getLocalListenAddrs returns the listen addresses for the lo0 interface.
+// It will exit if these could not be determined.
+func getLocalListenAddrs() []net.Addr {
+	initAddresses.Do(func() {
+		if addrs == nil {
+			iface, err := net.InterfaceByName("lo0")
+			if err != nil {
+				log.Fatalf("Could not get lo0 netInterface: %s", err)
+			}
+
+			addrs, err = iface.Addrs()
+			if err != nil {
+				log.Fatalf("Could not get lo0 listen addresses: %s", err)
+			}
+		}
+	})
+
+	return addrs
+}
 
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
@@ -31,18 +57,8 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 
 		ip = net.IPv4(a, b, c, byte(i))
 
-		iface, err := net.InterfaceByName("lo0")
-		if err != nil {
-			return net.IP{}, i, err
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			return net.IP{}, i, err
-		}
-
 		// check the addresses already assigned to the interface
-		for _, addr := range addrs {
+		for _, addr := range getLocalListenAddrs() {
 
 			// found a match
 			if addr.String() == ip.String()+"/8" {
