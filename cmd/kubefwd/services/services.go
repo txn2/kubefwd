@@ -17,6 +17,7 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ import (
 )
 
 var namespaces []string
+var regexNamespace string
 var contexts []string
 var exitOnFail bool
 var verbose bool
@@ -61,6 +63,7 @@ func init() {
 	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
 	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
+	Cmd.Flags().StringVarP(&regexNamespace, "regex-namespace", "r", "", "Specify a regex to use all namespaces matching it. Can be used in conjunction with explicit namespaces given using the --namespace/-n flag(s).")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
@@ -76,20 +79,24 @@ var Cmd = &cobra.Command{
 	Example: "  kubefwd svc -n the-project\n" +
 		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
 		"  kubefwd svc -n default -n the-project\n" +
+		"  kubefwd svc -r \"^external.*\"\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n",
 	Run: runCmd,
 }
 
-// checkConnection tests if you can connect to the cluster in your config,
-// and if you have the necessary permissions to use kubefwd.
-func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error {
-	// Check simple connectivity: can you connect to the api server
+// checkConnectivity tests if you can connect to the cluster in your config
+func checkConnectivity(clientSet *kubernetes.Clientset) error {
 	_, err := clientSet.Discovery().ServerVersion()
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// checkNamespacePermissions tests if you have the necessary permissions to use kubefwd.
+func checkNamespacePermissions(clientSet *kubernetes.Clientset, namespaces []string) error {
 	// Check RBAC permissions for each of the requested namespaces
 	requiredPermissions := []authorizationv1.ResourceAttributes{
 		{Verb: "list", Resource: "pods"}, {Verb: "get", Resource: "pods"}, {Verb: "watch", Resource: "pods"},
@@ -103,7 +110,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 					ResourceAttributes: &perm,
 				},
 			}
-			ssar, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(ssar)
+			ssar, err := clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(ssar)
 			if err != nil {
 				return err
 			}
@@ -192,8 +199,8 @@ Try:
 		listOptions.LabelSelector = selector
 	}
 
-	// if no namespaces were specified, check config then
-	// explicitly set one to "default"
+	// if no namespaces were specified via the flags, check config from the k8s context
+	// then explicitly set one to "default"
 	if len(namespaces) < 1 {
 		namespaces = []string{"default"}
 		x := rawConfig.CurrentContext
@@ -244,11 +251,37 @@ Try:
 		}
 
 		// check connectivity
-		err = checkConnection(clientSet, namespaces)
+		err = checkConnectivity(clientSet)
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
 		log.Infof("Succesfully connected context: %v", ctx)
+
+		// If a regex namespace expression was given, query for the available namespaces in the cluster,
+		// and add all of the matching ones to the list of namespaces to proxy for
+		if regexNamespace != "" {
+			reNS := regexp.MustCompile(regexNamespace)
+
+			// Query for the names of all namespaces
+			namespacesList, err := clientSet.CoreV1().Namespaces().List(metav1.ListOptions{})
+			if err != nil {
+				log.Fatalf("Error obtaining namespaces from cluster: %s\n", err.Error())
+			}
+
+			// Add the matching ones to the list of namespaces to do
+			for _, ns := range namespacesList.Items {
+				if reNS.FindString(ns.Name) == ns.Name {
+					namespaces = append(namespaces, ns.Name)
+				}
+			}
+		}
+		log.Infof("Namespaces to forward: %s", namespaces)
+
+		// Permission check on all the namespaces
+		err = checkNamespacePermissions(clientSet, namespaces)
+		if err != nil {
+			log.Fatalf("Failed RBAC permission check: %s\n", err.Error())
+		}
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
