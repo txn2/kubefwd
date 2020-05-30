@@ -75,6 +75,7 @@ var Cmd = &cobra.Command{
 	Long:    `Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.`,
 	Example: "  kubefwd svc -n the-project\n" +
 		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
+		"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n",
