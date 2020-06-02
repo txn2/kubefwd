@@ -178,6 +178,7 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 // this method to add hosts obj in /etc/hosts
 func (pfo *PortForwardOpts) AddHosts() {
 	pfo.Hostfile.Lock()
+	defer pfo.Hostfile.Unlock()
 
 	localIpAsString := pfo.LocalIp.String()
 
@@ -228,7 +229,6 @@ func (pfo *PortForwardOpts) AddHosts() {
 	if err != nil {
 		log.Error("Error saving hosts file", err)
 	}
-	pfo.Hostfile.Unlock()
 }
 
 // this method to remove hosts obj in /etc/hosts
@@ -236,6 +236,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 	// we should lock the pfo.Hostfile here
 	// because sometimes other goroutine write the *txeh.Hosts
 	pfo.Hostfile.Lock()
+	defer pfo.Hostfile.Unlock()
 	// other applications or process may have written to /etc/hosts
 	// since it was originally updated.
 	err := pfo.Hostfile.Hosts.Reload()
@@ -271,7 +272,6 @@ func (pfo *PortForwardOpts) removeHosts() {
 	if err != nil {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
 	}
-	pfo.Hostfile.Unlock()
 }
 
 func (pfo *PortForwardOpts) removeInterfaceAlias() {
