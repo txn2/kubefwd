@@ -44,10 +44,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+var Version = "0.0.0"                                    // passed from kubefwd.go
+var SourceRepository = "https://github.com/txn2/kubefwd" // passed from kubefwd.go
 var namespaces []string
 var contexts []string
 var exitOnFail bool
-var verbose bool
+var logLevel int
 var domain string
 var AllPortForwardOpts []*fwdport.PortForwardOpts
 
@@ -63,7 +65,7 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
-	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
+	Cmd.Flags().IntVarP(&logLevel, "loglevel", "v", int(log.InfoLevel), "Logging verbosity, according to LogRus levels. Default=info.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 
 }
@@ -116,11 +118,26 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	return nil
 }
 
-func runCmd(cmd *cobra.Command, args []string) {
-
-	if verbose {
-		log.SetLevel(log.DebugLevel)
+func PrintProgramHeader(quiet bool) {
+	if quiet {
+		fmt.Printf("Kubefwd version: %s\n%s\n", Version, SourceRepository)
+	} else {
+		log.Print(` _          _           __             _`)
+		log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
+		log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
+		log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
+		log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
+		log.Print("")
+		log.Printf("Version %s", Version)
+		log.Printf("Source %s", SourceRepository)
+		log.Print("")
 	}
+}
+
+func runCmd(cmd *cobra.Command, args []string) {
+	log.SetLevel(log.Level(logLevel))
+
+	PrintProgramHeader(false)
 
 	hasRoot, err := utils.CheckRoot()
 

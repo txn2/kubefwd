@@ -17,7 +17,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -27,15 +26,7 @@ import (
 
 var globalUsage = ``
 var Version = "0.0.0"
-
-func init() {
-	// quiet version
-	args := os.Args[1:]
-	if len(args) == 2 && args[0] == "version" && args[1] == "quiet" {
-		fmt.Println(Version)
-		os.Exit(0)
-	}
-}
+var SourceRepository = "https://github.com/txn2/kubefwd"
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -49,6 +40,7 @@ func newRootCmd() *cobra.Command {
 		Long: globalUsage,
 	}
 
+	var quiet bool
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of Kubefwd",
@@ -56,9 +48,10 @@ func newRootCmd() *cobra.Command {
 			" kubefwd version quiet\n",
 		Long: ``,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
+			services.PrintProgramHeader(quiet)
 		},
 	}
+	versionCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Print short version info instead of full header.")
 
 	cmd.AddCommand(versionCmd, services.Cmd)
 
@@ -75,6 +68,10 @@ func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
 }
 
 func main() {
+	// Pass version info to services package where it is printed
+	services.Version = Version
+	services.SourceRepository = SourceRepository
+
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,
@@ -82,16 +79,6 @@ func main() {
 	})
 
 	log.SetOutput(&LogOutputSplitter{})
-
-	log.Print(` _          _           __             _`)
-	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
-	log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
-	log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
-	log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
-	log.Print("")
-	log.Printf("Version %s", Version)
-	log.Print("https://github.com/txn2/kubefwd")
-	log.Print("")
 
 	cmd := newRootCmd()
 
