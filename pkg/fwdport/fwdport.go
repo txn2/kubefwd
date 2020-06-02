@@ -28,11 +28,13 @@ type HostFileWithLock struct {
 	sync.Mutex
 }
 
+// HostsParams holds the DNS entries which are associated with a portforward
+// The struct holds the non-fully qualified entry for the fullServiceName, this one is 'duplicated' to a fully-qualified entry in the hostsfile
 type HostsParams struct {
-	localServiceName string
-	nsServiceName    string
-	fullServiceName  string
-	svcServiceName   string
+	localServiceName string // myService
+	nsServiceName    string // myService.myNamespace
+	fullServiceName  string // myService.myNamespace.svc.cluster.local (if pfo.Remote: myService.myNamespace.svc.cluster.local.myContextName)
+	svcServiceName   string // myService.myNamespace.svc
 }
 
 type PortForwardOpts struct {
@@ -175,41 +177,52 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 
 // this method to add hosts obj in /etc/hosts
 func (pfo *PortForwardOpts) AddHosts() {
-
 	pfo.Hostfile.Lock()
-	if pfo.Remote {
 
+	localIpAsString := pfo.LocalIp.String()
+
+	if pfo.Remote {
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
+
+		// FQDN fullServiceName
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName + ".")
+
 		if pfo.Domain != "" {
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service+"."+pfo.Domain)
+			pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.Service+"."+pfo.Domain)
 		}
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service)
+		pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.Service)
 
 	} else {
 
 		if pfo.ShortName {
 			if pfo.Domain != "" {
 				pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
-				pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName+"."+pfo.Domain)
+				pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.localServiceName+"."+pfo.Domain)
 			}
+
 			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName)
+			pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.localServiceName)
 		}
 
+		// Non-FQDN fullServiceName
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.fullServiceName)
+		pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.fullServiceName)
+
+		// FQDN fullServiceName
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName + ".")
+		pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.fullServiceName+".")
 
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.svcServiceName)
+		pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.svcServiceName)
 
 		if pfo.Domain != "" {
 			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName+"."+pfo.Domain)
+			pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.nsServiceName+"."+pfo.Domain)
 		}
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName)
 
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
+		pfo.Hostfile.Hosts.AddHost(localIpAsString, pfo.HostsParams.nsServiceName)
 	}
 	err := pfo.Hostfile.Hosts.Save()
 	if err != nil {
@@ -244,7 +257,13 @@ func (pfo *PortForwardOpts) removeHosts() {
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
 	}
 	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.fullServiceName)
+
+	// Non-FQDN fullServiceName
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
+
+	// FQDN fullServiceName
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName + ".")
+
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
 
 	// fmt.Printf("Delete Host And Save !\r\n")
