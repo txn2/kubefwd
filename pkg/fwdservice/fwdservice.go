@@ -48,6 +48,7 @@ func (svcFwd *ServiceFWD) String() string {
 }
 
 // GetPodsForService queries k8s and returns all pods backing this service
+// which are eligible for portforwarding; exclude some pods which are in final/failure state.
 func (svcfwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	listOpts := metav1.ListOptions{LabelSelector: svcfwd.PodLabelSelector}
 
@@ -62,7 +63,15 @@ func (svcfwd *ServiceFWD) GetPodsForService() []v1.Pod {
 		return nil
 	}
 
-	return pods.Items
+	podsEligible := make([]v1.Pod, 0, len(pods.Items))
+
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning {
+			podsEligible = append(podsEligible, pod)
+		}
+	}
+
+	return podsEligible
 }
 
 // SyncPodForwards selects one or all pods behind a service, and invokes the forwarding setup for that or those pod(s).
@@ -74,6 +83,7 @@ func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
 		log.Debugf("Skipping pods refresh for %s due to rate limiting", svcfwd)
 		return
 	}
+	defer func() { svcfwd.LastSyncedAt = time.Now() }()
 
 	k8sPods := svcfwd.GetPodsForService()
 
@@ -131,8 +141,6 @@ func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
 			}
 		}
 	}
-
-	svcfwd.LastSyncedAt = time.Now()
 }
 
 // LoopPodsToForward starts the portforwarding for each pod in the given list
