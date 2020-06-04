@@ -17,15 +17,16 @@ package services
 
 import (
 	"fmt"
-	"strconv"
+	"os"
+	"os/signal"
 	"sync"
-	"time"
+	"syscall"
 
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/fwdservice"
+	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 	"github.com/txn2/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
@@ -33,36 +34,37 @@ import (
 	"github.com/spf13/cobra"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilRuntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
 
+// cmdline arguments
 var namespaces []string
+var regexNamespace string
 var contexts []string
 var exitOnFail bool
 var verbose bool
 var domain string
-var AllPortForwardOpts []*fwdport.PortForwardOpts
 
 func init() {
-
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
-	runtime.ErrorHandlers[0] = func(err error) {
+	utilRuntime.ErrorHandlers[0] = func(err error) {
 		log.Errorf("Runtime error: %s", err.Error())
+		fwdsvcregistry.SyncAll()
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
 	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
-	Cmd.Flags().BoolVarP(&exitOnFail, "exitonfailure", "", false, "Exit(1) on failure. Useful for forcing a container restart.")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 
@@ -193,8 +195,8 @@ Try:
 		listOptions.LabelSelector = selector
 	}
 
-	// if no namespaces were specified, check config then
-	// explicitly set one to "default"
+	// if no namespaces were specified via the flags, check config from the k8s context
+	// then explicitly set one to "default"
 	if len(namespaces) < 1 {
 		namespaces = []string{"default"}
 		x := rawConfig.CurrentContext
@@ -221,15 +223,28 @@ Try:
 	ipC := 27
 	ipD := 1
 
-	wg := &sync.WaitGroup{}
-
 	stopListenCh := make(chan struct{})
-	defer close(stopListenCh)
+
+	// Listen for shutdown signal from user
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		defer func() {
+			signal.Stop(sigint)
+		}()
+		<-sigint
+		log.Infof("Received shutdown signal")
+		close(stopListenCh)
+	}()
 
 	// if no context override
 	if len(contexts) < 1 {
 		contexts = append(contexts, rawConfig.CurrentContext)
 	}
+
+	fwdsvcregistry.Init(stopListenCh)
+
+	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
 	for i, ctx := range contexts {
 		// k8s REST config
@@ -258,294 +273,149 @@ Try:
 		}
 
 		for ii, namespace := range namespaces {
-			// ShortName field only use short name for the first namespace and context
-			fwdServiceOpts := FwdServiceOpts{
-				Wg:           wg,
-				ClientSet:    clientSet,
-				Context:      ctx,
-				Namespace:    namespace,
-				ListOptions:  listOptions,
-				Hostfile:     &fwdport.HostFileWithLock{Hosts: hostFile},
-				ClientConfig: restConfig,
-				RESTClient:   restClient,
-				ShortName:    i < 1 && ii < 1,
-				Remote:       i > 0,
-				IpC:          byte(ipC),
-				IpD:          ipD,
-				ExitOnFail:   exitOnFail,
-				Domain:       domain,
-			}
-			go fwdServiceOpts.StartListen(stopListenCh)
-
-			ipC = ipC + 1
+			nsWatchesDone.Add(1)
+			go func(ii int, namespace string) {
+				// ShortName field only use short name for the first namespace and context
+				nameSpaceOpts := NamespaceOpts{
+					ClientSet:         clientSet,
+					Context:           ctx,
+					Namespace:         namespace,
+					NamespaceIPLock:   &sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
+					ListOptions:       listOptions,
+					Hostfile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+					ClientConfig:      restConfig,
+					RESTClient:        restClient,
+					ShortName:         i < 1 && ii < 1,
+					Remote:            i > 0,
+					IpC:               byte(ipC + ii),
+					IpD:               ipD,
+					Domain:            domain,
+					ManualStopChannel: stopListenCh,
+				}
+				nameSpaceOpts.watchServiceEvents(stopListenCh)
+				nsWatchesDone.Done()
+			}(ii, namespace)
 		}
 	}
 
-	// for issue #105
-	// increase time sleep here for no pod service
-	// TODO: better way to solve the problem
-	// maybe the wg.Add(1) move to AddServiceHandler and wg.Done() before return?
-	time.Sleep(4 * time.Second)
+	nsWatchesDone.Wait()
+	log.Debugf("All namespace watchers are done")
 
-	wg.Wait()
+	// Shutdown all active services
+	<-fwdsvcregistry.Done()
 
-	log.Printf("Done...\n")
+	log.Infof("Clean exit")
 }
 
-type FwdServiceOpts struct {
-	Wg           *sync.WaitGroup
-	ClientSet    *kubernetes.Clientset
-	Context      string
-	Namespace    string
-	ListOptions  metav1.ListOptions
-	Hostfile     *fwdport.HostFileWithLock
-	ClientConfig *restclient.Config
-	RESTClient   *restclient.RESTClient
-	ShortName    bool
-	Remote       bool
-	IpC          byte
-	IpD          int
-	ExitOnFail   bool
-	Domain       string
+type NamespaceOpts struct {
+	ClientSet         *kubernetes.Clientset
+	Context           string
+	Namespace         string
+	NamespaceIPLock   *sync.Mutex
+	ListOptions       metav1.ListOptions
+	Hostfile          *fwdport.HostFileWithLock
+	ClientConfig      *restclient.Config
+	RESTClient        *restclient.RESTClient
+	ShortName         bool
+	Remote            bool
+	IpC               byte
+	IpD               int
+	Domain            string
+	ManualStopChannel chan struct{}
 }
 
-// StartListen sets up event handlers to act on service-related events.
-func (opts *FwdServiceOpts) StartListen(stopListenCh <-chan struct{}) {
-
+// watchServiceEvents sets up event handlers to act on service-related events.
+func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
+	// Apply filtering
 	optionsModifier := func(options *metav1.ListOptions) {
 		options.FieldSelector = fields.Everything().String()
 		options.LabelSelector = opts.ListOptions.LabelSelector
 	}
-	watchlist := cache.NewFilteredListWatchFromClient(opts.RESTClient, "services", opts.Namespace, optionsModifier)
-	_, controller := cache.NewInformer(watchlist, &v1.Service{}, 0, cache.ResourceEventHandlerFuncs{
-		AddFunc:    opts.AddServiceHandler,
-		DeleteFunc: opts.DeleteServiceHandler,
-		UpdateFunc: opts.UpdateServiceHandler,
-	},
+
+	// Construct the informer object which will query the api server,
+	// and send events to our handler functions
+	// https://engineering.bitnami.com/articles/kubewatch-an-example-of-kubernetes-custom-controller.html
+	_, controller := cache.NewInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				optionsModifier(&options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				options.Watch = true
+				optionsModifier(&options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(options)
+			},
+		},
+		&v1.Service{},
+		0,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    opts.AddServiceHandler,
+			DeleteFunc: opts.DeleteServiceHandler,
+			UpdateFunc: opts.UpdateServiceHandler,
+		},
 	)
 
-	stop := make(chan struct{})
-	go controller.Run(stop)
-	defer close(stop)
-
-	<-stopListenCh
+	// Start the informer, blocking call until we receive a stop signal
+	controller.Run(stopListenCh)
+	log.Infof("Stopped watching Service events in namespace %s", opts.Namespace)
 }
 
-// AddServiceHandler is the event handler for when a new service comes in from k8s.
-func (opts *FwdServiceOpts) AddServiceHandler(obj interface{}) {
+// AddServiceHandler is the event handler for when a new service comes in from k8s (the initial list of services will also be coming in using this event for each).
+func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
 		return
 	}
 
-	log.Debugf("Add service %s namespace %s.", svc.Name, svc.Namespace)
+	// Check if service has a valid config to do forwarding
+	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
+	if selector == "" {
+		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		return
+	}
 
-	opts.ForwardService(svc)
+	// Define a service to forward
+	svcfwd := &fwdservice.ServiceFWD{
+		ClientSet:        opts.ClientSet,
+		Context:          opts.Context,
+		Namespace:        opts.Namespace,
+		Hostfile:         opts.Hostfile,
+		ClientConfig:     opts.ClientConfig,
+		RESTClient:       opts.RESTClient,
+		ShortName:        opts.ShortName,
+		Remote:           opts.Remote,
+		IpC:              opts.IpC,
+		IpD:              &opts.IpD,
+		Domain:           opts.Domain,
+		PodLabelSelector: selector,
+		NamespaceIPLock:  opts.NamespaceIPLock,
+		Svc:              svc,
+		Headless:         svc.Spec.ClusterIP == "None",
+		PortForwards:     make(map[string]*fwdport.PortForwardOpts),
+		DoneChannel:      make(chan struct{}),
+	}
+
+	// Add the service to out catalog of services being forwarded
+	fwdsvcregistry.Add(svcfwd)
 }
 
 // DeleteServiceHandler is the event handler for when a service gets deleted in k8s.
-func (opts *FwdServiceOpts) DeleteServiceHandler(obj interface{}) {
+func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
 		return
 	}
 
-	log.Debugf("Delete service %s namespace %s.", svc.Name, svc.Namespace)
-
-	opts.UnForwardService(svc)
+	// If we are currently forwarding this service, shut it down.
+	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace)
 }
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It currently does not do anything.
-func (opts *FwdServiceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
+func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
 		log.Printf("update service %s.", key)
 	}
-}
-
-// ForwardService selects one or all pods behind a service, and invokes the forwarding setup for that or those pod(s).
-func (opts *FwdServiceOpts) ForwardService(svc *v1.Service) {
-	set := labels.Set(svc.Spec.Selector)
-	selector := set.AsSelector().String()
-
-	if selector == "" {
-		log.Warnf("WARNING: No Pod selector for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
-		return
-	}
-
-	listOpts := metav1.ListOptions{LabelSelector: selector}
-
-	pods, err := opts.ClientSet.CoreV1().Pods(svc.Namespace).List(listOpts)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			log.Warnf("WARNING: No Pods found for %s: %s\n", selector, err.Error())
-		} else {
-			log.Warnf("WARNING: Error in List pods for %s: %s\n", selector, err.Error())
-		}
-		return
-	}
-
-	// for issue #99
-	// add this check for the service scale down to 0 situation.
-	// TODO: a better way to do this check.
-	if len(pods.Items) < 1 {
-		log.Warnf("WARNING: No Running Pods returned for service %s in %s on cluster %s.\n", svc.Name, svc.Namespace, svc.ClusterName)
-		return
-	}
-
-	// normal service portforward the first pod as service name.
-	// headless service not only forward first Pod as service name, but also portforward all pods.
-	if svc.Spec.ClusterIP == "None" {
-		opts.ForwardFirstPodInService(pods, svc)
-		opts.ForwardAllPodInService(pods, svc)
-	} else {
-		opts.ForwardFirstPodInService(pods, svc)
-	}
-}
-
-func (opts *FwdServiceOpts) UnForwardService(svc *v1.Service) {
-
-	utils.Lock.Lock()
-	// Search in the PortForwardOpts entries for for this service. If it is currently active,
-	// stop the forwarding and threadSafe delete the PortForward obj.
-	for i := 0; i < len(AllPortForwardOpts); i++ {
-		pfo := AllPortForwardOpts[i]
-		if pfo.NativeServiceName == svc.Name && pfo.Namespace == svc.Namespace {
-			pfo.Stop()
-			AllPortForwardOpts = append(AllPortForwardOpts[:i], AllPortForwardOpts[i+1:]...)
-			i--
-		}
-	}
-	utils.Lock.Unlock()
-}
-
-// LoopPodsToForward starts the portforwarding for each pod
-func (opts *FwdServiceOpts) LoopPodsToForward(pods []v1.Pod, svc *v1.Service) {
-	publisher := &fwdpub.Publisher{
-		PublisherName: "Services",
-		Output:        false,
-	}
-
-	// If multiple pods need to be forwarded, they all get their own host entry
-	includePodNameInHost := len(pods) > 1
-
-	for _, pod := range pods {
-
-		podPort := ""
-		svcName := ""
-
-		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, opts.IpC, opts.IpD, podPort)
-		if err != nil {
-			log.Warnf("WARNING: error readying interface: %s\n", err)
-		}
-		opts.IpD = dInc
-
-		for _, port := range svc.Spec.Ports {
-
-			podPort = port.TargetPort.String()
-			localPort := strconv.Itoa(int(port.Port))
-
-			if _, err := strconv.Atoi(podPort); err != nil {
-				// search a pods containers for the named port
-				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok {
-					podPort = namedPodPort
-				}
-			}
-
-			serviceHostName := svc.Name
-
-			if includePodNameInHost {
-				serviceHostName = pod.Name + "." + serviceHostName
-			}
-
-			svcName = serviceHostName
-
-			if !opts.ShortName {
-				serviceHostName = serviceHostName + "." + pod.Namespace
-			}
-
-			if opts.Domain != "" {
-				serviceHostName = serviceHostName + "." + opts.Domain
-			}
-
-			if opts.Remote {
-				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, opts.Context)
-			}
-
-			log.Debugf("Resolving:    %s to %s\n",
-				serviceHostName,
-				localIp.String(),
-			)
-
-			log.Printf("Port-Forward: %s:%d to pod %s:%s\n",
-				serviceHostName,
-				port.Port,
-				pod.Name,
-				podPort,
-			)
-
-			pfo := &fwdport.PortForwardOpts{
-				Out:               publisher,
-				Config:            opts.ClientConfig,
-				ClientSet:         opts.ClientSet,
-				RESTClient:        opts.RESTClient,
-				ServiceOperator:   opts,
-				Context:           opts.Context,
-				Namespace:         pod.Namespace,
-				Service:           svcName,
-				NativeServiceName: svc.Name,
-				PodName:           pod.Name,
-				PodPort:           podPort,
-				LocalIp:           localIp,
-				LocalPort:         localPort,
-				Hostfile:          opts.Hostfile,
-				ShortName:         opts.ShortName,
-				Remote:            opts.Remote,
-				ExitOnFail:        exitOnFail,
-				Domain:            domain,
-			}
-			AllPortForwardOpts = utils.ThreadSafeAppend(AllPortForwardOpts, pfo)
-
-			opts.Wg.Add(1)
-			go func() {
-				err := pfo.PortForward()
-				if err != nil {
-					log.Printf("ERROR: %s", err.Error())
-				}
-
-				log.Warnf("Stopped forwarding %s in %s.", pfo.Service, pfo.Namespace)
-
-				opts.Wg.Done()
-			}()
-
-		}
-
-	}
-}
-
-// ForwardFirstPodInService will set up portforwarding to a single pod of the service.
-// A single entry for the service will be added to the hosts file.
-func (opts *FwdServiceOpts) ForwardFirstPodInService(pods *v1.PodList, svc *v1.Service) {
-	opts.LoopPodsToForward([]v1.Pod{pods.Items[0]}, svc)
-}
-
-// ForwardAllPodInService will set up portforwarding for each pod in the service. A separate entry
-// for every pod will thus be added to the hosts file and individual pods can be addressed.
-func (opts *FwdServiceOpts) ForwardAllPodInService(pods *v1.PodList, svc *v1.Service) {
-	opts.LoopPodsToForward(pods.Items, svc)
-}
-
-func portSearch(portName string, containers []v1.Container) (string, bool) {
-
-	for _, container := range containers {
-		for _, cp := range container.Ports {
-			if cp.Name == portName {
-				return fmt.Sprint(cp.ContainerPort), true
-			}
-		}
-	}
-
-	return "", false
 }

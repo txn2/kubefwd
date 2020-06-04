@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -13,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
+
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +21,13 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
+
+// PodSyncer interface is used to represent a fwdservice.ServiceFWD reference, which cannot be used directly due to circular imports.
+// It's a reference from a pod to it's parent service.
+type ServiceFWD interface {
+	String() string
+	SyncPodForwards(bool)
+}
 
 type HostFileWithLock struct {
 	Hosts *txeh.Hosts
@@ -36,34 +42,31 @@ type HostsParams struct {
 }
 
 type PortForwardOpts struct {
-	Out               *fwdpub.Publisher
-	Config            *restclient.Config
-	ClientSet         *kubernetes.Clientset
-	RESTClient        *restclient.RESTClient
-	ServiceOperator   OperatorInterface
-	Context           string
-	Namespace         string
-	Service           string
-	NativeServiceName string
-	PodName           string
-	PodPort           string
-	LocalIp           net.IP
-	LocalPort         string
-	Hostfile          *HostFileWithLock
-	ExitOnFail        bool
-	ShortName         bool
-	Remote            bool
-	Domain            string
-	HostsParams       *HostsParams
-	ManualStopChan    chan struct{}
+	Out            *fwdpub.Publisher
+	Config         *restclient.Config
+	ClientSet      *kubernetes.Clientset
+	RESTClient     *restclient.RESTClient
+	Context        string
+	Namespace      string
+	Service        string
+	ServiceFwd     ServiceFWD
+	PodName        string
+	PodPort        string
+	LocalIp        net.IP
+	LocalPort      string
+	Hostfile       *HostFileWithLock
+	ShortName      bool
+	Remote         bool
+	Domain         string
+	HostsParams    *HostsParams
+	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
+	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
 }
 
-type OperatorInterface interface {
-	ForwardService(svc *v1.Service)
-	UnForwardService(svc *v1.Service)
-}
-
+// PortForward does the portforward for a single pod.
+// It is a blocking call and will return when an error occured of after a cancellation signal has been received.
 func (pfo *PortForwardOpts) PortForward() error {
+	defer close(pfo.DoneChan)
 
 	transport, upgrader, err := spdy.RoundTripperFor(pfo.Config)
 	if err != nil {
@@ -78,46 +81,51 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	fwdPorts := []string{fmt.Sprintf("%s:%s", pfo.LocalPort, pfo.PodPort)}
 
-	restClient := pfo.RESTClient
 	// if need to set timeout, set it here.
 	// restClient.Client.Timeout = 32
-	req := restClient.Post().
+	req := pfo.RESTClient.Post().
 		Resource("pods").
 		Namespace(pfo.Namespace).
 		Name(pfo.PodName).
 		SubResource("portforward")
 
-	pfStopChannel := make(chan struct{}, 1)
-	pfReadyChannel := make(chan struct{})
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-	pfo.ManualStopChan = make(chan struct{})
-	signalChan := make(chan struct{})
-
-	defer signal.Stop(signals)
+	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
+	downstreamStopChannel := make(chan struct{}) // TODO: can this be the same as pfStopChannel?
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
 	pfo.BuildTheHostsParams()
 	pfo.AddHosts()
 
+	// Wait until the stop signal is received from above
 	go func() {
-		select {
-		case <-signals:
-		case <-pfo.ManualStopChan:
-		}
-		close(signalChan)
-		if pfStopChannel != nil {
-			pfo.removeHosts()
-			pfo.removeInterfaceAlias()
-			close(pfStopChannel)
-		}
+		<-pfo.ManualStopChan
+		close(downstreamStopChannel)
+		pfo.removeHosts()
+		pfo.removeInterfaceAlias()
+		close(pfStopChannel)
+
 	}()
+
+	// Waiting until the pod is runnning
+	pod, err := pfo.WaitUntilPodRunning(downstreamStopChannel)
+	if err != nil {
+		pfo.Stop()
+		return err
+	} else if pod == nil {
+		// if err is not nil but pod is nil
+		// mean service deleted but pod is not runnning.
+		// No error, just return
+		pfo.Stop()
+		return nil
+	}
+
+	// Listen for pod is deleted
+	go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
 
 	var address []string
 	if pfo.LocalIp != nil {
@@ -126,30 +134,14 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	// Waiting for the pod is runnning
-	pod, err := pfo.WaitForPodRunning(signalChan)
-	if err != nil {
-		pfo.Stop()
-		return err
-	}
-	// if err is not nil but pod is nil
-	// mean service deleted but pod is not runnning.
-	// the pfo.Stop() has called yet, needn't call again
-	if pod == nil {
-		return nil
-	}
-
-	// Listen for pod is deleted
-	go pfo.ListenUntilPodDeleted(signalChan, pod)
-
-	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, pfReadyChannel, &p, &p)
+	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		pfo.Stop()
 		return err
 	}
 
-	err = fw.ForwardPorts()
-	if err != nil {
+	// Blocking call
+	if err = fw.ForwardPorts(); err != nil {
 		pfo.Stop()
 		return err
 	}
@@ -260,7 +252,7 @@ func (pfo *PortForwardOpts) removeInterfaceAlias() {
 }
 
 // Waiting for the pod running
-func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Pod, error) {
+func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {
 	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(pfo.PodName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
@@ -274,9 +266,6 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Po
 	if err != nil {
 		return nil, err
 	}
-	RunningChannel := make(chan struct{})
-
-	defer close(RunningChannel)
 
 	// if the os.signal (we enter the Ctrl+C)
 	// or ManualStop (service delete or some thing wrong)
@@ -287,9 +276,7 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Po
 	go func() {
 		defer watcher.Stop()
 		select {
-		case <-signalsChan:
-		case <-RunningChannel:
-		case <-pfo.ManualStopChan:
+		case <-stopChannel:
 		case <-time.After(time.Second * 300):
 		}
 	}()
@@ -311,30 +298,20 @@ func (pfo *PortForwardOpts) WaitForPodRunning(signalsChan chan struct{}) (*v1.Po
 }
 
 // listen for pod is deleted
-func (pfo *PortForwardOpts) ListenUntilPodDeleted(signalsChan chan struct{}, pod *v1.Pod) {
+func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
 		return
 	}
 
+	// Listen for stop signal from above
 	go func() {
-		defer watcher.Stop()
-		select {
-		case <-pfo.ManualStopChan:
-		case <-signalsChan:
-		}
+		<-stopChannel
+		watcher.Stop()
 	}()
 
-	// watcher until the pod is deleted,
-	// then remove forward service and forward service again.
-	// TODO:
-	// now if the service is normal service it's ok, the firstPod
-	// deleted event will forward service again.
-	// but if the service is headless service, all pod will be forward.
-	// so every pod deleted event will trigger a forward service again function.
-	// we'll get a pure /etc/hosts few times after.
-	// maybe we can fix here later.
+	// watcher until the pod is deleted, then trigger a syncpodforwards
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
@@ -342,21 +319,22 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(signalsChan chan struct{}, pod
 		}
 		switch event.Type {
 		case watch.Deleted:
-			log.Warnf("%s Pod deleted, restart the %s service portforward.", pod.ObjectMeta.Name, pfo.NativeServiceName)
-
-			svc, err := pfo.ClientSet.CoreV1().Services(pfo.Namespace).Get(pfo.NativeServiceName, metav1.GetOptions{})
-			if err != nil {
-				return
-			}
-
-			pfo.ServiceOperator.UnForwardService(svc)
-			pfo.ServiceOperator.ForwardService(svc)
+			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		}
 	}
 }
 
-// this method to stop PortForward for the pfo
+// Stop sends the shutdown signal to the portforwarding process.
+// In case the shutdownsignal was already given before, this is a no-op.
 func (pfo *PortForwardOpts) Stop() {
+	select {
+	case <-pfo.DoneChan:
+		return
+	case <-pfo.ManualStopChan:
+		return
+	default:
+	}
 	close(pfo.ManualStopChan)
 }
