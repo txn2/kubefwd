@@ -188,6 +188,7 @@ github.com/opencontainers/go-digest v1.0.0-rc1/go.mod h1:cMLVZDEM3+U2I4VmLI6N8jQ
 github.com/pelletier/go-toml v1.2.0/go.mod h1:5z9KED0ma1S8pY6P1sdut58dfprrGBbd/94hg7ilaic=
 github.com/peterbourgon/diskv v2.0.1+incompatible h1:UBdAOUP5p4RWqPBg048CAvpKN+vxiaj6gdUUzhl4XmI=
 github.com/peterbourgon/diskv v2.0.1+incompatible/go.mod h1:uqqh8zWWbv1HBMNONnaR/tNboyR3/BZd58JJSHlUSCU=
+github.com/pingcap/errors v0.11.4/go.mod h1:Oi8TUi2kEtXXLMJk9l1cGmz20kV3TaQ0usTwv5KuLY8=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
@@ -348,10 +349,13 @@ k8s.io/api v0.0.0-20191108065827-59e77acf588f h1:ZTXCVdYGBbAblNUJ5B19ztoy6WHMNrP
 k8s.io/api v0.0.0-20191108065827-59e77acf588f/go.mod h1:uQDmBYHoPSuhbg8FGTRzrOdaNqLiws/LAtBrHv0kN5U=
 k8s.io/apimachinery v0.0.0-20191108065633-c18f71bf2947 h1:f3H3Rf7KD9fjmmbIMwxBye3ctEuXnbskaX/l1xy+68E=
 k8s.io/apimachinery v0.0.0-20191108065633-c18f71bf2947/go.mod h1:nEP/6rwhzfljWYGVS6pfyES3ipZTR19vzMnSM+ur3ho=
+k8s.io/apimachinery v0.18.3 h1:pOGcbVAhxADgUYnjS08EFXs9QMl8qaH5U4fr5LGUrSk=
 k8s.io/cli-runtime v0.0.0-20191108072024-9fe36560f3af h1:lWKOjXCJ/PVS6pJvHcDs1RyG47Zq+WFjs/DvK1CLNP0=
 k8s.io/cli-runtime v0.0.0-20191108072024-9fe36560f3af/go.mod h1:gS0U9D/luQtMGiNl4Y5IhcrmW+xwbuTiqPLv+plcW20=
 k8s.io/client-go v0.0.0-20191108070106-f8f007fd456c h1:TaCF427jtkNsXDzSNXOFFox1DePy6WX9Nf8E1vriHys=
 k8s.io/client-go v0.0.0-20191108070106-f8f007fd456c/go.mod h1:D6hkzmLWI59QLvDVt8tlD5J2X1YDjcattS6vw8lP1hc=
+k8s.io/client-go v1.5.1 h1:XaX/lo2/u3/pmFau8HN+sB5C/b4dc4Dmm2eXjBH4p1E=
+k8s.io/client-go v11.0.0+incompatible h1:LBbX2+lOwY9flffWlJM7f1Ct8V2SRNiMRDFeiwnJo9o=
 k8s.io/code-generator v0.0.0-20191108065441-3c1097069dc3/go.mod h1:OJTI2RPXj6kq4bfFqT1JrTEC1S4toTWinGOm1O8jUuY=
 k8s.io/component-base v0.0.0-20191108070619-4b9966ca0181 h1:dAWmrp5YxoO7PAbfQ1BAHYAdmoGLb/NbusxGyladzDA=
 k8s.io/component-base v0.0.0-20191108070619-4b9966ca0181/go.mod h1:OnLnQI0ti1wNBL+pCumQcG9Plt1S6L+lOXsQwQJ+m9g=
