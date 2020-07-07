@@ -2,11 +2,11 @@ package fwdservice
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/pingcap/errors"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -110,8 +110,8 @@ func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
 	// normal service portforward the first pod as service name. headless service not only forward first Pod as service name, but also portforward all pods.
 	if len(k8sPods) != 0 {
 		if svcfwd.Headless {
-			svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]})
-			svcfwd.LoopPodsToForward(k8sPods)
+			svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, true)
+			svcfwd.LoopPodsToForward(k8sPods, false)
 		} else {
 			// Check if currently we are forwarding a pod which is good to keep using
 			podNameToKeep := ""
@@ -137,21 +137,18 @@ func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
 
 			// If no good pod was being forwarded already, start one
 			if podNameToKeep == "" {
-				svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]})
+				svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
 			}
 		}
 	}
 }
 
 // LoopPodsToForward starts the portforwarding for each pod in the given list
-func (svcfwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod) {
+func (svcfwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost bool) {
 	publisher := &fwdpub.Publisher{
 		PublisherName: "Services",
 		Output:        false,
 	}
-
-	// If multiple pods need to be forwarded, they all get their own host entry
-	includePodNameInHost := len(pods) > 1
 
 	// Ip address handout is a critical section for synchronization, use a lock which synchronizes inside each namespace.
 	svcfwd.NamespaceIPLock.Lock()
