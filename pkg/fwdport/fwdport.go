@@ -170,13 +170,12 @@ func (pfo *PortForwardOpts) AddHosts() {
 
 	pfo.Hostfile.Lock()
 	if pfo.Remote {
-
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
 		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
 		if pfo.Domain != "" {
 			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service+"."+pfo.Domain)
 		}
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service)
+		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.fullServiceName)
 
 	} else {
 
