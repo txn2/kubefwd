@@ -123,7 +123,6 @@ func buildFwdServiceOpts(t *testing.T, namespace string) *FwdServiceOpts {
 		ClientConfig: restConfig,
 		RESTClient:   restClient,
 		ShortName:    true,
-		Remote:       false,
 		IpC:          byte(ipC),
 		IpD:          ipD,
 		ExitOnFail:   exitOnFail,

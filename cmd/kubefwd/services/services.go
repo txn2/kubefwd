@@ -245,6 +245,9 @@ Try:
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
+	// ShortName field only used if one namespace/context
+	useFullName := len(namespaces) > 1 || len(contexts) > 1
+
 	for i, ctx := range contexts {
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
@@ -273,8 +276,7 @@ Try:
 
 		for ii, namespace := range namespaces {
 			nsWatchesDone.Add(1)
-			go func(ii int, namespace string) {
-				// ShortName field only use short name for the first namespace and context
+			go func(ctx string, namespace string, ipC int, ipD int) {
 				nameSpaceOpts := NamespaceOpts{
 					ClientSet:         clientSet,
 					Context:           ctx,
@@ -284,16 +286,15 @@ Try:
 					Hostfile:          &fwdport.HostFileWithLock{Hosts: hostFile},
 					ClientConfig:      restConfig,
 					RESTClient:        restClient,
-					ShortName:         i < 1 && ii < 1,
-					Remote:            i > 0,
-					IpC:               byte(ipC + ii),
+					ShortName:         !useFullName,
+					IpC:               byte(ipC),
 					IpD:               ipD,
 					Domain:            domain,
 					ManualStopChannel: stopListenCh,
 				}
 				nameSpaceOpts.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
-			}(ii, namespace)
+			}(ctx, namespace, ipC+i, ipD+ii)
 		}
 	}
 
@@ -316,7 +317,6 @@ type NamespaceOpts struct {
 	ClientConfig      *restclient.Config
 	RESTClient        *restclient.RESTClient
 	ShortName         bool
-	Remote            bool
 	IpC               byte
 	IpD               int
 	Domain            string
@@ -357,7 +357,7 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
-	log.Infof("Stopped watching Service events in namespace %s", opts.Namespace)
+	log.Infof("Stopped watching Service events in namespace %s, context %s", opts.Namespace, opts.Context)
 }
 
 // AddServiceHandler is the event handler for when a new service comes in from k8s (the initial list of services will also be coming in using this event for each).
@@ -383,7 +383,6 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		ClientConfig:     opts.ClientConfig,
 		RESTClient:       opts.RESTClient,
 		ShortName:        opts.ShortName,
-		Remote:           opts.Remote,
 		IpC:              opts.IpC,
 		IpD:              &opts.IpD,
 		Domain:           opts.Domain,
