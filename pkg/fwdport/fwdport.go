@@ -56,7 +56,6 @@ type PortForwardOpts struct {
 	LocalPort      string
 	Hostfile       *HostFileWithLock
 	ShortName      bool
-	Remote         bool
 	Domain         string
 	HostsParams    *HostsParams
 	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
@@ -154,11 +153,8 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 	pfo.HostsParams = &HostsParams{}
 	localServiceName := pfo.Service
 	nsServiceName := pfo.Service + "." + pfo.Namespace
-	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
 	svcServiceName := fmt.Sprintf("%s.%s.svc", pfo.Service, pfo.Namespace)
-	if pfo.Remote {
-		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
-	}
 	pfo.HostsParams.localServiceName = localServiceName
 	pfo.HostsParams.nsServiceName = nsServiceName
 	pfo.HostsParams.fullServiceName = fullServiceName
@@ -169,40 +165,27 @@ func (pfo *PortForwardOpts) BuildTheHostsParams() {
 func (pfo *PortForwardOpts) AddHosts() {
 
 	pfo.Hostfile.Lock()
-	if pfo.Remote {
-
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
+	if pfo.ShortName {
 		if pfo.Domain != "" {
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service+"."+pfo.Domain)
+			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
+			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName+"."+pfo.Domain)
 		}
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.Service)
-
-	} else {
-
-		if pfo.ShortName {
-			if pfo.Domain != "" {
-				pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
-				pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName+"."+pfo.Domain)
-			}
-			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName)
-		}
-
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.fullServiceName)
-
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.svcServiceName)
-
-		if pfo.Domain != "" {
-			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
-			pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName+"."+pfo.Domain)
-		}
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
-		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName)
-
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
+		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.localServiceName)
 	}
+
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
+	pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.fullServiceName)
+
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
+	pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.svcServiceName)
+
+	if pfo.Domain != "" {
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
+		pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName+"."+pfo.Domain)
+	}
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
+	pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), pfo.HostsParams.nsServiceName)
 	err := pfo.Hostfile.Hosts.Save()
 	if err != nil {
 		log.Error("Error saving hosts file", err)
@@ -223,18 +206,16 @@ func (pfo *PortForwardOpts) removeHosts() {
 		return
 	}
 
-	if !pfo.Remote {
-		if pfo.Domain != "" {
-			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.localServiceName + "." + pfo.Domain))
-			// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.nsServiceName + "." + pfo.Domain))
-			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
-			pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
-		}
-		// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.localServiceName)
-		// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.nsServiceName)
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
+	if pfo.Domain != "" {
+		// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.localServiceName + "." + pfo.Domain))
+		// fmt.Printf("removeHost: %s\r\n", (pfo.HostsParams.nsServiceName + "." + pfo.Domain))
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
+		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
 	}
+	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.localServiceName)
+	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.nsServiceName)
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.localServiceName)
+	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.nsServiceName)
 	// fmt.Printf("removeHost: %s\r\n", pfo.HostsParams.fullServiceName)
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
 	pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)

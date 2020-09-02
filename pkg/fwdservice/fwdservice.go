@@ -29,7 +29,6 @@ type ServiceFWD struct {
 	ClientConfig *restclient.Config
 	RESTClient   *restclient.RESTClient
 	ShortName    bool
-	Remote       bool
 	IpC          byte
 	IpD          *int
 	Domain       string
@@ -44,7 +43,7 @@ type ServiceFWD struct {
 }
 
 func (svcFwd *ServiceFWD) String() string {
-	return svcFwd.Svc.Name + "." + svcFwd.Namespace
+	return svcFwd.Svc.Name + "." + svcFwd.Namespace + "." + svcFwd.Context
 }
 
 // GetPodsForService queries k8s and returns all pods backing this service
@@ -189,25 +188,15 @@ func (svcfwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			svcName = serviceHostName
 
-			if !svcfwd.ShortName {
-				serviceHostName = serviceHostName + "." + pod.Namespace
-			}
-
-			if svcfwd.Domain != "" {
-				serviceHostName = serviceHostName + "." + svcfwd.Domain
-			}
-
-			if svcfwd.Remote {
-				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, svcfwd.Context)
-			}
-
 			log.Debugf("Resolving:    %s to %s\n",
 				serviceHostName,
 				localIp.String(),
 			)
 
-			log.Printf("Port-Forward: %s:%d to pod %s:%s\n",
-				serviceHostName,
+			log.Printf("Port-Forward: %s.%s.svc.cluster.%s:%d to pod %s:%s\n",
+				svcfwd.Svc.Name,
+				svcfwd.Svc.Namespace,
+				svcfwd.Context,
 				port.Port,
 				pod.Name,
 				podPort,
@@ -228,7 +217,6 @@ func (svcfwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				LocalPort:  localPort,
 				Hostfile:   svcfwd.Hostfile,
 				ShortName:  svcfwd.ShortName,
-				Remote:     svcfwd.Remote,
 				Domain:     svcfwd.Domain,
 
 				ManualStopChan: make(chan struct{}),
