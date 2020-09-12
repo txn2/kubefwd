@@ -17,10 +17,12 @@ package services
 
 import (
 	"fmt"
+	"github.com/bep/debounce"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
@@ -390,6 +392,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		NamespaceIPLock:  opts.NamespaceIPLock,
 		Svc:              svc,
 		Headless:         svc.Spec.ClusterIP == "None",
+		SyncDebouncer:    debounce.New(5 * time.Second),
 		PortForwards:     make(map[string]*fwdport.PortForwardOpts),
 		DoneChannel:      make(chan struct{}),
 	}

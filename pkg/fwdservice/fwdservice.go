@@ -38,6 +38,7 @@ type ServiceFWD struct {
 	Svc              *v1.Service                         // Reference to the k8s service.
 	Headless         bool                                // A headless service will forward all of the pods, while normally only a single pod is forwarded.
 	LastSyncedAt     time.Time                           // When was the set of pods last synced
+	SyncDebouncer    func(f func())                      // Use debouncer for listing pods so we don't hammer the k8s when a bunch of changes happen at once
 	PortForwards     map[string]*fwdport.PortForwardOpts // A mapping of all the pods currently being forwarded. key = podname
 	DoneChannel      chan struct{}                       // After shutdown is complete, this channel will be closed
 }
@@ -76,69 +77,80 @@ func (svcfwd *ServiceFWD) GetPodsForService() []v1.Pod {
 // SyncPodForwards selects one or all pods behind a service, and invokes the forwarding setup for that or those pod(s).
 // It will remove pods in-mem that are no longer returned by k8s, should these not be correctly deleted.
 func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
-	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call. This would hammer k8s with load needlessly.
-	// Therefore keep a timestamp from when this was last called and only allow call if the previous one was not too recent.
-	if !force && time.Since(svcfwd.LastSyncedAt) < 10*time.Minute {
-		log.Debugf("Skipping pods refresh for %s due to rate limiting", svcfwd)
-		return
-	}
-	defer func() { svcfwd.LastSyncedAt = time.Now() }()
+	sync := func() {
+		defer func() { svcfwd.LastSyncedAt = time.Now() }()
 
-	k8sPods := svcfwd.GetPodsForService()
+		k8sPods := svcfwd.GetPodsForService()
 
-	// If no pods are found currently. Will try again next resync period
-	if len(k8sPods) == 0 {
-		log.Warnf("WARNING: No Running Pods returned for service %s", svcfwd)
-		return
-	}
-
-	// Check if the pods currently being forwarded still exist in k8s and if they are not in a (pre-)running state, if not: remove them
-	for _, podName := range svcfwd.ListPodNames() {
-		keep := false
-		for _, pod := range k8sPods {
-			if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
-				keep = true
-				break
-			}
+		// If no pods are found currently. Will try again next resync period
+		if len(k8sPods) == 0 {
+			log.Warnf("WARNING: No Running Pods returned for service %s", svcfwd)
+			return
 		}
-		if !keep {
-			svcfwd.RemovePod(podName)
-		}
-	}
-	// Set up portforwarding for one or all of these pods
-	// normal service portforward the first pod as service name. headless service not only forward first Pod as service name, but also portforward all pods.
-	if len(k8sPods) != 0 {
-		if svcfwd.Headless {
-			svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, true)
-			svcfwd.LoopPodsToForward(k8sPods, false)
-		} else {
-			// Check if currently we are forwarding a pod which is good to keep using
-			podNameToKeep := ""
-			for _, podName := range svcfwd.ListPodNames() {
-				if podNameToKeep != "" {
+
+		// Check if the pods currently being forwarded still exist in k8s and if they are not in a (pre-)running state, if not: remove them
+		for _, podName := range svcfwd.ListPodNames() {
+			keep := false
+			for _, pod := range k8sPods {
+				if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+					keep = true
 					break
 				}
-				for _, pod := range k8sPods {
-					if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
-						podNameToKeep = pod.Name
-						break
-					}
-				}
 			}
-
-			// Stop forwarding others, should there be. In case none of the currently forwarded pods are good to keep,
-			// podNameToKeep will be the empty string, and the comparison will mean we will remove all pods, which is the desired behaviour.
-			for _, podName := range svcfwd.ListPodNames() {
-				if podName != podNameToKeep {
-					svcfwd.RemovePod(podName)
-				}
-			}
-
-			// If no good pod was being forwarded already, start one
-			if podNameToKeep == "" {
-				svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+			if !keep {
+				svcfwd.RemovePod(podName)
 			}
 		}
+		// Set up portforwarding for one or all of these pods
+		// normal service portforward the first pod as service name. headless service not only forward first Pod as service name, but also portforward all pods.
+		if len(k8sPods) != 0 {
+			if svcfwd.Headless {
+				svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, true)
+				svcfwd.LoopPodsToForward(k8sPods, false)
+			} else {
+				// Check if currently we are forwarding a pod which is good to keep using
+				podNameToKeep := ""
+				for _, podName := range svcfwd.ListPodNames() {
+					if podNameToKeep != "" {
+						break
+					}
+					for _, pod := range k8sPods {
+						if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+							podNameToKeep = pod.Name
+							break
+						}
+					}
+				}
+
+				// Stop forwarding others, should there be. In case none of the currently forwarded pods are good to keep,
+				// podNameToKeep will be the empty string, and the comparison will mean we will remove all pods, which is the desired behaviour.
+				for _, podName := range svcfwd.ListPodNames() {
+					if podName != podNameToKeep {
+						svcfwd.RemovePod(podName)
+					}
+				}
+
+				// If no good pod was being forwarded already, start one
+				if podNameToKeep == "" {
+					svcfwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+				}
+			}
+		}
+	}
+
+	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call.
+	// This would hammer k8s with load needlessly.  We therefore use a debouncer to only update pods
+	// if things have been stable for at least a few seconds.  However, if things never stabilize we
+	// will still reload this information at least once every 5 minutes.
+	if force || time.Since(svcfwd.LastSyncedAt) > 5*time.Minute {
+		// Replace current debounced function with no-op
+		svcfwd.SyncDebouncer(func() {})
+
+		// Do the syncing work
+		sync()
+	} else {
+		// Queue sync
+		svcfwd.SyncDebouncer(sync)
 	}
 }
 
