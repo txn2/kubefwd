@@ -21,7 +21,7 @@ func (p *Publisher) Write(b []byte) (int, error) {
 	outputString = strings.TrimSuffix(outputString, "\n")
 
 	if p.Output {
-		fmt.Printf("Out: %s, %s, %s", p.PublisherName, p.ProducerName, outputString)
+		fmt.Printf("Out: %s, %s, %s\n", p.PublisherName, p.ProducerName, outputString)
 	}
 	return 0, nil
 }

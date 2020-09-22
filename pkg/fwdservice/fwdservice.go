@@ -158,7 +158,7 @@ func (svcfwd *ServiceFWD) SyncPodForwards(force bool) {
 func (svcfwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost bool) {
 	publisher := &fwdpub.Publisher{
 		PublisherName: "Services",
-		Output:        false,
+		Output:        log.IsLevelEnabled(log.DebugLevel),
 	}
 
 	// Ip address handout is a critical section for synchronization, use a lock which synchronizes inside each namespace.
