@@ -113,7 +113,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		return err
 	} else if pod == nil {
 		// if err is not nil but pod is nil
-		// mean service deleted but pod is not runnning.
+		// mean service deleted but pod is not running.
 		// No error, just return
 		pfo.Stop()
 		return nil
@@ -123,6 +123,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
+	p.Output = log.IsLevelEnabled(log.DebugLevel)
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
 
