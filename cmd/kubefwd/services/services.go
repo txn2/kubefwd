@@ -222,7 +222,6 @@ Try:
 	// ipD is the class D for the local IP address
 	// increment this for each service in each cluster
 	ipC := 27
-	ipD := 1
 
 	stopListenCh := make(chan struct{})
 
@@ -276,9 +275,11 @@ Try:
 			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
 		}
 
-		for ii, namespace := range namespaces {
+		ipD := 1
+
+		for _, namespace := range namespaces {
 			nsWatchesDone.Add(1)
-			go func(ctx string, namespace string, ipC int, ipD int) {
+			go func(ctx string, namespace string, ipC int) {
 				nameSpaceOpts := NamespaceOpts{
 					ClientSet:         clientSet,
 					Context:           ctx,
@@ -290,13 +291,13 @@ Try:
 					RESTClient:        restClient,
 					ShortName:         !useFullName,
 					IpC:               byte(ipC),
-					IpD:               ipD,
+					IpD:               &ipD,
 					Domain:            domain,
 					ManualStopChannel: stopListenCh,
 				}
 				nameSpaceOpts.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
-			}(ctx, namespace, ipC+i, ipD+ii)
+			}(ctx, namespace, ipC+i)
 		}
 	}
 
@@ -320,7 +321,7 @@ type NamespaceOpts struct {
 	RESTClient        *restclient.RESTClient
 	ShortName         bool
 	IpC               byte
-	IpD               int
+	IpD               *int
 	Domain            string
 	ManualStopChannel chan struct{}
 }
@@ -386,7 +387,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		RESTClient:       opts.RESTClient,
 		ShortName:        opts.ShortName,
 		IpC:              opts.IpC,
-		IpD:              &opts.IpD,
+		IpD:              opts.IpD,
 		Domain:           opts.Domain,
 		PodLabelSelector: selector,
 		NamespaceIPLock:  opts.NamespaceIPLock,
