@@ -39,7 +39,7 @@ kubectl config current-context
 If you are running MacOS and use [homebrew] you can install **kubefwd** directly from the [txn2] tap:
 
 ```bash
-brew install txn2/tap/kubefwd
+brew install kubefwd
 ```
 
 To upgrade:
