@@ -100,16 +100,16 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	for _, namespace := range namespaces {
 		for _, perm := range requiredPermissions {
 			perm.Namespace = namespace
-			ssar := &authorizationv1.SelfSubjectAccessReview{
+			var accessReview = &authorizationv1.SelfSubjectAccessReview{
 				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 					ResourceAttributes: &perm,
 				},
 			}
-			ssar, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(ssar)
+			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(accessReview)
 			if err != nil {
 				return err
 			}
-			if !ssar.Status.Allowed {
+			if !accessReview.Status.Allowed {
 				return fmt.Errorf("Missing RBAC permission: %v", perm)
 			}
 		}
@@ -309,6 +309,7 @@ Try:
 	log.Infof("Clean exit")
 }
 
+// NamespaceOpts
 type NamespaceOpts struct {
 	ClientSet         *kubernetes.Clientset
 	Context           string

@@ -20,6 +20,7 @@ type ServicesRegistry struct {
 
 var svcRegistry *ServicesRegistry
 
+// Init
 func Init(shutDownSignal <-chan struct{}) {
 	svcRegistry = &ServicesRegistry{
 		mutex:          &sync.Mutex{},
@@ -35,6 +36,7 @@ func Init(shutDownSignal <-chan struct{}) {
 	}()
 }
 
+// Done
 func Done() <-chan struct{} {
 	if svcRegistry != nil {
 		return svcRegistry.doneSignal

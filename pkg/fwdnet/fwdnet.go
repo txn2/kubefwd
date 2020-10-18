@@ -31,12 +31,12 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 
 		ip = net.IPv4(a, b, c, byte(i))
 
-		iface, err := net.InterfaceByName("lo0")
+		networkInterface, err := net.InterfaceByName("lo0")
 		if err != nil {
 			return net.IP{}, i, err
 		}
 
-		addrs, err := iface.Addrs()
+		addrs, err := networkInterface.Addrs()
 		if err != nil {
 			return net.IP{}, i, err
 		}
@@ -51,11 +51,11 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 				if err != nil {
 					return net.IPv4(a, b, c, byte(i)), i + 1, nil
 				}
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 
-		// ip is not in the list of addrs for iface
+		// ip is not in the list of addrs for networkInterface
 		cmd := "ifconfig"
 		args := []string{"lo0", "alias", ip.String(), "up"}
 		if err := exec.Command(cmd, args...).Run(); err != nil {
@@ -68,7 +68,7 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 		if err != nil {
 			return net.IPv4(a, b, c, byte(i)), i + 1, nil
 		}
-		conn.Close()
+		_ = conn.Close()
 
 	}
 
@@ -81,7 +81,10 @@ func RemoveInterfaceAlias(ip net.IP) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "-alias", ip.String()}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		// suppress for now and @todo research why this would fail
+		// suppress for now
+		// @todo research alternative to ifconfig
+		// @todo suggest ifconfig or alternative
+		// @todo research libs for interface management
 		//fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
 	}
 }

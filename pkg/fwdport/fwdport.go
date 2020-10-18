@@ -11,7 +11,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
-
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,7 +91,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		SubResource("portforward")
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
-	downstreamStopChannel := make(chan struct{}) // TODO: can this be the same as pfStopChannel?
+	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
@@ -218,7 +217,8 @@ func (pfo *PortForwardOpts) AddHosts() {
 	pfo.Hostfile.Unlock()
 }
 
-// this method to remove hosts obj in /etc/hosts
+// removeHosts removes hosts /etc/hosts
+// associated with a forwarded pod
 func (pfo *PortForwardOpts) removeHosts() {
 
 	// we should lock the pfo.Hostfile here
@@ -246,6 +246,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 	pfo.Hostfile.Unlock()
 }
 
+// removeInterfaceAlias called on stop signal to
 func (pfo *PortForwardOpts) removeInterfaceAlias() {
 	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
 }
