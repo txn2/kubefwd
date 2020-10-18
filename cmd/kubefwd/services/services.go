@@ -48,7 +48,6 @@ import (
 
 // cmdline arguments
 var namespaces []string
-var regexNamespace string
 var contexts []string
 var exitOnFail bool
 var verbose bool
@@ -119,7 +118,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	return nil
 }
 
-func runCmd(cmd *cobra.Command, args []string) {
+func runCmd(cmd *cobra.Command, _ []string) {
 
 	if verbose {
 		log.SetLevel(log.DebugLevel)
@@ -151,6 +150,7 @@ Try:
 	hostFile, err := txeh.NewHostsDefault()
 	if err != nil {
 		log.Fatalf("Hostfile error: %s", err.Error())
+		os.Exit(1)
 	}
 
 	log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
@@ -158,6 +158,7 @@ Try:
 	msg, err := fwdhost.BackupHostFile(hostFile)
 	if err != nil {
 		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
+		os.Exit(1)
 	}
 
 	log.Printf("Hostfile management: %s", msg)
@@ -185,6 +186,7 @@ Try:
 	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
 	if err != nil {
 		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
+		os.Exit(1)
 	}
 
 	// labels selector to filter services
@@ -361,7 +363,8 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 	log.Infof("Stopped watching Service events in namespace %s", opts.Namespace)
 }
 
-// AddServiceHandler is the event handler for when a new service comes in from k8s (the initial list of services will also be coming in using this event for each).
+// AddServiceHandler is the event handler for when a new service comes in from k8s
+// (the initial list of services will also be coming in using this event for each).
 func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
@@ -413,7 +416,7 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It currently does not do anything.
-func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
+func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
 		log.Printf("update service %s.", key)
