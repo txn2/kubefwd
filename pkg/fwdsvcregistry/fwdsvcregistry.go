@@ -124,14 +124,14 @@ func RemoveByName(name string) {
 	svcRegistry.mutex.Unlock()
 
 	// Synchronously stop the forwarding of all active pods in it
-	activePodForwards := serviceFwd.ListPodNames()
+	activePodForwards := serviceFwd.ListServicePodNames()
 	log.Debugf("Registry: Stopping service %s with %d port-forward(s)", serviceFwd, len(activePodForwards))
 
 	podsAllDone := &sync.WaitGroup{}
 	podsAllDone.Add(len(activePodForwards))
 	for _, podName := range activePodForwards {
 		go func(podName string) {
-			serviceFwd.RemovePod(podName)
+			serviceFwd.RemoveServicePod(podName)
 			podsAllDone.Done()
 		}(podName)
 	}
