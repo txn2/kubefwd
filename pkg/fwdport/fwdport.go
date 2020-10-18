@@ -234,7 +234,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 
 	// remove all hosts
 	for _, host := range pfo.Hosts {
-		log.Debugf("REMOVING HOST %s FOR POD %s", host, pfo.PodName)
+		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, pfo.PodName, pfo.Namespace, pfo.Context)
 		pfo.Hostfile.Hosts.RemoveHost(host)
 	}
 
