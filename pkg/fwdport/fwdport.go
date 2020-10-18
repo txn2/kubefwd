@@ -64,8 +64,9 @@ type PortForwardOpts struct {
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
 }
 
-// PortForward does the portforward for a single pod.
-// It is a blocking call and will return when an error occured of after a cancellation signal has been received.
+// PortForward does the port-forward for a single pod.
+// It is a blocking call and will return when an error occurred
+// or after a cancellation signal has been received.
 func (pfo *PortForwardOpts) PortForward() error {
 	defer close(pfo.DoneChan)
 
@@ -233,6 +234,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 
 	// remove all hosts
 	for _, host := range pfo.Hosts {
+		log.Debugf("REMOVING HOST %s FOR POD %s", host, pfo.PodName)
 		pfo.Hostfile.Hosts.RemoveHost(host)
 	}
 
@@ -323,8 +325,8 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 	}
 }
 
-// Stop sends the shutdown signal to the portforwarding process.
-// In case the shutdownsignal was already given before, this is a no-op.
+// Stop sends the shutdown signal to the port-forwarding process.
+// In case the shutdown signal was already given before, this is a no-op.
 func (pfo *PortForwardOpts) Stop() {
 	select {
 	case <-pfo.DoneChan:
