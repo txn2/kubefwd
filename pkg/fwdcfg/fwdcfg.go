@@ -7,10 +7,12 @@ import (
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 )
 
+// ConfigGetter
 type ConfigGetter struct {
 	ConfigFlag *genericclioptions.ConfigFlags
 }
 
+// NewConfigGetter
 func NewConfigGetter() *ConfigGetter {
 	configFlag := genericclioptions.NewConfigFlags(false)
 	return &ConfigGetter{

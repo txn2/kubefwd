@@ -7,13 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+
+	"github.com/txn2/kubefwd/pkg/fwdIp"
 )
 
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
-func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, error) {
+func ReadyInterface(podName string, clusterN int, namespaceN int, port string) (net.IP, error) {
 
-	ip := net.IPv4(a, b, c, byte(d))
+	ip, _ := fwdIp.GetIp(podName, clusterN, namespaceN)
 
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")
@@ -21,58 +23,52 @@ func ReadyInterface(a byte, b byte, c byte, d int, port string) (net.IP, int, er
 		// if no error then check to see if the ip:port are in use
 		_, err := net.Dial("tcp", ip.String()+":"+port)
 		if err != nil {
-			return ip, d + 1, nil
+			return ip, nil
 		}
 
-		return ip, d + 1, errors.New("ip and port are in use")
+		return ip, errors.New("ip and port are in use")
 	}
 
-	for i := d; i < 255; i++ {
+	networkInterface, err := net.InterfaceByName("lo0")
+	if err != nil {
+		return net.IP{}, err
+	}
 
-		ip = net.IPv4(a, b, c, byte(i))
+	addrs, err := networkInterface.Addrs()
+	if err != nil {
+		return net.IP{}, err
+	}
 
-		iface, err := net.InterfaceByName("lo0")
-		if err != nil {
-			return net.IP{}, i, err
-		}
+	// check the addresses already assigned to the interface
+	for _, addr := range addrs {
 
-		addrs, err := iface.Addrs()
-		if err != nil {
-			return net.IP{}, i, err
-		}
-
-		// check the addresses already assigned to the interface
-		for _, addr := range addrs {
-
-			// found a match
-			if addr.String() == ip.String()+"/8" {
-				// found ip, now check for unused port
-				conn, err := net.Dial("tcp", ip.String()+":"+port)
-				if err != nil {
-					return net.IPv4(a, b, c, byte(i)), i + 1, nil
-				}
-				conn.Close()
+		// found a match
+		if addr.String() == ip.String()+"/8" {
+			// found ip, now check for unused port
+			conn, err := net.Dial("tcp", ip.String()+":"+port)
+			if err != nil {
+				return ip, nil
 			}
+			_ = conn.Close()
 		}
-
-		// ip is not in the list of addrs for iface
-		cmd := "ifconfig"
-		args := []string{"lo0", "alias", ip.String(), "up"}
-		if err := exec.Command(cmd, args...).Run(); err != nil {
-			fmt.Println("Cannot ifconfig lo0 alias " + ip.String() + " up")
-			fmt.Println("Error: " + err.Error())
-			os.Exit(1)
-		}
-
-		conn, err := net.Dial("tcp", ip.String()+":"+port)
-		if err != nil {
-			return net.IPv4(a, b, c, byte(i)), i + 1, nil
-		}
-		conn.Close()
-
 	}
 
-	return net.IP{}, d, errors.New("unable to find an available IP/Port")
+	// ip is not in the list of addrs for networkInterface
+	cmd := "ifconfig"
+	args := []string{"lo0", "alias", ip.String(), "up"}
+	if err := exec.Command(cmd, args...).Run(); err != nil {
+		fmt.Println("Cannot ifconfig lo0 alias " + ip.String() + " up")
+		fmt.Println("Error: " + err.Error())
+		os.Exit(1)
+	}
+
+	conn, err := net.Dial("tcp", ip.String()+":"+port)
+	if err != nil {
+		return ip, nil
+	}
+	_ = conn.Close()
+
+	return net.IP{}, errors.New("unable to find an available IP/Port")
 }
 
 // RemoveInterfaceAlias can remove the Interface alias after port forwarding.
@@ -81,7 +77,10 @@ func RemoveInterfaceAlias(ip net.IP) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "-alias", ip.String()}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		// suppress for now and @todo research why this would fail
+		// suppress for now
+		// @todo research alternative to ifconfig
+		// @todo suggest ifconfig or alternative
+		// @todo research libs for interface management
 		//fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
 	}
 }

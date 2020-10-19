@@ -17,12 +17,10 @@ package services
 
 import (
 	"fmt"
-	"github.com/bep/debounce"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
@@ -50,9 +48,7 @@ import (
 
 // cmdline arguments
 var namespaces []string
-var regexNamespace string
 var contexts []string
-var exitOnFail bool
 var verbose bool
 var domain string
 
@@ -60,7 +56,9 @@ func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
 	utilRuntime.ErrorHandlers[0] = func(err error) {
 		log.Errorf("Runtime error: %s", err.Error())
-		fwdsvcregistry.SyncAll()
+		// @todo determine when a SyncAll should happen, SyncAll
+		// for evey error is too aggressive.
+		//fwdsvcregistry.SyncAll()
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
@@ -79,6 +77,7 @@ var Cmd = &cobra.Command{
 	Long:    `Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.`,
 	Example: "  kubefwd svc -n the-project\n" +
 		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
+		"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n",
@@ -102,17 +101,17 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	for _, namespace := range namespaces {
 		for _, perm := range requiredPermissions {
 			perm.Namespace = namespace
-			ssar := &authorizationv1.SelfSubjectAccessReview{
+			var accessReview = &authorizationv1.SelfSubjectAccessReview{
 				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 					ResourceAttributes: &perm,
 				},
 			}
-			ssar, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(ssar)
+			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(accessReview)
 			if err != nil {
 				return err
 			}
-			if !ssar.Status.Allowed {
-				return fmt.Errorf("Missing RBAC permission: %v", perm)
+			if !accessReview.Status.Allowed {
+				return fmt.Errorf("missing RBAC permission: %v", perm)
 			}
 		}
 	}
@@ -120,7 +119,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	return nil
 }
 
-func runCmd(cmd *cobra.Command, args []string) {
+func runCmd(cmd *cobra.Command, _ []string) {
 
 	if verbose {
 		log.SetLevel(log.DebugLevel)
@@ -151,7 +150,8 @@ Try:
 
 	hostFile, err := txeh.NewHostsDefault()
 	if err != nil {
-		log.Fatalf("Hostfile error: %s", err.Error())
+		log.Fatalf("HostFile error: %s", err.Error())
+		os.Exit(1)
 	}
 
 	log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
@@ -159,9 +159,10 @@ Try:
 	msg, err := fwdhost.BackupHostFile(hostFile)
 	if err != nil {
 		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
+		os.Exit(1)
 	}
 
-	log.Printf("Hostfile management: %s", msg)
+	log.Printf("HostFile management: %s", msg)
 
 	if domain != "" {
 		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)
@@ -186,6 +187,7 @@ Try:
 	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
 	if err != nil {
 		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
+		os.Exit(1)
 	}
 
 	// labels selector to filter services
@@ -217,12 +219,6 @@ Try:
 		}
 	}
 
-	// ipC is the class C for the local IP address
-	// increment this for each cluster
-	// ipD is the class D for the local IP address
-	// increment this for each service in each cluster
-	ipC := 27
-
 	stopListenCh := make(chan struct{})
 
 	// Listen for shutdown signal from user
@@ -246,9 +242,6 @@ Try:
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
-	// ShortName field only used if one namespace/context
-	useFullName := len(namespaces) > 1 || len(contexts) > 1
-
 	for i, ctx := range contexts {
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
@@ -267,37 +260,40 @@ Try:
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
-		log.Infof("Succesfully connected context: %v", ctx)
+		log.Infof("Successfully connected context: %v", ctx)
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
 		if err != nil {
 			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
+			os.Exit(1)
 		}
 
-		ipD := 1
-
-		for _, namespace := range namespaces {
+		for ii, namespace := range namespaces {
 			nsWatchesDone.Add(1)
-			go func(ctx string, namespace string, ipC int) {
-				nameSpaceOpts := NamespaceOpts{
-					ClientSet:         clientSet,
-					Context:           ctx,
-					Namespace:         namespace,
-					NamespaceIPLock:   &sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
-					ListOptions:       listOptions,
-					Hostfile:          &fwdport.HostFileWithLock{Hosts: hostFile},
-					ClientConfig:      restConfig,
-					RESTClient:        restClient,
-					ShortName:         !useFullName,
-					IpC:               byte(ipC),
-					IpD:               &ipD,
-					Domain:            domain,
-					ManualStopChannel: stopListenCh,
-				}
+
+			nameSpaceOpts := NamespaceOpts{
+				ClientSet: *clientSet,
+				Context:   ctx,
+				Namespace: namespace,
+
+				// For parallelization of ip handout,
+				// each cluster and namespace has its own ip range
+				NamespaceIPLock:   &sync.Mutex{},
+				ListOptions:       listOptions,
+				HostFile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+				ClientConfig:      *restConfig,
+				RESTClient:        *restClient,
+				ClusterN:          i,
+				NamespaceN:        ii,
+				Domain:            domain,
+				ManualStopChannel: stopListenCh,
+			}
+
+			go func(npo NamespaceOpts) {
 				nameSpaceOpts.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
-			}(ctx, namespace, ipC+i)
+			}(nameSpaceOpts)
 		}
 	}
 
@@ -310,19 +306,37 @@ Try:
 	log.Infof("Clean exit")
 }
 
+// NamespaceOpts
 type NamespaceOpts struct {
-	ClientSet         *kubernetes.Clientset
-	Context           string
-	Namespace         string
-	NamespaceIPLock   *sync.Mutex
-	ListOptions       metav1.ListOptions
-	Hostfile          *fwdport.HostFileWithLock
-	ClientConfig      *restclient.Config
-	RESTClient        *restclient.RESTClient
-	ShortName         bool
-	IpC               byte
-	IpD               *int
-	Domain            string
+	NamespaceIPLock *sync.Mutex
+	ListOptions     metav1.ListOptions
+	HostFile        *fwdport.HostFileWithLock
+
+	ClientSet    kubernetes.Clientset
+	ClientConfig restclient.Config
+	RESTClient   restclient.RESTClient
+
+	// Context is a unique key (string) in kubectl config representing
+	// a user/cluster combination. Kubefwd uses context as the
+	// cluster name when forwarding to more than one cluster.
+	Context string
+
+	// Namespace is the current Kubernetes Namespace to locate services
+	// and the pods that back them for port-forwarding
+	Namespace string
+
+	// ClusterN is the ordinal index of the cluster (from configuration)
+	// cluster 0 is considered local while > 0 is remote
+	ClusterN int
+
+	// NamespaceN is the ordinal index of the namespace from the
+	// perspective of the user. Namespace 0 is considered local
+	// while > 0 is an external namespace
+	NamespaceN int
+
+	// Domain is specified by the user and used in place of .local
+	Domain string
+
 	ManualStopChannel chan struct{}
 }
 
@@ -360,10 +374,11 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
-	log.Infof("Stopped watching Service events in namespace %s, context %s", opts.Namespace, opts.Context)
+	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
 }
 
-// AddServiceHandler is the event handler for when a new service comes in from k8s (the initial list of services will also be coming in using this event for each).
+// AddServiceHandler is the event handler for when a new service comes in from k8s
+// (the initial list of services will also be coming in using this event for each).
 func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
@@ -379,26 +394,24 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
-		ClientSet:        opts.ClientSet,
-		Context:          opts.Context,
-		Namespace:        opts.Namespace,
-		Hostfile:         opts.Hostfile,
-		ClientConfig:     opts.ClientConfig,
-		RESTClient:       opts.RESTClient,
-		ShortName:        opts.ShortName,
-		IpC:              opts.IpC,
-		IpD:              opts.IpD,
-		Domain:           opts.Domain,
-		PodLabelSelector: selector,
-		NamespaceIPLock:  opts.NamespaceIPLock,
-		Svc:              svc,
-		Headless:         svc.Spec.ClusterIP == "None",
-		SyncDebouncer:    debounce.New(5 * time.Second),
-		PortForwards:     make(map[string]*fwdport.PortForwardOpts),
-		DoneChannel:      make(chan struct{}),
+		ClientSet:            opts.ClientSet,
+		Context:              opts.Context,
+		Namespace:            opts.Namespace,
+		Hostfile:             opts.HostFile,
+		ClientConfig:         opts.ClientConfig,
+		RESTClient:           opts.RESTClient,
+		NamespaceN:           opts.NamespaceN,
+		ClusterN:             opts.ClusterN,
+		Domain:               opts.Domain,
+		PodLabelSelector:     selector,
+		NamespaceServiceLock: opts.NamespaceIPLock,
+		Svc:                  svc,
+		Headless:             svc.Spec.ClusterIP == "None",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		DoneChannel:          make(chan struct{}),
 	}
 
-	// Add the service to out catalog of services being forwarded
+	// Add the service to the catalog of services being forwarded
 	fwdsvcregistry.Add(svcfwd)
 }
 
@@ -415,7 +428,7 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It currently does not do anything.
-func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
+func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
 		log.Printf("update service %s.", key)
