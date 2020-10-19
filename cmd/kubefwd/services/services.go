@@ -49,7 +49,6 @@ import (
 // cmdline arguments
 var namespaces []string
 var contexts []string
-var exitOnFail bool
 var verbose bool
 var domain string
 
@@ -57,7 +56,9 @@ func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
 	utilRuntime.ErrorHandlers[0] = func(err error) {
 		log.Errorf("Runtime error: %s", err.Error())
-		fwdsvcregistry.SyncAll()
+		// @todo determine when a SyncAll should happen, SyncAll
+		// for evey error is too aggressive.
+		//fwdsvcregistry.SyncAll()
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
@@ -110,7 +111,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 				return err
 			}
 			if !accessReview.Status.Allowed {
-				return fmt.Errorf("Missing RBAC permission: %v", perm)
+				return fmt.Errorf("missing RBAC permission: %v", perm)
 			}
 		}
 	}
@@ -149,7 +150,7 @@ Try:
 
 	hostFile, err := txeh.NewHostsDefault()
 	if err != nil {
-		log.Fatalf("Hostfile error: %s", err.Error())
+		log.Fatalf("HostFile error: %s", err.Error())
 		os.Exit(1)
 	}
 
@@ -161,7 +162,7 @@ Try:
 		os.Exit(1)
 	}
 
-	log.Printf("Hostfile management: %s", msg)
+	log.Printf("HostFile management: %s", msg)
 
 	if domain != "" {
 		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)
@@ -218,13 +219,6 @@ Try:
 		}
 	}
 
-	// ipC is the class C for the local IP address
-	// increment this for each cluster
-	// ipD is the class D for the local IP address
-	// increment this for each service in each cluster
-	ipC := 27
-	ipD := 1
-
 	stopListenCh := make(chan struct{})
 
 	// Listen for shutdown signal from user
@@ -266,37 +260,40 @@ Try:
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
-		log.Infof("Succesfully connected context: %v", ctx)
+		log.Infof("Successfully connected context: %v", ctx)
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
 		if err != nil {
 			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
+			os.Exit(1)
 		}
 
 		for ii, namespace := range namespaces {
 			nsWatchesDone.Add(1)
-			go func(ii int, namespace string) {
-				// ShortName field only use short name for the first namespace and context
-				nameSpaceOpts := NamespaceOpts{
-					ClientSet:         clientSet,
-					Context:           ctx,
-					Namespace:         namespace,
-					NamespaceIPLock:   &sync.Mutex{}, // For parallelization of ip handout, each namespace has its own a.b.c.* range
-					ListOptions:       listOptions,
-					Hostfile:          &fwdport.HostFileWithLock{Hosts: hostFile},
-					ClientConfig:      restConfig,
-					RESTClient:        restClient,
-					ShortName:         i < 1 && ii < 1,
-					Remote:            i > 0,
-					IpC:               byte(ipC + ii),
-					IpD:               ipD,
-					Domain:            domain,
-					ManualStopChannel: stopListenCh,
-				}
+
+			nameSpaceOpts := NamespaceOpts{
+				ClientSet: *clientSet,
+				Context:   ctx,
+				Namespace: namespace,
+
+				// For parallelization of ip handout,
+				// each cluster and namespace has its own ip range
+				NamespaceIPLock:   &sync.Mutex{},
+				ListOptions:       listOptions,
+				HostFile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+				ClientConfig:      *restConfig,
+				RESTClient:        *restClient,
+				ClusterN:          i,
+				NamespaceN:        ii,
+				Domain:            domain,
+				ManualStopChannel: stopListenCh,
+			}
+
+			go func(npo NamespaceOpts) {
 				nameSpaceOpts.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
-			}(ii, namespace)
+			}(nameSpaceOpts)
 		}
 	}
 
@@ -311,19 +308,35 @@ Try:
 
 // NamespaceOpts
 type NamespaceOpts struct {
-	ClientSet         *kubernetes.Clientset
-	Context           string
-	Namespace         string
-	NamespaceIPLock   *sync.Mutex
-	ListOptions       metav1.ListOptions
-	Hostfile          *fwdport.HostFileWithLock
-	ClientConfig      *restclient.Config
-	RESTClient        *restclient.RESTClient
-	ShortName         bool
-	Remote            bool
-	IpC               byte
-	IpD               int
-	Domain            string
+	NamespaceIPLock *sync.Mutex
+	ListOptions     metav1.ListOptions
+	HostFile        *fwdport.HostFileWithLock
+
+	ClientSet    kubernetes.Clientset
+	ClientConfig restclient.Config
+	RESTClient   restclient.RESTClient
+
+	// Context is a unique key (string) in kubectl config representing
+	// a user/cluster combination. Kubefwd uses context as the
+	// cluster name when forwarding to more than one cluster.
+	Context string
+
+	// Namespace is the current Kubernetes Namespace to locate services
+	// and the pods that back them for port-forwarding
+	Namespace string
+
+	// ClusterN is the ordinal index of the cluster (from configuration)
+	// cluster 0 is considered local while > 0 is remote
+	ClusterN int
+
+	// NamespaceN is the ordinal index of the namespace from the
+	// perspective of the user. Namespace 0 is considered local
+	// while > 0 is an external namespace
+	NamespaceN int
+
+	// Domain is specified by the user and used in place of .local
+	Domain string
+
 	ManualStopChannel chan struct{}
 }
 
@@ -361,7 +374,7 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
-	log.Infof("Stopped watching Service events in namespace %s", opts.Namespace)
+	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
 }
 
 // AddServiceHandler is the event handler for when a new service comes in from k8s
@@ -381,26 +394,24 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
-		ClientSet:        opts.ClientSet,
-		Context:          opts.Context,
-		Namespace:        opts.Namespace,
-		Hostfile:         opts.Hostfile,
-		ClientConfig:     opts.ClientConfig,
-		RESTClient:       opts.RESTClient,
-		ShortName:        opts.ShortName,
-		Remote:           opts.Remote,
-		IpC:              opts.IpC,
-		IpD:              &opts.IpD,
-		Domain:           opts.Domain,
-		PodLabelSelector: selector,
-		NamespaceIPLock:  opts.NamespaceIPLock,
-		Svc:              svc,
-		Headless:         svc.Spec.ClusterIP == "None",
-		PortForwards:     make(map[string]*fwdport.PortForwardOpts),
-		DoneChannel:      make(chan struct{}),
+		ClientSet:            opts.ClientSet,
+		Context:              opts.Context,
+		Namespace:            opts.Namespace,
+		Hostfile:             opts.HostFile,
+		ClientConfig:         opts.ClientConfig,
+		RESTClient:           opts.RESTClient,
+		NamespaceN:           opts.NamespaceN,
+		ClusterN:             opts.ClusterN,
+		Domain:               opts.Domain,
+		PodLabelSelector:     selector,
+		NamespaceServiceLock: opts.NamespaceIPLock,
+		Svc:                  svc,
+		Headless:             svc.Spec.ClusterIP == "None",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		DoneChannel:          make(chan struct{}),
 	}
 
-	// Add the service to out catalog of services being forwarded
+	// Add the service to the catalog of services being forwarded
 	fwdsvcregistry.Add(svcfwd)
 }
 

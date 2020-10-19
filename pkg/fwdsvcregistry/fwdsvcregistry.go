@@ -61,7 +61,7 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	defer svcRegistry.mutex.Unlock()
 
 	if _, found := svcRegistry.services[serviceFwd.String()]; found {
-		log.Debugf("Registry: found existing service %s")
+		log.Debugf("Registry: found existing service %s", serviceFwd.String())
 		return
 	}
 

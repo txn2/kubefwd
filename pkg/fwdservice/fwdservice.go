@@ -21,31 +21,54 @@ import (
 // ServiceFWD Single service to forward, with a reference to
 // all the pods being forwarded for it
 type ServiceFWD struct {
-	ClientSet    *kubernetes.Clientset
-	Context      string
-	Namespace    string
+	ClientSet    kubernetes.Clientset
 	ListOptions  metav1.ListOptions
 	Hostfile     *fwdport.HostFileWithLock
-	ClientConfig *restclient.Config
-	RESTClient   *restclient.RESTClient
-	ShortName    bool
-	Remote       bool
-	IpC          byte
-	IpD          *int
-	Domain       string
+	ClientConfig restclient.Config
+	RESTClient   restclient.RESTClient
 
-	PodLabelSelector string      // The label selector to query for matching pods.
-	NamespaceIPLock  *sync.Mutex // Synchronization for IP handout for each portforward
-	Svc              *v1.Service // Reference to the k8s service.
-	Headless         bool        // A headless service will forward all of the pods, while normally only a single pod is forwarded.
-	LastSyncedAt     time.Time   // When was the set of pods last synced
+	// Context is a unique key (string) in kubectl config representing
+	// a user/cluster combination. Kubefwd uses context as the
+	// cluster name when forwarding to more than one cluster.
+	Context string
+
+	// Namespace is the current Kubernetes Namespace to locate services
+	// and the pods that back them for port-forwarding
+	Namespace string
+
+	// ClusterN is the ordinal index of the cluster (from configuration)
+	// cluster 0 is considered local while > 0 is remote
+	ClusterN int
+
+	// NamespaceN is the ordinal index of the namespace from the
+	// perspective of the user. Namespace 0 is considered local
+	// while > 0 is an external namespace
+	NamespaceN int
+
+	// FwdInc the forward increment for ip
+	FwdInc *int
+
+	// Domain is specified by the user and used in place of .local
+	Domain string
+
+	PodLabelSelector     string      // The label selector to query for matching pods.
+	NamespaceServiceLock *sync.Mutex //
+	Svc                  *v1.Service // Reference to the k8s service.
+
+	// Headless service will forward all of the pods,
+	// while normally only a single pod is forwarded.
+	Headless bool
+
+	LastSyncedAt time.Time // When was the set of pods last synced
 
 	// A mapping of all the pods currently being forwarded.
-	// key = podname
+	// key = podName
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
 }
 
+// String representation of a ServiceFWD returns a unique name
+// in the form SERVICE_NAME.NAMESPACE.CONTEXT
 func (svcFwd *ServiceFWD) String() string {
 	return svcFwd.Svc.Name + "." + svcFwd.Namespace + "." + svcFwd.Context
 }
@@ -169,8 +192,8 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 	// Ip address handout is a critical section for synchronization,
 	// use a lock which synchronizes inside each namespace.
-	svcFwd.NamespaceIPLock.Lock()
-	defer svcFwd.NamespaceIPLock.Unlock()
+	svcFwd.NamespaceServiceLock.Lock()
+	defer svcFwd.NamespaceServiceLock.Unlock()
 
 	for _, pod := range pods {
 		// If pod is already configured to be forwarded, skip it
@@ -181,11 +204,10 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 		podPort := ""
 		svcName := ""
 
-		localIp, dInc, err := fwdnet.ReadyInterface(127, 1, svcFwd.IpC, *svcFwd.IpD, podPort)
+		localIp, err := fwdnet.ReadyInterface(pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
-		*svcFwd.IpD = dInc
 
 		for _, port := range svcFwd.Svc.Spec.Ports {
 
@@ -200,33 +222,33 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			}
 
 			serviceHostName := svcFwd.Svc.Name
+			svcName = svcFwd.Svc.Name
 
 			if includePodNameInHost {
 				serviceHostName = pod.Name + "." + serviceHostName
+				svcName = pod.Name + "." + serviceHostName
 			}
 
-			if !svcFwd.ShortName {
+			// if this is not the first namespace on the
+			// first cluster then append the namespace
+			if svcFwd.NamespaceN > 0 {
 				serviceHostName = serviceHostName + "." + pod.Namespace
 			}
 
-			if svcFwd.Domain != "" {
-				serviceHostName = serviceHostName + "." + svcFwd.Domain
+			// if this is not the first cluster append the full
+			// host name
+			if svcFwd.ClusterN > 0 {
+				serviceHostName = serviceHostName + "." + svcFwd.Context
 			}
 
-			if svcFwd.Remote {
-				serviceHostName = fmt.Sprintf("%s.svc.cluster.%s", serviceHostName, svcFwd.Context)
-			}
-
-			svcName = serviceHostName
-
-			log.Debugf("Resolving:    %s to %s\n",
-				svcName,
+			log.Debugf("Resolving: %s to %s\n",
+				serviceHostName,
 				localIp.String(),
 			)
 
 			log.Printf("Port-Forward: %s %s:%d to pod %s:%s\n",
 				localIp.String(),
-				svcName,
+				serviceHostName,
 				port.Port,
 				pod.Name,
 				podPort,
@@ -245,9 +267,9 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				PodPort:    podPort,
 				LocalIp:    localIp,
 				LocalPort:  localPort,
-				Hostfile:   svcFwd.Hostfile,
-				ShortName:  svcFwd.ShortName,
-				Remote:     svcFwd.Remote,
+				HostFile:   svcFwd.Hostfile,
+				ClusterN:   svcFwd.ClusterN,
+				NamespaceN: svcFwd.NamespaceN,
 				Domain:     svcFwd.Domain,
 
 				ManualStopChan: make(chan struct{}),
@@ -279,22 +301,22 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 // AddServicePod
 func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
-	svcFwd.NamespaceIPLock.Lock()
+	svcFwd.NamespaceServiceLock.Lock()
 	ServicePod := pfo.Service + "." + pfo.PodName
 	if _, found := svcFwd.PortForwards[ServicePod]; !found {
 		svcFwd.PortForwards[ServicePod] = pfo
 	}
-	svcFwd.NamespaceIPLock.Unlock()
+	svcFwd.NamespaceServiceLock.Unlock()
 }
 
 // ListServicePodNames
 func (svcFwd *ServiceFWD) ListServicePodNames() []string {
-	svcFwd.NamespaceIPLock.Lock()
+	svcFwd.NamespaceServiceLock.Lock()
 	currentPodNames := make([]string, 0, len(svcFwd.PortForwards))
 	for podName := range svcFwd.PortForwards {
 		currentPodNames = append(currentPodNames, podName)
 	}
-	svcFwd.NamespaceIPLock.Unlock()
+	svcFwd.NamespaceServiceLock.Unlock()
 	return currentPodNames
 }
 
@@ -302,9 +324,9 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 	if pod, found := svcFwd.PortForwards[servicePodName]; found {
 		pod.Stop()
 		<-pod.DoneChan
-		svcFwd.NamespaceIPLock.Lock()
+		svcFwd.NamespaceServiceLock.Lock()
 		delete(svcFwd.PortForwards, servicePodName)
-		svcFwd.NamespaceIPLock.Unlock()
+		svcFwd.NamespaceServiceLock.Unlock()
 	}
 }
 

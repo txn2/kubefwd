@@ -3,6 +3,7 @@ module github.com/txn2/kubefwd
 go 1.13
 
 require (
+	github.com/davecgh/go-spew v1.1.1
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
 	github.com/pingcap/errors v0.11.4
 	github.com/pkg/errors v0.8.1

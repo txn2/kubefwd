@@ -1,0 +1,234 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kf-a
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ok
+  namespace: kf-a
+spec:
+  selector:
+    app: ok
+    component: deployment
+  ports:
+    - protocol: "TCP"
+      port: 8080
+      targetPort: http-web
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ok-headless
+  namespace: kf-a
+spec:
+  selector:
+    app: ok
+    component: deployment
+  ports:
+    - protocol: "TCP"
+      port: 8080
+      targetPort: http-web
+  type: ClusterIP
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ok
+  namespace: kf-a
+  labels:
+    app: ok
+spec:
+  replicas: 5
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: ok
+  template:
+    metadata:
+      labels:
+        app: ok
+        component: deployment
+    spec:
+      containers:
+        - name: ok
+          image: txn2/ok:3.0.0
+          imagePullPolicy: IfNotPresent # IfNotPresent for production
+          env:
+            - name: "MESSAGE"
+              value: "ok deployment in kf-a"
+            - name: PORT
+              value: "8080"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+          ports:
+            - name: http-web
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ok-ss
+  namespace: kf-a
+spec:
+  selector:
+    app: ok-ss
+    component: ss
+  ports:
+    - name: http-web
+      protocol: "TCP"
+      port: 8080
+      targetPort: http-web
+    - name: http-web2
+      protocol: "TCP"
+      port: 8081
+      targetPort: http-web2
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ok-ss-headless
+  namespace: kf-a
+spec:
+  selector:
+    app: ok-ss
+    component: ss
+  ports:
+    - name: http-web
+      protocol: "TCP"
+      port: 8080
+      targetPort: http-web
+    - name: http-web2
+      protocol: "TCP"
+      port: 8081
+      targetPort: http-web2
+  type: ClusterIP
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ok-ss
+  namespace: kf-a
+  labels:
+    app: ok-ss
+spec:
+  replicas: 3
+  revisionHistoryLimit: 1
+  serviceName: ok-ss
+  selector:
+    matchLabels:
+      app: ok-ss
+      component: ss
+  template:
+    metadata:
+      labels:
+        app: ok-ss
+        component: ss
+    spec:
+      containers:
+        - name: ok
+          image: txn2/ok:3.0.0
+          imagePullPolicy: IfNotPresent # IfNotPresent for production
+          env:
+            - name: "MESSAGE"
+              value: "ok ss in kf-a"
+            - name: PORT
+              value: "8080"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+          ports:
+            - name: http-web
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 32Mi
+        - name: ok2
+          image: txn2/ok:3.0.0
+          imagePullPolicy: IfNotPresent # IfNotPresent for production
+          env:
+            - name: "MESSAGE"
+              value: "ok2 container ss in kf-a"
+            - name: PORT
+              value: "8081"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+          ports:
+            - name: http-web2
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 100m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 32Mi

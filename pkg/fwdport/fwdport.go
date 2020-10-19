@@ -21,18 +21,22 @@ import (
 	"k8s.io/client-go/transport/spdy"
 )
 
-// PodSyncer interface is used to represent a fwdservice.ServiceFWD reference, which cannot be used directly due to circular imports.
-// It's a reference from a pod to it's parent service.
+// ServiceFWD PodSyncer interface is used to represent a
+// fwdservice.ServiceFWD reference, which cannot be used directly
+// due to circular imports.  It's a reference from a pod to it's
+// parent service.
 type ServiceFWD interface {
 	String() string
 	SyncPodForwards(bool)
 }
 
+// HostFileWithLock
 type HostFileWithLock struct {
 	Hosts *txeh.Hosts
 	sync.Mutex
 }
 
+// HostsParams
 type HostsParams struct {
 	localServiceName string
 	nsServiceName    string
@@ -40,22 +44,39 @@ type HostsParams struct {
 	svcServiceName   string
 }
 
+// PortForwardOpts
 type PortForwardOpts struct {
-	Out            *fwdpub.Publisher
-	Config         *restclient.Config
-	ClientSet      *kubernetes.Clientset
-	RESTClient     *restclient.RESTClient
-	Context        string
-	Namespace      string
-	Service        string
-	ServiceFwd     ServiceFWD
-	PodName        string
-	PodPort        string
-	LocalIp        net.IP
-	LocalPort      string
-	Hostfile       *HostFileWithLock
-	ShortName      bool
-	Remote         bool
+	Out        *fwdpub.Publisher
+	Config     restclient.Config
+	ClientSet  kubernetes.Clientset
+	RESTClient restclient.RESTClient
+
+	Service    string
+	ServiceFwd ServiceFWD
+	PodName    string
+	PodPort    string
+	LocalIp    net.IP
+	LocalPort  string
+	HostFile   *HostFileWithLock
+
+	// Context is a unique key (string) in kubectl config representing
+	// a user/cluster combination. Kubefwd uses context as the
+	// cluster name when forwarding to more than one cluster.
+	Context string
+
+	// Namespace is the current Kubernetes Namespace to locate services
+	// and the pods that back them for port-forwarding
+	Namespace string
+
+	// ClusterN is the ordinal index of the cluster (from configuration)
+	// cluster 0 is considered local while > 0 is remote
+	ClusterN int
+
+	// NamespaceN is the ordinal index of the namespace from the
+	// perspective of the user. Namespace 0 is considered local
+	// while > 0 is an external namespace
+	NamespaceN int
+
 	Domain         string
 	HostsParams    *HostsParams
 	Hosts          []string
@@ -69,7 +90,7 @@ type PortForwardOpts struct {
 func (pfo *PortForwardOpts) PortForward() error {
 	defer close(pfo.DoneChan)
 
-	transport, upgrader, err := spdy.RoundTripperFor(pfo.Config)
+	transport, upgrader, err := spdy.RoundTripperFor(&pfo.Config)
 	if err != nil {
 		return err
 	}
@@ -95,7 +116,6 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
-	pfo.BuildTheHostsParams()
 	pfo.AddHosts()
 
 	// Wait until the stop signal is received from above
@@ -150,21 +170,25 @@ func (pfo *PortForwardOpts) PortForward() error {
 	return nil
 }
 
-// this method to build the HostsParams
-func (pfo *PortForwardOpts) BuildTheHostsParams() {
-	pfo.HostsParams = &HostsParams{}
-	localServiceName := pfo.Service
-	nsServiceName := pfo.Service + "." + pfo.Namespace
-	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
-	svcServiceName := fmt.Sprintf("%s.%s.svc", pfo.Service, pfo.Namespace)
-	if pfo.Remote {
-		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
-	}
-	pfo.HostsParams.localServiceName = localServiceName
-	pfo.HostsParams.nsServiceName = nsServiceName
-	pfo.HostsParams.fullServiceName = fullServiceName
-	pfo.HostsParams.svcServiceName = svcServiceName
-}
+//// BuildHostsParams constructs the basic hostnames for the service
+//// based on the PortForwardOpts configuration
+//func (pfo *PortForwardOpts) BuildHostsParams() {
+//
+//	localServiceName := pfo.Service
+//	nsServiceName := pfo.Service + "." + pfo.Namespace
+//	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
+//	svcServiceName := fmt.Sprintf("%s.%s.svc", pfo.Service, pfo.Namespace)
+//
+//	// check if this is an additional cluster (remote from the
+//	// perspective of the user / argument order)
+//	if pfo.ClusterN > 0 {
+//		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
+//	}
+//	pfo.HostsParams.localServiceName = localServiceName
+//	pfo.HostsParams.nsServiceName = nsServiceName
+//	pfo.HostsParams.fullServiceName = fullServiceName
+//	pfo.HostsParams.svcServiceName = svcServiceName
+//}
 
 // AddHost
 func (pfo *PortForwardOpts) addHost(host string) {
@@ -172,61 +196,111 @@ func (pfo *PortForwardOpts) addHost(host string) {
 	pfo.Hosts = append(pfo.Hosts, host)
 
 	// remove host if it already exists in /etc/hosts
-	pfo.Hostfile.Hosts.RemoveHost(host)
+	pfo.HostFile.Hosts.RemoveHost(host)
 
 	// add host to /etc/hosts
-	pfo.Hostfile.Hosts.AddHost(pfo.LocalIp.String(), host)
+	pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
 }
 
 // AddHosts adds hostname entries to /etc/hosts
 func (pfo *PortForwardOpts) AddHosts() {
 
-	pfo.Hostfile.Lock()
-	if pfo.Remote {
+	pfo.HostFile.Lock()
 
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.fullServiceName)
-		pfo.Hostfile.Hosts.RemoveHost(pfo.HostsParams.svcServiceName)
+	// pfo.Service holds only the service name
+	// start with the smallest allowable hostname
 
-		if pfo.Domain != "" {
-			pfo.addHost(pfo.Service + "." + pfo.Domain)
-		}
+	// bare service name
+	if pfo.ClusterN == 0 && pfo.NamespaceN == 0 {
 		pfo.addHost(pfo.Service)
 
-	} else {
-
-		if pfo.ShortName {
-			if pfo.Domain != "" {
-				pfo.addHost(pfo.HostsParams.localServiceName + "." + pfo.Domain)
-			}
-			pfo.addHost(pfo.HostsParams.localServiceName)
-		}
-
-		pfo.addHost(pfo.HostsParams.fullServiceName)
-		pfo.addHost(pfo.HostsParams.svcServiceName)
-
 		if pfo.Domain != "" {
-			pfo.addHost(pfo.HostsParams.nsServiceName + "." + pfo.Domain)
+			pfo.addHost(fmt.Sprintf(
+				"%s.%s",
+				pfo.Service,
+				pfo.Domain,
+			))
 		}
-		pfo.addHost(pfo.HostsParams.nsServiceName)
 	}
 
-	err := pfo.Hostfile.Hosts.Save()
+	// alternate cluster / first namespace
+	if pfo.ClusterN > 0 && pfo.NamespaceN == 0 {
+		pfo.addHost(fmt.Sprintf(
+			"%s.%s",
+			pfo.Service,
+			pfo.Context,
+		))
+	}
+
+	// namespaced without cluster
+	if pfo.ClusterN == 0 {
+		pfo.addHost(fmt.Sprintf(
+			"%s.%s",
+			pfo.Service,
+			pfo.Namespace,
+		))
+
+		pfo.addHost(fmt.Sprintf(
+			"%s.%s.svc",
+			pfo.Service,
+			pfo.Namespace,
+		))
+
+		pfo.addHost(fmt.Sprintf(
+			"%s.%s.svc.cluster.local",
+			pfo.Service,
+			pfo.Namespace,
+		))
+
+		if pfo.Domain != "" {
+			pfo.addHost(fmt.Sprintf(
+				"%s.%s.svc.cluster.%s",
+				pfo.Service,
+				pfo.Namespace,
+				pfo.Domain,
+			))
+		}
+
+	}
+
+	pfo.addHost(fmt.Sprintf(
+		"%s.%s.%s",
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	))
+
+	pfo.addHost(fmt.Sprintf(
+		"%s.%s.svc.%s",
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	))
+
+	pfo.addHost(fmt.Sprintf(
+		"%s.%s.svc.cluster.%s",
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	))
+
+	err := pfo.HostFile.Hosts.Save()
 	if err != nil {
 		log.Error("Error saving hosts file", err)
 	}
-	pfo.Hostfile.Unlock()
+	pfo.HostFile.Unlock()
 }
 
 // removeHosts removes hosts /etc/hosts
 // associated with a forwarded pod
 func (pfo *PortForwardOpts) removeHosts() {
 
-	// we should lock the pfo.Hostfile here
+	// we should lock the pfo.HostFile here
 	// because sometimes other goroutine write the *txeh.Hosts
-	pfo.Hostfile.Lock()
+	pfo.HostFile.Lock()
 	// other applications or process may have written to /etc/hosts
 	// since it was originally updated.
-	err := pfo.Hostfile.Hosts.Reload()
+	err := pfo.HostFile.Hosts.Reload()
 	if err != nil {
 		log.Error("Unable to reload /etc/hosts: " + err.Error())
 		return
@@ -235,15 +309,15 @@ func (pfo *PortForwardOpts) removeHosts() {
 	// remove all hosts
 	for _, host := range pfo.Hosts {
 		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, pfo.PodName, pfo.Namespace, pfo.Context)
-		pfo.Hostfile.Hosts.RemoveHost(host)
+		pfo.HostFile.Hosts.RemoveHost(host)
 	}
 
 	// fmt.Printf("Delete Host And Save !\r\n")
-	err = pfo.Hostfile.Hosts.Save()
+	err = pfo.HostFile.Hosts.Save()
 	if err != nil {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
 	}
-	pfo.Hostfile.Unlock()
+	pfo.HostFile.Unlock()
 }
 
 // removeInterfaceAlias called on stop signal to
