@@ -21,7 +21,9 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
 	"github.com/txn2/kubefwd/pkg/fwdport"
@@ -408,6 +410,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		Svc:                  svc,
 		Headless:             svc.Spec.ClusterIP == "None",
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
 	}
 
