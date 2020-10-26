@@ -202,11 +202,30 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 		}
 
 		podPort := ""
-		svcName := ""
 
-		localIp, err := fwdnet.ReadyInterface(pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
+		serviceHostName := svcFwd.Svc.Name
+		svcName := svcFwd.Svc.Name
+
+		if includePodNameInHost {
+			serviceHostName = pod.Name + "." + svcFwd.Svc.Name
+			svcName = pod.Name + "." + svcFwd.Svc.Name
+		}
+
+		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
+		}
+
+		// if this is not the first namespace on the
+		// first cluster then append the namespace
+		if svcFwd.NamespaceN > 0 {
+			serviceHostName = serviceHostName + "." + pod.Namespace
+		}
+
+		// if this is not the first cluster append the full
+		// host name
+		if svcFwd.ClusterN > 0 {
+			serviceHostName = serviceHostName + "." + svcFwd.Context
 		}
 
 		for _, port := range svcFwd.Svc.Spec.Ports {
@@ -221,29 +240,10 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				}
 			}
 
-			serviceHostName := svcFwd.Svc.Name
-			svcName = svcFwd.Svc.Name
-
-			if includePodNameInHost {
-				serviceHostName = pod.Name + "." + serviceHostName
-				svcName = pod.Name + "." + serviceHostName
-			}
-
-			// if this is not the first namespace on the
-			// first cluster then append the namespace
-			if svcFwd.NamespaceN > 0 {
-				serviceHostName = serviceHostName + "." + pod.Namespace
-			}
-
-			// if this is not the first cluster append the full
-			// host name
-			if svcFwd.ClusterN > 0 {
-				serviceHostName = serviceHostName + "." + svcFwd.Context
-			}
-
-			log.Debugf("Resolving: %s to %s\n",
+			log.Debugf("Resolving: %s to %s (%s)\n",
 				serviceHostName,
 				localIp.String(),
+				svcName,
 			)
 
 			log.Printf("Port-Forward: %s %s:%d to pod %s:%s\n",

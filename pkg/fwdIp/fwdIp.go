@@ -20,16 +20,18 @@ var ipRegistry *Registry
 func init() {
 	ipRegistry = &Registry{
 		mutex: &sync.Mutex{},
-		inc:   map[int]map[int]int{0: {0: 0}},
-		reg:   make(map[string]net.IP),
+		// counter for the service cluster and namespace
+		inc: map[int]map[int]int{0: {0: 0}},
+		reg: make(map[string]net.IP),
 	}
 }
 
-func GetIp(podName string, clusterN int, NamespaceN int) (net.IP, error) {
+func GetIp(svcName string, podName string, clusterN int, NamespaceN int) (net.IP, error) {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()
 
-	regKey := fmt.Sprintf("%d-%d-%s", clusterN, NamespaceN, podName)
+	regKey := fmt.Sprintf("%d-%d-%s-%s", clusterN, NamespaceN, svcName, podName)
+
 	if ip, ok := ipRegistry.reg[regKey]; ok {
 		return ip, nil
 	}

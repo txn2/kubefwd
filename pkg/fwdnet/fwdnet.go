@@ -13,9 +13,9 @@ import (
 
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
-func ReadyInterface(podName string, clusterN int, namespaceN int, port string) (net.IP, error) {
+func ReadyInterface(svcName string, podName string, clusterN int, namespaceN int, port string) (net.IP, error) {
 
-	ip, _ := fwdIp.GetIp(podName, clusterN, namespaceN)
+	ip, _ := fwdIp.GetIp(svcName, podName, clusterN, namespaceN)
 
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")

@@ -163,6 +163,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {
+		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.Stop()
 		return err
 	}
