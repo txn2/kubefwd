@@ -142,7 +142,8 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Listen for pod is deleted
-	go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
+	// @TODO need a test for this, does not seem to work as intended
+	// go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 

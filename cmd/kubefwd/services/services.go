@@ -55,10 +55,8 @@ var domain string
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
 	utilRuntime.ErrorHandlers[0] = func(err error) {
-		log.Errorf("Runtime error: %s", err.Error())
-		// @todo determine when a SyncAll should happen, SyncAll
-		// for evey error is too aggressive.
-		//fwdsvcregistry.SyncAll()
+		// "broken pipe" see: https://github.com/kubernetes/kubernetes/issues/74551
+		log.Errorf("Runtime: %s", err.Error())
 	}
 
 	Cmd.Flags().StringP("kubeconfig", "c", "", "absolute path to a kubectl config file")
@@ -423,7 +421,7 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 	}
 
 	// If we are currently forwarding this service, shut it down.
-	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace)
+	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace + "." + opts.Context)
 }
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
