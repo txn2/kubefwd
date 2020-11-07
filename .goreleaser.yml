@@ -19,8 +19,13 @@ builds:
       - arm
       - arm64
     mod_timestamp: '{{ .CommitTimestamp }}'
+    env:
+      - CGO_ENABLED=0
     flags:
       - -trimpath
+      - -tags=netgo
+      - -a
+      - -v
     ldflags: -s -w -X main.Version={{.Version}}
 
 checksum:
@@ -43,13 +48,39 @@ dockers:
     goarm: ''
     binaries:
       - kubefwd
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.alpine
+    builds:
+      - kubefwd
     image_templates:
       - "txn2/kubefwd:latest"
       - "txn2/kubefwd:{{ .Tag }}"
       - "txn2/kubefwd:v{{ .Major }}"
       - "txn2/kubefwd:amd64-{{ .Tag }}"
       - "txn2/kubefwd:amd64-v{{ .Major }}"
+      - "txn2/kubefwd:latest_alpine-3"
+      - "txn2/kubefwd:{{ .Tag }}_alpine-3"
+      - "txn2/kubefwd:v{{ .Major }}_alpine-3"
+      - "txn2/kubefwd:amd64-{{ .Tag }}_alpine-3"
+      - "txn2/kubefwd:amd64-v{{ .Major }}_alpine-3"
+    build_flag_templates:
+      - "--label=org.label-schema.schema-version=1.0"
+      - "--label=org.label-schema.version={{.Version}}"
+      - "--label=org.label-schema.name={{.ProjectName}}"
+  -
+    goos: linux
+    goarch: amd64
+    goarm: ''
+    binaries:
+      - kubefwd
+    dockerfile: Dockerfile.ubuntu
+    builds:
+      - kubefwd
+    image_templates:
+      - "txn2/kubefwd:latest_ubuntu-20.04"
+      - "txn2/kubefwd:{{ .Tag }}_ubuntu-20.04"
+      - "txn2/kubefwd:v{{ .Major }}_ubuntu-20.04"
+      - "txn2/kubefwd:amd64-{{ .Tag }}_ubuntu-20.04"
+      - "txn2/kubefwd:amd64-v{{ .Major }}_ubuntu-20.04"
     build_flag_templates:
       - "--label=org.label-schema.schema-version=1.0"
       - "--label=org.label-schema.version={{.Version}}"

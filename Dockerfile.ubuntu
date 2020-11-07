@@ -1,0 +1,8 @@
+FROM ubuntu:20.04
+
+RUN apt update && apt install -y curl
+
+COPY kubefwd /
+
+WORKDIR /
+ENTRYPOINT ["/kubefwd"]
