@@ -98,6 +98,11 @@ Forward all svc for the namespace `the-project` where labeled `system: wx`:
 sudo kubefwd svc -l system=wx -n the-project
 ```
 
+Forward more than one service using the `in` clause:
+```bash
+sudo kubefwd svc -l "app in (app1, app2)"
+```
+
 ## Help
 
 ```bash
@@ -135,7 +140,7 @@ Flags:
   -h, --help                help for services
   -c, --kubeconfig string   absolute path to a kubectl config file
   -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
-  -l, --selector string     Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
+  -l, --selector string     Selector (label query) to filter on; supports '=', '==', '!=' (e.g. -l key1=value1,key2=value2) and 'in' (e.g. -l "app in (value1, value2)").
   -v, --verbose             Verbose output.
 ```
 
