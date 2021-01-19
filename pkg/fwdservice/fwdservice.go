@@ -240,6 +240,17 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 		for _, port := range svcFwd.Svc.Spec.Ports {
 
+			// Skip if pod port protocol is UDP - not supported in k8s port forwarding yet, see https://github.com/kubernetes/kubernetes/issues/47862
+			if port.Protocol == v1.ProtocolUDP {
+				log.Warnf("WARNING: Skipped Port-Forward for %s:%d to pod %s:%s - k8s port-forwarding doesn't support UDP protocol\n",
+					serviceHostName,
+					port.Port,
+					pod.Name,
+					port.TargetPort.String(),
+				)
+				continue
+			}
+
 			podPort = port.TargetPort.String()
 			localPort := strconv.Itoa(int(port.Port))
 
