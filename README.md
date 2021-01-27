@@ -169,17 +169,26 @@ GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 
 Apache License 2.0
 
-### Sponsor
-
-Open source utility by [Craig Johnston](https://twitter.com/cjimti), [imti blog](http://imti.co/) and sponsored by [Deasil Works, Inc.]
-
-
 ## Similar projects, products, alternatives and complementary utilities
 
 - [inlets](https://inlets.dev) - inlets provides an L7 HTTP tunnel for applications through the use of an exit node, it is used by the inlets operator
 - [inlets-operator](https://github.com/inlets/inlets-operator) - L4 TCP tunnel, which can tunnel any TCP traffic and is on the roadmap for the inlets-operator
 - [telepresence.io](https://www.telepresence.io/) - Telepresence substitutes a two-way network proxy for your normal pod running in the Kubernetes cluster.
 
+# Sponsor
+
+Open source utility by [Craig Johnston](https://twitter.com/cjimti), [imti blog](http://imti.co/) and sponsored by [Deasil Works, Inc.]
+
+Please check out my book [Advanced Platform Development with Kubernetes](https://imti.co/kubernetes-platform-book/):
+Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning.
+
+[![Book Cover - Advanced Platform Development with Kubernetes: Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning](https://raw.githubusercontent.com/apk8s/book-source/master/img/apk8s-banner-w.jpg)](https://amzn.to/3g3ihZ3)
+
+Source code from the book [Advanced Platform Development with Kubernetes: Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning](https://amzn.to/3g3ihZ3) by [Craig Johnston](https://imti.co) ([@cjimti](https://twitter.com/cjimti)) ISBN 978-1-4842-5610-7 [Apress; 1st ed. edition (September, 2020)](https://www.apress.com/us/book/9781484256107)
+
+Read my blog post [Advanced Platform Development with Kubernetes](https://imti.co/kubernetes-platform-book/) for more info and background on the book.
+
+Follow me on Twitter: [@cjimti](https://twitter.com/cjimti) ([Craig Johnston](https://twitter.com/cjimti))
 
 
 [Kubernetes]:https://kubernetes.io/
