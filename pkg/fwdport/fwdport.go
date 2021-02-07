@@ -2,6 +2,7 @@ package fwdport
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/httpstream"
 	"net"
 	"net/http"
 	"strconv"
@@ -84,6 +85,42 @@ type PortForwardOpts struct {
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
 }
 
+type pingingDialer struct {
+	wrappedDialer     httpstream.Dialer
+	pingPeriod        time.Duration
+	pingStopChan      chan struct{}
+	pingTargetPodName string
+}
+
+func (p pingingDialer) stopPing() {
+	p.pingStopChan <- struct{}{}
+}
+
+func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
+	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial()
+	if dialErr != nil {
+		log.Warnf("Ping process will not be performed for %s, cannot dial", p.pingTargetPodName)
+	}
+	go func(streamConnection httpstream.Connection) {
+		if streamConnection == nil || dialErr != nil {
+			return
+		}
+		for {
+			select {
+			case <-time.After(p.pingPeriod):
+				if pingStream, err := streamConn.CreateStream(nil); err == nil {
+					_ = pingStream.Reset()
+				}
+			case <-p.pingStopChan:
+				log.Debug("Ping process stopped for %s", p.pingTargetPodName)
+				return
+			}
+		}
+	}(streamConn)
+
+	return streamConn, streamProtocolVersion, dialErr
+}
+
 // PortForward does the port-forward for a single pod.
 // It is a blocking call and will return when an error occurred
 // or after a cancellation signal has been received.
@@ -148,6 +185,12 @@ func (pfo *PortForwardOpts) PortForward() error {
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
+	dialerWithPing := pingingDialer{
+		wrappedDialer:     dialer,
+		pingPeriod:        time.Second * 30,
+		pingStopChan:      make(chan struct{}),
+		pingTargetPodName: pfo.PodName,
+	}
 
 	var address []string
 	if pfo.LocalIp != nil {
@@ -156,7 +199,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	fw, err := portforward.NewOnAddresses(dialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
+	fw, err := portforward.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		pfo.Stop()
 		return err
@@ -166,6 +209,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	if err = fw.ForwardPorts(); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.Stop()
+		dialerWithPing.stopPing()
 		return err
 	}
 
