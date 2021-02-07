@@ -97,7 +97,7 @@ func (p pingingDialer) stopPing() {
 }
 
 func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
-	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial()
+	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial(protocols...)
 	if dialErr != nil {
 		log.Warnf("Ping process will not be performed for %s, cannot dial", p.pingTargetPodName)
 	}
@@ -108,7 +108,7 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 		for {
 			select {
 			case <-time.After(p.pingPeriod):
-				if pingStream, err := streamConn.CreateStream(nil); err == nil {
+				if pingStream, err := streamConnection.CreateStream(nil); err == nil {
 					_ = pingStream.Reset()
 				}
 			case <-p.pingStopChan:
