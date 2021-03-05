@@ -59,8 +59,8 @@ type ServiceFWD struct {
 	// while normally only a single pod is forwarded.
 	Headless bool
 
-	LastSyncedAt time.Time // When was the set of pods last synced
-
+	LastSyncedAt time.Time  // When was the set of pods last synced
+	PortMap      *[]PortMap // port map array.
 	// Use debouncer for listing pods so we don't hammer the k8s when a bunch of changes happen at once
 	SyncDebouncer func(f func())
 
@@ -68,6 +68,15 @@ type ServiceFWD struct {
 	// key = podName
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
+}
+
+/**
+add port map
+@url https://github.com/txn2/kubefwd/issues/121
+*/
+type PortMap struct {
+	SourcePort string
+	TargetPort string
 }
 
 // String representation of a ServiceFWD returns a unique name
@@ -252,8 +261,12 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			}
 
 			podPort = port.TargetPort.String()
-			localPort := strconv.Itoa(int(port.Port))
-
+			localPort := svcFwd.getPortMap(port.Port)
+			v, err := strconv.ParseInt(localPort, 10, 32)
+			if err != nil {
+				log.Fatal(err)
+			}
+			port.Port = int32(v)
 			if _, err := strconv.Atoi(podPort); err != nil {
 				// search a pods containers for the named port
 				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok {
@@ -361,4 +374,18 @@ func portSearch(portName string, containers []v1.Container) (string, bool) {
 	}
 
 	return "", false
+}
+
+// port exist port map return
+func (svcFwd *ServiceFWD) getPortMap(port int32) string {
+	p := strconv.Itoa(int(port))
+	if svcFwd.PortMap != nil {
+		for _, portMapInfo := range *svcFwd.PortMap {
+			if p == portMapInfo.TargetPort {
+				//use map port
+				return portMapInfo.SourcePort
+			}
+		}
+	}
+	return p
 }

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -53,6 +54,7 @@ var namespaces []string
 var contexts []string
 var verbose bool
 var domain string
+var port string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -67,6 +69,8 @@ func init() {
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
+	// "The Issues https://github.com/txn2/kubefwd/issues/121"
+	Cmd.Flags().StringVarP(&port, "port", "p", "", "Map the ports you need.(e.g. host port:container port -p 8080:80")
 
 }
 
@@ -410,6 +414,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
+		PortMap:              opts.ParsePortMap(port),
 	}
 
 	// Add the service to the catalog of services being forwarded
@@ -434,4 +439,18 @@ func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) 
 	if err == nil {
 		log.Printf("update service %s.", key)
 	}
+}
+
+// parse string port to PortMap
+func (opts *NamespaceOpts) ParsePortMap(port string) *[]fwdservice.PortMap {
+	var portList []fwdservice.PortMap
+	if port == "" {
+		return nil
+	}
+	strArr := strings.Split(port, ",")
+	for _, s := range strArr {
+		portInfo := strings.Split(s, ":")
+		portList = append(portList, fwdservice.PortMap{SourcePort: portInfo[0], TargetPort: portInfo[1]})
+	}
+	return &portList
 }
