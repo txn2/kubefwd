@@ -128,6 +128,8 @@ Examples:
   kubefwd svc -n default -n the-project
   kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
+  kubefwd svc -n the-project -p "8080:80,3309:3306"
+  kubefwd svc -n the-project -p "8080:80"
 
 
 Flags:
