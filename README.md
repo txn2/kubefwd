@@ -131,6 +131,7 @@ Examples:
   kubefwd svc -n default -n the-project
   kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
+  kubefwd svc -n the-project -m 80:8080 -m 443:1443
 
 
 Flags:
@@ -141,6 +142,7 @@ Flags:
   -c, --kubeconfig string   absolute path to a kubectl config file
   -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
   -l, --selector string     Selector (label query) to filter on; supports '=', '==', '!=' (e.g. -l key1=value1,key2=value2) and 'in' (e.g. -l "app in (value1, value2)").
+  -m, --mapping strings     Specify a port mapping. Specify multiple mapping by duplicating this argument.
   -v, --verbose             Verbose output.
 ```
 

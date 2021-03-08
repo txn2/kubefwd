@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -53,6 +54,7 @@ var namespaces []string
 var contexts []string
 var verbose bool
 var domain string
+var mappings []string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -67,6 +69,7 @@ func init() {
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
+	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
 
 }
 
@@ -80,7 +83,8 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
-		"  kubefwd svc -n the-project -x prod-cluster\n",
+		"  kubefwd svc -n the-project -x prod-cluster\n" +
+		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n",
 	Run: runCmd,
 }
 
@@ -288,6 +292,7 @@ Try:
 				NamespaceN:        ii,
 				Domain:            domain,
 				ManualStopChannel: stopListenCh,
+				PortMapping:       mappings,
 			}
 
 			go func(npo NamespaceOpts) {
@@ -336,6 +341,8 @@ type NamespaceOpts struct {
 
 	// Domain is specified by the user and used in place of .local
 	Domain string
+	// meaning any source port maps to target port.
+	PortMapping []string
 
 	ManualStopChannel chan struct{}
 }
@@ -410,6 +417,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
+		PortMap:              opts.ParsePortMap(mappings),
 	}
 
 	// Add the service to the catalog of services being forwarded
@@ -434,4 +442,17 @@ func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) 
 	if err == nil {
 		log.Printf("update service %s.", key)
 	}
+}
+
+// parse string port to PortMap
+func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap {
+	var portList []fwdservice.PortMap
+	if mappings == nil {
+		return nil
+	}
+	for _, s := range mappings {
+		portInfo := strings.Split(s, ":")
+		portList = append(portList, fwdservice.PortMap{SourcePort: portInfo[0], TargetPort: portInfo[1]})
+	}
+	return &portList
 }
