@@ -85,7 +85,6 @@ func main() {
 
 	log.SetOutput(&LogOutputSplitter{})
 
-	log.Print(`LOLOLLOLOLLLOLOOLLOLOLLOL`)
 	log.Print(` _          _           __             _`)
 	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
 	log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
