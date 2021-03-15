@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -91,7 +92,7 @@ func (svcFwd *ServiceFWD) String() string {
 func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	listOpts := metav1.ListOptions{LabelSelector: svcFwd.PodLabelSelector}
 
-	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(listOpts)
+	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOpts)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
