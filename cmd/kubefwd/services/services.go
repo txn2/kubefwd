@@ -23,6 +23,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"context"
 
 	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
@@ -110,7 +111,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 					ResourceAttributes: &perm,
 				},
 			}
-			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(accessReview)
+			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
 			if err != nil {
 				return err
 			}
@@ -362,12 +363,12 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				options.Watch = true
 				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(context.TODO(), options)
 			},
 		},
 		&v1.Service{},
