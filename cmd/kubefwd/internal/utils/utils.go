@@ -16,9 +16,8 @@ limitations under the License.
 package utils
 
 import (
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/fwdport"
 	"sync"
-
-	"github.com/txn2/kubefwd/pkg/fwdport"
 )
 
 var Lock sync.Mutex

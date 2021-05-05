@@ -1,18 +1,18 @@
 package fwdport
 
 import (
+	"context"
 	"fmt"
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/fwdnet"
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/fwdpub"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
-	"context"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

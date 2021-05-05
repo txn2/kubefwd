@@ -155,6 +155,12 @@ Flags:
 go run ./cmd/kubefwd/kubefwd.go
 ```
 
+### Build for local install via source code
+
+```bash
+GOBIN=~/bin go install -ldflags="-X main.Version=1.1.18" ./cmd/kubefwd/kubefwd.go
+```
+
 ### Build Release
 
 Build test release:

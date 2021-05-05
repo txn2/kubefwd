@@ -1,10 +1,10 @@
 package fwdsvcregistry
 
 import (
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/fwdservice"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdservice"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 

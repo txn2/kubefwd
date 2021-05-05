@@ -3,12 +3,11 @@ package fwdnet
 import (
 	"errors"
 	"fmt"
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/fwdIp"
 	"net"
 	"os"
 	"os/exec"
 	"runtime"
-
-	"github.com/txn2/kubefwd/pkg/fwdIp"
 )
 
 // ReadyInterface prepares a local IP address on

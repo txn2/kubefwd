@@ -18,11 +18,11 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/txn2/kubefwd/cmd/kubefwd/internal/services"
 	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/txn2/kubefwd/cmd/kubefwd/services"
 )
 
 var globalUsage = ``
