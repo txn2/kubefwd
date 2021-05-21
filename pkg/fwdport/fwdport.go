@@ -1,14 +1,15 @@
 package fwdport
 
 import (
+	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/httpstream"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
-	"context"
+
+	"k8s.io/apimachinery/pkg/util/httpstream"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -113,7 +114,7 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 					_ = pingStream.Reset()
 				}
 			case <-p.pingStopChan:
-				log.Debug("Ping process stopped for %s", p.pingTargetPodName)
+				log.Debug(fmt.Sprintf("Ping process stopped for %s", p.pingTargetPodName))
 				return
 			}
 		}
