@@ -31,6 +31,11 @@ import (
 type ServiceFWD interface {
 	String() string
 	SyncPodForwards(bool)
+	ListServicePodNames() []string
+	AddServicePod(pfo *PortForwardOpts)
+	GetServicePodPortForwards(servicePodName string) []*PortForwardOpts
+	RemoveServicePod(servicePodName string)
+	RemoveServicePodByPort(servicePodName string, podPort string)
 }
 
 // HostFileWithLock
@@ -114,7 +119,7 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 					_ = pingStream.Reset()
 				}
 			case <-p.pingStopChan:
-				log.Debug(fmt.Sprintf("Ping process stopped for %s", p.pingTargetPodName))
+				log.Debugf("Ping process stopped for %s", p.pingTargetPodName)
 				return
 			}
 		}
@@ -161,6 +166,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	go func() {
 		<-pfo.ManualStopChan
 		close(downstreamStopChannel)
+		pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort)
 		pfo.removeHosts()
 		pfo.removeInterfaceAlias()
 		close(pfStopChannel)
@@ -343,6 +349,11 @@ func (pfo *PortForwardOpts) AddHosts() {
 // associated with a forwarded pod
 func (pfo *PortForwardOpts) removeHosts() {
 
+	// We must not remove hosts entries if port-forwarding on one of the service ports is failing
+	if pfAmount := len(pfo.ServiceFwd.GetServicePodPortForwards(pfo.String())); pfAmount > 0 {
+		return
+	}
+
 	// we should lock the pfo.HostFile here
 	// because sometimes other goroutine write the *txeh.Hosts
 	pfo.HostFile.Lock()
@@ -350,7 +361,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 	// since it was originally updated.
 	err := pfo.HostFile.Hosts.Reload()
 	if err != nil {
-		log.Error("Unable to reload /etc/hosts: " + err.Error())
+		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
 		return
 	}
 
@@ -459,4 +470,8 @@ func (pfo *PortForwardOpts) Stop() {
 	default:
 	}
 	close(pfo.ManualStopChan)
+}
+
+func (pfo *PortForwardOpts) String() string {
+	return pfo.Service + "." + pfo.PodName
 }
