@@ -335,32 +335,31 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 	}
 }
 
-// AddServicePod
+// AddServicePod adds PortForwardOpts to mapping
 func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
+	log.Debugf("ServiceForward: Add %s with %s port", pfo, pfo.PodPort)
 	svcFwd.NamespaceServiceLock.Lock()
-	if _, found := svcFwd.PortForwards[pfo.String()]; !found {
-		portForwardsList := make([]*fwdport.PortForwardOpts, 0)
-		portForwardsList = append(portForwardsList, pfo)
-		svcFwd.PortForwards[pfo.String()] = portForwardsList
+	defer svcFwd.NamespaceServiceLock.Unlock()
+	if existPortForwards, found := svcFwd.PortForwards[pfo.String()]; !found {
+		svcFwd.PortForwards[pfo.String()] = []*fwdport.PortForwardOpts{pfo}
 	} else {
-		portForwardList := svcFwd.PortForwards[pfo.String()]
-		if !svcFwd.contains(portForwardList, pfo) {
-			portForwardList = append(portForwardList, pfo)
+		if !svcFwd.contains(existPortForwards, pfo) {
+			existPortForwards = append(existPortForwards, pfo)
+			svcFwd.PortForwards[pfo.String()] = existPortForwards
 		}
 	}
-	svcFwd.NamespaceServiceLock.Unlock()
 }
 
 func (svcFwd *ServiceFWD) contains(portForwards []*fwdport.PortForwardOpts, pfo *fwdport.PortForwardOpts) bool {
 	for _, pf := range portForwards {
-		if pfo.String() == pf.String() && pfo.PodPort == pf.PodPort {
+		if pfo.PodName == pf.PodName && pfo.Service == pf.Service && pfo.PodPort == pf.PodPort {
 			return true
 		}
 	}
 	return false
 }
 
-// ListServicePodPortNames
+// ListServicePodNames returns list of keys for mapping
 func (svcFwd *ServiceFWD) ListServicePodNames() []string {
 	svcFwd.NamespaceServiceLock.Lock()
 	currentPodNames := make([]string, 0, len(svcFwd.PortForwards))
@@ -379,8 +378,9 @@ func (svcFwd *ServiceFWD) GetServicePodPortForwards(servicePodName string) []*fw
 
 // RemoveServicePod removes all PortForwardOpts from mapping
 func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
-	log.Debugf("Removing all pods from serviceFwd by key=%s", servicePodName)
+	log.Debugf("ServiceForward: Removing all pods by key=%s", servicePodName)
 	svcFwd.removeServicePodPort(servicePodName, svcFwd.allMatch)
+	log.Debugf("ServiceForward: Done removing all pods by key=%s", servicePodName)
 }
 
 func (svcFwd *ServiceFWD) allMatch(_ *fwdport.PortForwardOpts) bool {
@@ -389,32 +389,37 @@ func (svcFwd *ServiceFWD) allMatch(_ *fwdport.PortForwardOpts) bool {
 
 // removeServicePodPort removes PortForwardOpts from mapping according to filter function
 func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter func(pfo *fwdport.PortForwardOpts) bool) {
-	svcFwd.NamespaceServiceLock.Lock()
-	defer svcFwd.NamespaceServiceLock.Unlock()
 	if pods, found := svcFwd.PortForwards[servicePodName]; found {
-		stay := make([]*fwdport.PortForwardOpts, 0, len(pods))
+		stay := make([]*fwdport.PortForwardOpts, 0)
 		for _, pod := range pods {
 			if filter(pod) {
-				pod.Stop()
-				<-pod.DoneChan
+				defer svcFwd.stop(pod)
 			} else {
 				stay = append(stay, pod)
 			}
 		}
+		svcFwd.NamespaceServiceLock.Lock()
 		if len(stay) == 0 {
 			delete(svcFwd.PortForwards, servicePodName)
 		} else {
 			svcFwd.PortForwards[servicePodName] = stay
 		}
+		svcFwd.NamespaceServiceLock.Unlock()
 	}
+}
+
+func (svcFwd *ServiceFWD) stop(pfo *fwdport.PortForwardOpts) {
+	pfo.Stop()
+	<-pfo.DoneChan
 }
 
 // RemoveServicePodByPort removes PortForwardOpts from mapping by specified pod port
 func (svcFwd *ServiceFWD) RemoveServicePodByPort(servicePodName string, podPort string) {
-	log.Debugf("Removing all pods from serviceFwd by key=%s and port=%s", servicePodName, podPort)
+	log.Debugf("ServiceForward: Removing all pods by key=%s and port=%s", servicePodName, podPort)
 	svcFwd.removeServicePodPort(servicePodName, func(pfo *fwdport.PortForwardOpts) bool {
 		return pfo.PodPort == podPort
 	})
+	log.Debugf("ServiceForward: Done removing all pods by key=%s and port=%s", servicePodName, podPort)
 }
 
 func portSearch(portName string, containers []v1.Container) (string, bool) {

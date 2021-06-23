@@ -99,10 +99,6 @@ type pingingDialer struct {
 	pingTargetPodName string
 }
 
-func (p pingingDialer) stopPing() {
-	p.pingStopChan <- struct{}{}
-}
-
 func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
 	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial(protocols...)
 	if dialErr != nil {
@@ -196,8 +192,8 @@ func (pfo *PortForwardOpts) PortForward() error {
 	dialerWithPing := pingingDialer{
 		wrappedDialer:     dialer,
 		pingPeriod:        time.Second * 30,
-		pingStopChan:      make(chan struct{}),
-		pingTargetPodName: pfo.PodName,
+		pingStopChan:      pfo.ManualStopChan,
+		pingTargetPodName: fmt.Sprintf("%s:%s", pfo.String(), pfo.PodPort),
 	}
 
 	var address []string
@@ -217,7 +213,6 @@ func (pfo *PortForwardOpts) PortForward() error {
 	if err = fw.ForwardPorts(); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.Stop()
-		dialerWithPing.stopPing()
 		return err
 	}
 
@@ -345,12 +340,17 @@ func (pfo *PortForwardOpts) AddHosts() {
 	pfo.HostFile.Unlock()
 }
 
+// getBrothersInPodsAmount returns amount of port-forwards that proceeds on different ports under same pod
+func (pfo *PortForwardOpts) getBrothersInPodsAmount() int {
+	return len(pfo.ServiceFwd.GetServicePodPortForwards(pfo.String()))
+}
+
 // removeHosts removes hosts /etc/hosts
 // associated with a forwarded pod
 func (pfo *PortForwardOpts) removeHosts() {
 
-	// We must not remove hosts entries if port-forwarding on one of the service ports is failing
-	if pfAmount := len(pfo.ServiceFwd.GetServicePodPortForwards(pfo.String())); pfAmount > 0 {
+	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
+	if pfo.getBrothersInPodsAmount() > 0 {
 		return
 	}
 
