@@ -3,6 +3,7 @@ package fwdservice
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -211,17 +212,9 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 		Output:        false,
 	}
 
-	// Ip address handout is a critical section for synchronization,
-	// use a lock which synchronizes inside each namespace.
-	svcFwd.NamespaceServiceLock.Lock()
-	defer svcFwd.NamespaceServiceLock.Unlock()
-
 	for _, pod := range pods {
-		// If pod is already configured to be forwarded, skip it
-		if _, found := svcFwd.PortForwards[pod.Name]; found {
-			continue
-		}
-
+		var localIp net.IP
+		podIpReady := false
 		podPort := ""
 
 		serviceHostName := svcFwd.Svc.Name
@@ -230,11 +223,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 		if includePodNameInHost {
 			serviceHostName = pod.Name + "." + svcFwd.Svc.Name
 			svcName = pod.Name + "." + svcFwd.Svc.Name
-		}
-
-		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
-		if err != nil {
-			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
 
 		// if this is not the first namespace on the
@@ -276,6 +264,40 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				}
 			}
 
+			pfo := &fwdport.PortForwardOpts{
+				Out:        publisher,
+				Config:     svcFwd.ClientConfig,
+				ClientSet:  svcFwd.ClientSet,
+				RESTClient: svcFwd.RESTClient,
+				Context:    svcFwd.Context,
+				Namespace:  pod.Namespace,
+				Service:    svcName,
+				ServiceFwd: svcFwd,
+				PodName:    pod.Name,
+				PodPort:    podPort,
+				LocalPort:  localPort,
+				HostFile:   svcFwd.Hostfile,
+				ClusterN:   svcFwd.ClusterN,
+				NamespaceN: svcFwd.NamespaceN,
+				Domain:     svcFwd.Domain,
+
+				ManualStopChan: make(chan struct{}),
+				DoneChan:       make(chan struct{}),
+			}
+
+			// If port-forwarding on pod under exact port is already configured, then skip it
+			if runningPortForwards:= svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
+				continue
+			}
+
+			if !podIpReady { // We need to Ready interface only once per pod
+				if localIp, err = fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, ""); err == nil {
+					podIpReady = true
+				} else {
+					log.Warnf("WARNING: error readying interface: %s\n", err)
+				}
+			}
+
 			log.Debugf("Resolving: %s to %s (%s)\n",
 				serviceHostName,
 				localIp.String(),
@@ -290,27 +312,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				podPort,
 			)
 
-			pfo := &fwdport.PortForwardOpts{
-				Out:        publisher,
-				Config:     svcFwd.ClientConfig,
-				ClientSet:  svcFwd.ClientSet,
-				RESTClient: svcFwd.RESTClient,
-				Context:    svcFwd.Context,
-				Namespace:  pod.Namespace,
-				Service:    svcName,
-				ServiceFwd: svcFwd,
-				PodName:    pod.Name,
-				PodPort:    podPort,
-				LocalIp:    localIp,
-				LocalPort:  localPort,
-				HostFile:   svcFwd.Hostfile,
-				ClusterN:   svcFwd.ClusterN,
-				NamespaceN: svcFwd.NamespaceN,
-				Domain:     svcFwd.Domain,
-
-				ManualStopChan: make(chan struct{}),
-				DoneChan:       make(chan struct{}),
-			}
+			pfo.LocalIp = localIp
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
