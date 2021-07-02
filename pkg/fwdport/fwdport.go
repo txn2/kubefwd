@@ -188,13 +188,13 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Waiting until the pod is running
 	pod, err := pfo.StateWaiter.WaitUntilPodRunning(downstreamStopChannel)
 	if err != nil {
-		pfo.Stop()
+		pfo.stopAndShutdown()
 		return err
 	} else if pod == nil {
 		// if err is not nil but pod is nil
 		// mean service deleted but pod is not runnning.
 		// No error, just return
-		pfo.Stop()
+		pfo.stopAndShutdown()
 		return nil
 	}
 
@@ -221,7 +221,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	fw, err := pfo.PortForwardHelper.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
-		pfo.Stop()
+		pfo.stopAndShutdown()
 		return err
 	}
 
@@ -238,10 +238,17 @@ func PortForward(pfo *PortForwardOpts) error {
 	return nil
 }
 
+// shutdown removes port-forward from ServiceFwd and removes hosts entries if it's necessary
 func (pfo PortForwardOpts) shutdown() {
 	pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, true)
 	pfo.HostsOperator.RemoveHosts()
 	pfo.HostsOperator.RemoveInterfaceAlias()
+}
+
+// stopAndShutdown is shortcut for closing all downstream channels and shutdown
+func (pfo PortForwardOpts) stopAndShutdown() {
+	pfo.Stop()
+	pfo.shutdown()
 }
 
 //// BuildHostsParams constructs the basic hostnames for the service
