@@ -69,8 +69,10 @@ type ServiceFWD struct {
 
 	// A mapping of all the pods currently being forwarded.
 	// key = PortForwardOpts.String()
-	PortForwards map[string][]*fwdport.PortForwardOpts
-	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
+	PortForwards        map[string][]*fwdport.PortForwardOpts
+	DoneChannel         chan struct{} // After shutdown is complete, this channel will be closed
+	ManualStopChannel   chan struct{}
+	WaitAllPodsShutdown *sync.WaitGroup
 }
 
 /**
@@ -142,7 +144,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 				}
 			}
 			if !keep {
-				svcFwd.RemoveServicePod(podName)
+				svcFwd.RemoveServicePod(podName, true)
 			}
 		}
 
@@ -178,7 +180,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 			// and the comparison will mean we will remove all pods, which is the desired behaviour.
 			for _, podName := range svcFwd.ListServicePodNames() {
 				if podName != podNameToKeep {
-					svcFwd.RemoveServicePod(podName)
+					svcFwd.RemoveServicePod(podName, true)
 				}
 			}
 
@@ -268,7 +270,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				Out:        publisher,
 				Config:     svcFwd.ClientConfig,
 				ClientSet:  svcFwd.ClientSet,
-				RESTClient: svcFwd.RESTClient,
+				RESTClient: &svcFwd.RESTClient,
 				Context:    svcFwd.Context,
 				Namespace:  pod.Namespace,
 				Service:    svcName,
@@ -283,10 +285,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
+
+				StateWaiter: &fwdport.PodStateWaiterImpl{
+					Namespace:  pod.Namespace,
+					PodName:    pod.Name,
+					ClientSet:  svcFwd.ClientSet,
+					ServiceFwd: svcFwd,
+				},
+				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 			}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
-			if runningPortForwards:= svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
+			if runningPortForwards := svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
 				continue
 			}
 
@@ -317,7 +327,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
 				svcFwd.AddServicePod(pfo)
-				if err := pfo.PortForward(); err != nil {
+				if err := fwdport.PortForward(pfo); err != nil {
 					select {
 					case <-pfo.ManualStopChan: // if shutdown was given, we don't bother with the error.
 					default:
@@ -378,10 +388,10 @@ func (svcFwd *ServiceFWD) GetServicePodPortForwards(servicePodName string) []*fw
 	return svcFwd.PortForwards[servicePodName]
 }
 
-// RemoveServicePod removes all PortForwardOpts from mapping
-func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
+// RemoveServicePod removes all PortForwardOpts from mapping with or without port-forward stop
+func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string, stop bool) {
 	log.Debugf("ServiceForward: Removing all pods by key=%s", servicePodName)
-	svcFwd.removeServicePodPort(servicePodName, svcFwd.allMatch)
+	svcFwd.removeServicePodPort(servicePodName, svcFwd.allMatch, stop)
 	log.Debugf("ServiceForward: Done removing all pods by key=%s", servicePodName)
 }
 
@@ -389,25 +399,28 @@ func (svcFwd *ServiceFWD) allMatch(_ *fwdport.PortForwardOpts) bool {
 	return true
 }
 
-// removeServicePodPort removes PortForwardOpts from mapping according to filter function
-func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter func(pfo *fwdport.PortForwardOpts) bool) {
+// removeServicePodPort removes PortForwardOpts from mapping according to filter function with or without port-forward stop
+func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter func(pfo *fwdport.PortForwardOpts) bool, stop bool) {
+	svcFwd.NamespaceServiceLock.Lock()
 	if pods, found := svcFwd.PortForwards[servicePodName]; found {
-		stay := make([]*fwdport.PortForwardOpts, 0)
+		stay := make([]*fwdport.PortForwardOpts, 0, len(pods))
 		for _, pod := range pods {
 			if filter(pod) {
-				defer svcFwd.stop(pod)
+				if stop {
+					defer svcFwd.stop(pod)
+				}
 			} else {
 				stay = append(stay, pod)
 			}
 		}
-		svcFwd.NamespaceServiceLock.Lock()
 		if len(stay) == 0 {
 			delete(svcFwd.PortForwards, servicePodName)
 		} else {
 			svcFwd.PortForwards[servicePodName] = stay
 		}
-		svcFwd.NamespaceServiceLock.Unlock()
+		log.Debugf("ServiceForward: Removed %d pods by key %s", len(pods) - len(stay), servicePodName)
 	}
+	svcFwd.NamespaceServiceLock.Unlock()
 }
 
 func (svcFwd *ServiceFWD) stop(pfo *fwdport.PortForwardOpts) {
@@ -415,12 +428,12 @@ func (svcFwd *ServiceFWD) stop(pfo *fwdport.PortForwardOpts) {
 	<-pfo.DoneChan
 }
 
-// RemoveServicePodByPort removes PortForwardOpts from mapping by specified pod port
-func (svcFwd *ServiceFWD) RemoveServicePodByPort(servicePodName string, podPort string) {
+// RemoveServicePodByPort removes PortForwardOpts from mapping by specified pod port with or without port-forward stop
+func (svcFwd *ServiceFWD) RemoveServicePodByPort(servicePodName string, podPort string, stop bool) {
 	log.Debugf("ServiceForward: Removing all pods by key=%s and port=%s", servicePodName, podPort)
 	svcFwd.removeServicePodPort(servicePodName, func(pfo *fwdport.PortForwardOpts) bool {
 		return pfo.PodPort == podPort
-	})
+	}, stop)
 	log.Debugf("ServiceForward: Done removing all pods by key=%s and port=%s", servicePodName, podPort)
 }
 

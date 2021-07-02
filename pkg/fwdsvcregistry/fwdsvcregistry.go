@@ -133,7 +133,7 @@ func RemoveByName(name string) {
 	podsAllDone.Add(len(activePodForwards))
 	for _, podName := range activePodForwards {
 		go func(podName string) {
-			serviceFwd.RemoveServicePod(podName)
+			serviceFwd.RemoveServicePod(podName, true)
 			podsAllDone.Done()
 		}(podName)
 	}
