@@ -1,3 +1,4 @@
+//go:generate ${gopath}/bin/mockgen -source=fwdport.go -destination=mock_fwdport.go -package=fwdport
 package fwdport
 
 import (
@@ -48,7 +49,17 @@ type PortForwardHelper interface {
 	NewDialer(upgrader spdy.Upgrader, client *http.Client, method string, pfRequest *restclient.Request) httpstream.Dialer
 }
 
+type HostsOperator interface {
+	AddHosts()
+	RemoveHosts()
+	RemoveInterfaceAlias()
+}
+
 type PortForwardHelperImpl struct {}
+
+type PortForwardOptsHostsOperator struct {
+	Pfo *PortForwardOpts
+}
 
 // HostFileWithLock
 type HostFileWithLock struct {
@@ -102,8 +113,10 @@ type PortForwardOpts struct {
 	Hosts             []string
 	ManualStopChan    chan struct{} // Send a signal on this to stop the portforwarding
 	DoneChan          chan struct{} // Listen on this channel for when the shutdown is completed.
+
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
+	HostsOperator     HostsOperator
 }
 
 type pingingDialer struct {
@@ -163,7 +176,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
-	pfo.AddHosts()
+	pfo.HostsOperator.AddHosts()
 
 	// Close created downstream channels if there are stop signal from above
 	go func() {
@@ -227,18 +240,8 @@ func PortForward(pfo *PortForwardOpts) error {
 
 func (pfo PortForwardOpts) shutdown() {
 	pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, true)
-	pfo.removeHosts()
-	pfo.removeInterfaceAlias()
-
-}
-
-func (pfo PortForwardOpts) isExternalShutdown() bool {
-	select {
-	case <-pfo.ManualStopChan:
-		return true
-	default:
-		return false
-	}
+	pfo.HostsOperator.RemoveHosts()
+	pfo.HostsOperator.RemoveInterfaceAlias()
 }
 
 //// BuildHostsParams constructs the basic hostnames for the service
@@ -261,153 +264,9 @@ func (pfo PortForwardOpts) isExternalShutdown() bool {
 //	pfo.HostsParams.svcServiceName = svcServiceName
 //}
 
-// AddHost
-func (pfo *PortForwardOpts) addHost(host string) {
-	// add to list of hostnames for this port-forward
-	pfo.Hosts = append(pfo.Hosts, host)
-
-	// remove host if it already exists in /etc/hosts
-	pfo.HostFile.Hosts.RemoveHost(host)
-
-	// add host to /etc/hosts
-	pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
-}
-
-// AddHosts adds hostname entries to /etc/hosts
-func (pfo *PortForwardOpts) AddHosts() {
-
-	// We must not add multiple hosts entries for different ports on the same service
-	if pfo.getBrothersInPodsAmount() != 1 {
-		return
-	}
-
-	pfo.HostFile.Lock()
-
-	// pfo.Service holds only the service name
-	// start with the smallest allowable hostname
-
-	// bare service name
-	if pfo.ClusterN == 0 && pfo.NamespaceN == 0 {
-		pfo.addHost(pfo.Service)
-
-		if pfo.Domain != "" {
-			pfo.addHost(fmt.Sprintf(
-				"%s.%s",
-				pfo.Service,
-				pfo.Domain,
-			))
-		}
-	}
-
-	// alternate cluster / first namespace
-	if pfo.ClusterN > 0 && pfo.NamespaceN == 0 {
-		pfo.addHost(fmt.Sprintf(
-			"%s.%s",
-			pfo.Service,
-			pfo.Context,
-		))
-	}
-
-	// namespaced without cluster
-	if pfo.ClusterN == 0 {
-		pfo.addHost(fmt.Sprintf(
-			"%s.%s",
-			pfo.Service,
-			pfo.Namespace,
-		))
-
-		pfo.addHost(fmt.Sprintf(
-			"%s.%s.svc",
-			pfo.Service,
-			pfo.Namespace,
-		))
-
-		pfo.addHost(fmt.Sprintf(
-			"%s.%s.svc.cluster.local",
-			pfo.Service,
-			pfo.Namespace,
-		))
-
-		if pfo.Domain != "" {
-			pfo.addHost(fmt.Sprintf(
-				"%s.%s.svc.cluster.%s",
-				pfo.Service,
-				pfo.Namespace,
-				pfo.Domain,
-			))
-		}
-
-	}
-
-	pfo.addHost(fmt.Sprintf(
-		"%s.%s.%s",
-		pfo.Service,
-		pfo.Namespace,
-		pfo.Context,
-	))
-
-	pfo.addHost(fmt.Sprintf(
-		"%s.%s.svc.%s",
-		pfo.Service,
-		pfo.Namespace,
-		pfo.Context,
-	))
-
-	pfo.addHost(fmt.Sprintf(
-		"%s.%s.svc.cluster.%s",
-		pfo.Service,
-		pfo.Namespace,
-		pfo.Context,
-	))
-
-	err := pfo.HostFile.Hosts.Save()
-	if err != nil {
-		log.Error("Error saving hosts file", err)
-	}
-	pfo.HostFile.Unlock()
-}
-
 // getBrothersInPodsAmount returns amount of port-forwards that proceeds on different ports under same pod
 func (pfo *PortForwardOpts) getBrothersInPodsAmount() int {
 	return len(pfo.ServiceFwd.GetServicePodPortForwards(pfo.String()))
-}
-
-// removeHosts removes hosts /etc/hosts
-// associated with a forwarded pod
-func (pfo *PortForwardOpts) removeHosts() {
-	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
-	if pfo.getBrothersInPodsAmount() > 0 {
-		return
-	}
-
-	// we should lock the pfo.HostFile here
-	// because sometimes other goroutine write the *txeh.Hosts
-	pfo.HostFile.Lock()
-	// other applications or process may have written to /etc/hosts
-	// since it was originally updated.
-	err := pfo.HostFile.Hosts.Reload()
-	if err != nil {
-		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
-		return
-	}
-
-	// remove all hosts
-	for _, host := range pfo.Hosts {
-		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, pfo.PodName, pfo.Namespace, pfo.Context)
-		pfo.HostFile.Hosts.RemoveHost(host)
-	}
-
-	// fmt.Printf("Delete Host And Save !\r\n")
-	err = pfo.HostFile.Hosts.Save()
-	if err != nil {
-		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
-	}
-	pfo.HostFile.Unlock()
-}
-
-// removeInterfaceAlias called on stop signal to
-func (pfo *PortForwardOpts) removeInterfaceAlias() {
-	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
 }
 
 // WaitUntilPodRunning Waiting for the pod running
@@ -514,7 +373,7 @@ type PodStateWaiterImpl struct {
 	ServiceFwd ServiceFWD
 }
 
-func (p *PortForwardHelperImpl) GetPortForwardRequest(pfo *PortForwardOpts) *restclient.Request {
+func (p PortForwardHelperImpl) GetPortForwardRequest(pfo *PortForwardOpts) *restclient.Request {
 	// if need to set timeout, set it here.
 	// restClient.Client.Timeout = 32
 	return pfo.RESTClient.Post().
@@ -524,18 +383,159 @@ func (p *PortForwardHelperImpl) GetPortForwardRequest(pfo *PortForwardOpts) *res
 		SubResource("portforward")
 }
 
-func (p *PortForwardHelperImpl) NewOnAddresses(dialer httpstream.Dialer, addresses []string, ports []string, stopChan <-chan struct{}, readyChan chan struct{}, out, errOut io.Writer) (*portforward.PortForwarder, error) {
+func (p PortForwardHelperImpl) NewOnAddresses(dialer httpstream.Dialer, addresses []string, ports []string, stopChan <-chan struct{}, readyChan chan struct{}, out, errOut io.Writer) (*portforward.PortForwarder, error) {
 	return portforward.NewOnAddresses(dialer, addresses, ports, stopChan, readyChan, out, errOut)
 }
 
-func (p *PortForwardHelperImpl) RoundTripperFor(config *restclient.Config) (http.RoundTripper, spdy.Upgrader, error) {
+func (p PortForwardHelperImpl) RoundTripperFor(config *restclient.Config) (http.RoundTripper, spdy.Upgrader, error) {
 	return spdy.RoundTripperFor(config)
 }
 
-func (p *PortForwardHelperImpl) NewDialer(upgrader spdy.Upgrader, client *http.Client, method string, pfRequest *restclient.Request) httpstream.Dialer {
+func (p PortForwardHelperImpl) NewDialer(upgrader spdy.Upgrader, client *http.Client, method string, pfRequest *restclient.Request) httpstream.Dialer {
 	return spdy.NewDialer(upgrader, client, method, pfRequest.URL())
 }
 
-func (p *PortForwardHelperImpl) ForwardPorts(forwarder *portforward.PortForwarder) error {
+func (p PortForwardHelperImpl) ForwardPorts(forwarder *portforward.PortForwarder) error {
 	return forwarder.ForwardPorts()
+}
+
+// AddHosts adds hostname entries to /etc/hosts
+func (operator PortForwardOptsHostsOperator) AddHosts() {
+
+	// We must not add multiple hosts entries for different ports on the same service
+	if operator.Pfo.getBrothersInPodsAmount() != 1 {
+		return
+	}
+
+	operator.Pfo.HostFile.Lock()
+
+	// pfo.Service holds only the service name
+	// start with the smallest allowable hostname
+
+	// bare service name
+	if operator.Pfo.ClusterN == 0 && operator.Pfo.NamespaceN == 0 {
+		operator.addHost(operator.Pfo.Service)
+
+		if operator.Pfo.Domain != "" {
+			operator.addHost(fmt.Sprintf(
+				"%s.%s",
+				operator.Pfo.Service,
+				operator.Pfo.Domain,
+			))
+		}
+	}
+
+	// alternate cluster / first namespace
+	if operator.Pfo.ClusterN > 0 && operator.Pfo.NamespaceN == 0 {
+		operator.addHost(fmt.Sprintf(
+			"%s.%s",
+			operator.Pfo.Service,
+			operator.Pfo.Context,
+		))
+	}
+
+	// namespaced without cluster
+	if operator.Pfo.ClusterN == 0 {
+		operator.addHost(fmt.Sprintf(
+			"%s.%s",
+			operator.Pfo.Service,
+			operator.Pfo.Namespace,
+		))
+
+		operator.addHost(fmt.Sprintf(
+			"%s.%s.svc",
+			operator.Pfo.Service,
+			operator.Pfo.Namespace,
+		))
+
+		operator.addHost(fmt.Sprintf(
+			"%s.%s.svc.cluster.local",
+			operator.Pfo.Service,
+			operator.Pfo.Namespace,
+		))
+
+		if operator.Pfo.Domain != "" {
+			operator.addHost(fmt.Sprintf(
+				"%s.%s.svc.cluster.%s",
+				operator.Pfo.Service,
+				operator.Pfo.Namespace,
+				operator.Pfo.Domain,
+			))
+		}
+
+	}
+
+	operator.addHost(fmt.Sprintf(
+		"%s.%s.%s",
+		operator.Pfo.Service,
+		operator.Pfo.Namespace,
+		operator.Pfo.Context,
+	))
+
+	operator.addHost(fmt.Sprintf(
+		"%s.%s.svc.%s",
+		operator.Pfo.Service,
+		operator.Pfo.Namespace,
+		operator.Pfo.Context,
+	))
+
+	operator.addHost(fmt.Sprintf(
+		"%s.%s.svc.cluster.%s",
+		operator.Pfo.Service,
+		operator.Pfo.Namespace,
+		operator.Pfo.Context,
+	))
+
+	err := operator.Pfo.HostFile.Hosts.Save()
+	if err != nil {
+		log.Error("Error saving hosts file", err)
+	}
+	operator.Pfo.HostFile.Unlock()
+}
+
+// RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
+func (operator PortForwardOptsHostsOperator) RemoveHosts() {
+	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
+	if operator.Pfo.getBrothersInPodsAmount() > 0 {
+		return
+	}
+
+	// we should lock the pfo.HostFile here
+	// because sometimes other goroutine write the *txeh.Hosts
+	operator.Pfo.HostFile.Lock()
+	// other applications or process may have written to /etc/hosts
+	// since it was originally updated.
+	err := operator.Pfo.HostFile.Hosts.Reload()
+	if err != nil {
+		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
+		return
+	}
+
+	// remove all hosts
+	for _, host := range operator.Pfo.Hosts {
+		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, operator.Pfo.PodName, operator.Pfo.Namespace, operator.Pfo.Context)
+		operator.Pfo.HostFile.Hosts.RemoveHost(host)
+	}
+
+	// fmt.Printf("Delete Host And Save !\r\n")
+	err = operator.Pfo.HostFile.Hosts.Save()
+	if err != nil {
+		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
+	}
+	operator.Pfo.HostFile.Unlock()
+}
+
+func (operator PortForwardOptsHostsOperator) RemoveInterfaceAlias() {
+	fwdnet.RemoveInterfaceAlias(operator.Pfo.LocalIp)
+}
+
+func (operator PortForwardOptsHostsOperator) addHost(host string) {
+	// add to list of hostnames for this port-forward
+	operator.Pfo.Hosts = append(operator.Pfo.Hosts, host)
+
+	// remove host if it already exists in /etc/hosts
+	operator.Pfo.HostFile.Hosts.RemoveHost(host)
+
+	// add host to /etc/hosts
+	operator.Pfo.HostFile.Hosts.AddHost(operator.Pfo.LocalIp.String(), host)
 }

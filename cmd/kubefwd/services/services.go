@@ -420,7 +420,6 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
 		ManualStopChannel: opts.ManualStopChannel,
-		WaitAllPodsShutdown: &sync.WaitGroup{},
 	}
 
 	// Add the service to the catalog of services being forwarded

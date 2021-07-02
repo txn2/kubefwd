@@ -72,7 +72,6 @@ type ServiceFWD struct {
 	PortForwards        map[string][]*fwdport.PortForwardOpts
 	DoneChannel         chan struct{} // After shutdown is complete, this channel will be closed
 	ManualStopChannel   chan struct{}
-	WaitAllPodsShutdown *sync.WaitGroup
 }
 
 /**
@@ -294,6 +293,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 			}
+			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
 			if runningPortForwards := svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
