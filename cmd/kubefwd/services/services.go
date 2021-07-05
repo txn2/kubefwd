@@ -438,11 +438,14 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It currently does not do anything.
-func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(new)
+func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
+	/*key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
 		log.Printf("update service %s.", key)
-	}
+	}*/
+
+	opts.DeleteServiceHandler(old)
+	opts.AddServiceHandler(new)
 }
 
 // parse string port to PortMap
