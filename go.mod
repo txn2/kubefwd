@@ -4,10 +4,14 @@ go 1.16
 
 require (
 	github.com/bep/debounce v1.2.0
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
+	github.com/hashicorp/consul/api v1.1.0 // indirect
+	github.com/kr/pretty v0.2.0 // indirect
 	github.com/onsi/ginkgo v1.12.0 // indirect
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/pkg/errors v0.9.1
+	github.com/r3labs/diff/v2 v2.13.4 // indirect
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.1.1
 	github.com/txn2/txeh v1.2.1
