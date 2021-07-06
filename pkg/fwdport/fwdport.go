@@ -2,7 +2,6 @@ package fwdport
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -184,9 +183,6 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Listen for pod is deleted
-	// @TODO need a test for this, does not seem to work as intended
-	//
-	log.Infof("Start listenting until pod is deleted: %s", pod.Name)
 	go pfo.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
@@ -424,7 +420,7 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 	return nil, nil
 }
 
-// listen for pod is deleted
+// listen for forwarded pod modification
 func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
@@ -442,40 +438,17 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-		    //log.Errorf("REL:: ListenUntilPodDeleted %+v\n", event)
 			break
 		}
-		//log.Warnf("REL:: ListenUntilPodDeleted %+v\n", event)
-		if pod.ObjectMeta.DeletionTimestamp != nil {
-			// check the conditions and make sure they are all true so that this is done once:
-			alltrue := true
-			for _, condition := range pod.Status.Conditions {
-				alltrue = alltrue && condition.Status == "True"
-			}
-			if alltrue {
-				newPodJSON, _ := json.MarshalIndent(pod.Status, "", "  ")
-				log.Warnf("REL:: **** New Status \n%v\n", string(newPodJSON))
 
-				log.Warnf("REL:: **** Pod about to terminate %+v  Phase: %s  IP: %s",
-					pod.Name, pod.Status.Phase, pod.Status.PodIP)
-				pfo.ServiceFwd.SyncPodForwards(false)
-				//service, err := getServiceForPod(newPod, opts.Namespace, opts.ClientSet.CoreV1())
-				//if err != nil { return }
-				//log.Warnf("REL:: UPDATING SERVICE PORT FORWARD:::%s", service.Name)
-				//opts.UpdateServiceHandler(service, service)
-			}
-		}
-		log.Warnf("EVENT TYPE: %s", event.Type)
 		switch event.Type {
-		case watch.Error:
-			log.Warnf("ERROR **** Pod %s, forwards: %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
-			return
 		case watch.Modified:
-			log.Warnf("MODIFIED **** Pod %s (%s), forwards: %s service pods. (RESYNCING)", pod.ObjectMeta.Name, pod.ObjectMeta.DeletionTimestamp, pfo.ServiceFwd)
+			log.Warnf("Pod modified %s (%s), resyncing %s service pods.", pod.ObjectMeta.Name, pod.ObjectMeta.DeletionTimestamp, pfo.ServiceFwd)
 			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		case watch.Deleted:
-			log.Warnf("DELETED **** Pod %s, forwards: %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			log.Warnf("Pod deleted %s (%s), resyncing %s service pods.", pod.ObjectMeta.Name, pod.ObjectMeta.DeletionTimestamp, pfo.ServiceFwd)
+			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		}
 	}

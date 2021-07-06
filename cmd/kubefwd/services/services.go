@@ -17,9 +17,9 @@ package services
 
 import (
 	"context"
-	"errors"
+	//"errors"
 	"fmt"
-	typev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	//typev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"os"
 	"os/signal"
 	"strings"
@@ -39,7 +39,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	authorizationv1 "k8s.io/api/authorization/v1"
-	corev1 "k8s.io/api/core/v1"
+	//corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -98,7 +98,6 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 	// Check simple connectivity: can you connect to the api server
 	_, err := clientSet.Discovery().ServerVersion()
 	if err != nil {
-	    log.Errorf("REL:: (6) %+v\n", err)
 		return err
 	}
 
@@ -117,7 +116,6 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 			}
 			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
 			if err != nil {
-	            log.Errorf("REL:: (7) %+v\n", err)
 				return err
 			}
 			if !accessReview.Status.Allowed {
@@ -307,9 +305,9 @@ Try:
 				nameSpaceOpts.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
 			}(nameSpaceOpts)
-			go func(npo NamespaceOpts) {
-				nameSpaceOpts.watchPodEvents(stopListenCh)
-			}(nameSpaceOpts)
+			//go func(npo NamespaceOpts) {
+			//	nameSpaceOpts.watchPodEvents(stopListenCh)
+			//}(nameSpaceOpts)
 		}
 	}
 
@@ -390,48 +388,9 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		},
 	)
 
-    log.Warnf("REL::Starting informer... %+v", stopListenCh)
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
 	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
-}
-
-// watchDeploymentEvents sets up event handlers to act on service-related events.
-func (opts *NamespaceOpts) watchPodEvents(stopListenCh <-chan struct{}) {
-	// Apply filtering
-	optionsModifier := func(options *metav1.ListOptions) {
-		options.FieldSelector = fields.Everything().String()
-		options.LabelSelector = opts.ListOptions.LabelSelector
-	}
-
-	// Construct the informer object which will query the api server,
-	// and send events to our handler functions
-	// https://engineering.bitnami.com/articles/kubewatch-an-example-of-kubernetes-custom-controller.html
-	_, controller := cache.NewInformer(
-		&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Pods(opts.Namespace).List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.Watch = true
-				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Pods(opts.Namespace).Watch(context.TODO(), options)
-			},
-		},
-		&corev1.Pod{},
-		0,
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    opts.AddPodHandler,
-			DeleteFunc: opts.DeletePodHandler,
-			UpdateFunc: opts.UpdatePodHandler,
-		},
-	)
-
-	log.Warnf("REL::Starting informer... %v", stopListenCh)
-	// Start the informer, blocking call until we receive a stop signal
-	controller.Run(stopListenCh)
-	log.Infof("Stopped watching Pod events in namespace %s in %s context", opts.Namespace, opts.Context)
 }
 
 // AddServiceHandler is the event handler for when a new service comes in from k8s
@@ -439,10 +398,8 @@ func (opts *NamespaceOpts) watchPodEvents(stopListenCh <-chan struct{}) {
 func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
-	    log.Errorf("REL:: Service added, not okay %+v\n", svc.Name)
 		return
 	}
-	log.Warnf("REL:: Service added %+v\n", svc.Name)
 
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
@@ -480,10 +437,8 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 	svc, ok := obj.(*v1.Service)
 	if !ok {
-		log.Errorf("REL:: Service deleted %+v\n", svc)
 		return
 	}
-	log.Warnf("REL:: Service deleted %+v\n", svc.Name)
 
 	// If we are currently forwarding this service, shut it down.
 	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace + "." + opts.Context)
@@ -494,22 +449,8 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err != nil {
-	    log.Errorf("REL:: update service error %+v\n", err)
 	}
 	log.Printf("Updating service %s\n", key)
-
-	oldSvc, ok := old.(*v1.Service)
-	if !ok {
-		log.Errorf("REL:: UpdateServiceHandler %+v\n", oldSvc)
-		return
-	}
-	newSvc, ok := new.(*v1.Service)
-	if !ok {
-		log.Errorf("REL:: UpdateServiceHandler %+v\n", newSvc)
-		return
-	}
-	//log.Infof("OLD: %v", oldSvc.Name)
-	log.Infof("Updating Forwards for Service: %v", newSvc.Name)
 
 	opts.DeleteServiceHandler(old)
 	opts.AddServiceHandler(new)
@@ -519,7 +460,6 @@ func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}
 func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap {
 	var portList []fwdservice.PortMap
 	if mappings == nil {
-	    log.Warnf("REL:: no mappings")
 		return nil
 	}
 	for _, s := range mappings {
@@ -527,81 +467,4 @@ func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap
 		portList = append(portList, fwdservice.PortMap{SourcePort: portInfo[0], TargetPort: portInfo[1]})
 	}
 	return &portList
-}
-
-func (opts *NamespaceOpts) AddPodHandler(obj interface{}) {
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		log.Errorf("REL:: Pod added, not okay %+v\n", pod.Name)
-		return
-	}
-	log.Warnf("REL:: Pod added %+v\n", pod.Name)
-}
-
-func (opts *NamespaceOpts) DeletePodHandler(obj interface{}) {
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		log.Errorf("REL:: Pod deleted %+v\n", pod.Name)
-		return
-	}
-	log.Warnf("REL:: Pod deleted %+v\n", pod.Name)
-
-	// look through all the services and re-add them if they select this pod.
-	//service, err := getServiceForPod(pod, opts.Namespace, opts.ClientSet.CoreV1())
-	//if (err != nil) { return }
-	//log.Warnf("REL:: UPDATING SERVICE PORT FORWARD:::%s", service.Name)
-	//opts.UpdateServiceHandler(service, service)
-}
-
-func (opts *NamespaceOpts) UpdatePodHandler(old interface{}, new interface{}) {
-	//oldPod, ok := old.(*corev1.Pod)
-	newPod, ok := new.(*corev1.Pod)
-	if !ok { return }
-	//oldPodJSON, _ := json.MarshalIndent(oldPod.Status, "", "  ")
-	//newPodJSON, _ := json.MarshalIndent(newPod.Status, "", "  ")
-	//log.Warnf("Old Status \n%v\n New Status \n%v\n", string(oldPodJSON), string(newPodJSON))
-	//log.Warnf("New Status \n%v\n", string(newPodJSON))
-	//changelog, err := diff.Diff(oldPod, newPod)
-	//changelogJSON, _ := json.MarshalIndent(changelog, "", "  ")
-	//if err!= nil { return }
-	//log.Warnf("Difference: %v", string(changelogJSON))
-	log.Warnf("Pod Updated \n%v\n", newPod.Name)
-
-	if newPod.ObjectMeta.DeletionTimestamp != nil {
-		// check the conditions and make sure they are all true so that this is done once:
-		alltrue := true
-		for _, condition := range newPod.Status.Conditions {
-			alltrue = alltrue && condition.Status == "True"
-		}
-		if alltrue {
-			//newPodJSON, _ := json.MarshalIndent(newPod.Status, "", "  ")
-			//log.Warnf("New Status \n%v\n", string(newPodJSON))
-
-			log.Warnf("REL:: Pod about to terminate %+v  Phase: %s  IP: %s", newPod.Name, newPod.Status.Phase, newPod.Status.PodIP)
-			//service, err := getServiceForPod(newPod, opts.Namespace, opts.ClientSet.CoreV1())
-			//if err != nil { return }
-			//log.Warnf("REL:: UPDATING SERVICE PORT FORWARD:::%s", service.Name)
-			//opts.UpdateServiceHandler(service, service)
-		}
-	}
-}
-
-func getServiceForPod(obj interface{}, namespace string, k8sClient typev1.CoreV1Interface) (*corev1.Service, error){
-	pod, _ := obj.(*v1.Pod)
-
-	listOptions := metav1.ListOptions{}
-	log.Warnf("Get Service for Deployment: #{deployment} #{namespace} #{listOptions}\n")
-	services, err := k8sClient.Services(namespace).List(context.TODO(), listOptions)
-	if err != nil{
-		log.Fatal(err)
-	}
-	var selector labels.Selector
-	for _, service:=range services.Items{
-		selector = labels.Set(service.Spec.Selector).AsSelector()
-		if selector.Matches(labels.Set(pod.Labels)) {
-			log.Printf("service name: %s\n", service.Name)
-			return &service, nil
-		}
-	}
-	return nil, errors.New("cannot find service for deployment")
 }
