@@ -183,9 +183,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Listen for pod is deleted
-	// @TODO need a test for this, does not seem to work as intended
-	//
-	log.Infof("Start listenting until pod is deleted: %s", pod.Name)
+	log.Infof("Listening for changes on pod %s", pod.Name)
 	go pfo.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
@@ -425,6 +423,8 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 }
 
 // listen for forwarded pod modification or deletion
+// todo: If the current pod is dying, look to add one that is already running, sync sometimes attaches to the dying pod rather than a healthy one.
+// todo: Anticipate a dying pod and sync before it stops serviing traffic.
 func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
