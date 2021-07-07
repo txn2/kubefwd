@@ -183,6 +183,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Listen for pod is deleted
+	// @TODO need a test for this, does not seem to work as intended
+	//
+	log.Infof("Start listenting until pod is deleted: %s", pod.Name)
 	go pfo.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
@@ -211,8 +214,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		pfo.Stop()
-		dialerWithPing.stopPing()
+		// REL::
+		//pfo.Stop()
+		//dialerWithPing.stopPing()
 		return err
 	}
 
@@ -420,7 +424,7 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 	return nil, nil
 }
 
-// listen for forwarded pod modification
+// listen for forwarded pod modification or deletion
 func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
@@ -440,14 +444,13 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 		if !ok {
 			break
 		}
-
 		switch event.Type {
 		case watch.Modified:
-			log.Warnf("Pod modified %s (%s), resyncing %s service pods.", pod.ObjectMeta.Name, pod.ObjectMeta.DeletionTimestamp, pfo.ServiceFwd)
+			log.Infof("Pod MODIFIED: %s, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
 			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		case watch.Deleted:
-			log.Warnf("Pod deleted %s (%s), resyncing %s service pods.", pod.ObjectMeta.Name, pod.ObjectMeta.DeletionTimestamp, pfo.ServiceFwd)
+			log.Infof("Pod DELETED: %s, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
 			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		}
