@@ -152,7 +152,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
-	podRestartStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
+	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
@@ -212,7 +212,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		// REL::
+		// Note, restarting port forwards when pods change does not work if this code is executed.
 		//pfo.Stop()
 		//dialerWithPing.stopPing()
 		return err
@@ -446,11 +446,11 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 		}
 		switch event.Type {
 		case watch.Modified:
-			log.Infof("Pod MODIFIED: %s, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			log.Warnf("Pod %s modified, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
 			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		case watch.Deleted:
-			log.Infof("Pod DELETED: %s, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
 			pfo.ServiceFwd.SyncPodForwards(false)
 			return
 		}
