@@ -98,6 +98,12 @@ Forward all svc for the namespace `the-project` where labeled `system: wx`:
 sudo kubefwd svc -l system=wx -n the-project
 ```
 
+Forward a single service named `my-service` in the namespace `the-project`:
+
+```
+sudo kubefwd svc -n the-project -f metadata.name=my-service
+```
+
 Forward more than one service using the `in` clause:
 ```bash
 sudo kubefwd svc -l "app in (app1, app2)"
@@ -128,6 +134,7 @@ Aliases:
 Examples:
   kubefwd svc -n the-project
   kubefwd svc -n the-project -l app=wx,component=api
+  kubefwd svc -n the-project -f metadata.name=service-name
   kubefwd svc -n default -n the-project
   kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
