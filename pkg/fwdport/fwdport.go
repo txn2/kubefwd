@@ -424,7 +424,7 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 
 // listen for forwarded pod modification or deletion
 // todo: If the current pod is dying, look to add one that is already running, sync sometimes attaches to the dying pod rather than a healthy one.
-// todo: Anticipate a dying pod and sync before it stops serviing traffic.
+// todo: Anticipate a dying pod and sync before it stops serving traffic.
 func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
