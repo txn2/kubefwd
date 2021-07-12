@@ -156,10 +156,29 @@ Flags:
 ## Development
 
 ### Build and Run
- Local
+Local
+
+Make sure the no GOPATH or GOROOT environment variables are set in your shell. Don't override any `go env` values.
+```bash
+unset GOPATH
+unset GOROOT
+
+go env -w GOPATH=""
+```
+
+Make sure you have GOMODCACHE set to a writeable directory: (OS/X instructions)
 
 ```bash
-go run ./cmd/kubefwd/kubefwd.go
+go env -w GOMODCACHE=/Users/[your user directory]/go/pkg/mod
+```
+
+Make sure dependencies are downloaded:
+```bash
+go mod tidy
+```
+
+```bash
+go run ./cmd/kubefwd/kubefwd.go version
 ```
 
 ### Build Release

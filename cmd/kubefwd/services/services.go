@@ -437,10 +437,12 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It currently does not do anything.
-func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) {
+func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(new)
 	if err == nil {
-		log.Printf("update service %s.", key)
+		log.Printf("Updating service %s\n", key)
+		opts.DeleteServiceHandler(old)
+		opts.AddServiceHandler(new)
 	}
 }
 

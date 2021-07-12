@@ -173,6 +173,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
+  	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
@@ -182,6 +183,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-pfo.ManualStopChan
 		close(downstreamStopChannel)
+  		close(podRestartStopChannel)
 		close(pfStopChannel)
 	}()
 
@@ -199,8 +201,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	// Listen for pod is deleted
-	// @TODO need a test for this, does not seem to work as intended
-	// go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
+    go pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
@@ -208,8 +209,8 @@ func PortForward(pfo *PortForwardOpts) error {
 	dialerWithPing := pingingDialer{
 		wrappedDialer:     dialer,
 		pingPeriod:        time.Second * 30,
-		pingStopChan:      pfo.ManualStopChan,
-		pingTargetPodName: pfo.String(),
+		pingStopChan:      make(chan struct{}),
+		pingTargetPodName: pfo.PodName,
 	}
 
 	var address []string
@@ -228,11 +229,12 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		pfo.shutdown()
-
+		//pfo.shutdown()
+		pfo.Stop()
 		return err
 	} else {
-		pfo.shutdown()
+		//pfo.shutdown()
+		pfo.Stop() // Don't shut down, this gives connected clients time to move to a new pod.
 	}
 
 	return nil
@@ -287,7 +289,8 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 		return pod, nil
 	}
 
-	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
+	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: pod.ObjectMeta.Name, Namespace: pod.ObjectMeta.Namespace}))
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +312,7 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 	// watcher until the pod status is running
 	for {
 		event, ok := <-watcher.ResultChan()
-		if !ok || event.Type == "ERROR" {
+		if !ok {
 			break
 		}
 		if event.Object != nil && event.Type == "MODIFIED" {
@@ -322,10 +325,12 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 	return nil, nil
 }
 
-// ListenUntilPodDeleted listen for pod is deleted
+// listen for forwarded pod modification or deletion
+// todo: Anticipate a dying pod and sync before it stops serving traffic.
 func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
 
-	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
+	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: pod.ObjectMeta.Name, Namespace: pod.ObjectMeta.Namespace}))
 	if err != nil {
 		return
 	}
@@ -340,13 +345,13 @@ func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struc
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-			break
+			return
 		}
 		switch event.Type {
 		case watch.Deleted:
 			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
-			waiter.ServiceFwd.SyncPodForwards(false)
-			return
+			waiter.ServiceFwd.SyncPodForwards(true)
+			break
 		}
 	}
 }
@@ -370,7 +375,7 @@ func (pfo *PortForwardOpts) String() string {
 
 type PodStateWaiter interface {
 	WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error)
-	//ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
+    ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
 }
 
 type PodStateWaiterImpl struct {
