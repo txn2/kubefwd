@@ -14,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/httpstream"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/c6o/kubefwd/pkg/fwdnet"
+	"github.com/c6o/kubefwd/pkg/fwdpub"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

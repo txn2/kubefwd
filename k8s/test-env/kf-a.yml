@@ -55,7 +55,7 @@ spec:
     spec:
       containers:
         - name: ok
-          image: txn2/ok:3.0.0
+          image: c6o/ok:3.0.0
           imagePullPolicy: IfNotPresent # IfNotPresent for production
           env:
             - name: "MESSAGE"
@@ -157,7 +157,7 @@ spec:
     spec:
       containers:
         - name: ok
-          image: txn2/ok:3.0.0
+          image: c6o/ok:3.0.0
           imagePullPolicy: IfNotPresent # IfNotPresent for production
           env:
             - name: "MESSAGE"
@@ -195,7 +195,7 @@ spec:
               cpu: 200m
               memory: 32Mi
         - name: ok2
-          image: txn2/ok:3.0.0
+          image: c6o/ok:3.0.0
           imagePullPolicy: IfNotPresent # IfNotPresent for production
           env:
             - name: "MESSAGE"

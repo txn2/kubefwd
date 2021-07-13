@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/c6o/kubefwd/pkg/fwdIp"
 )
 
 // ReadyInterface prepares a local IP address on

@@ -22,7 +22,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/txn2/kubefwd/cmd/kubefwd/services"
+	"github.com/c6o/kubefwd/cmd/kubefwd/services"
 )
 
 var globalUsage = ``
@@ -59,7 +59,7 @@ func newRootCmd() *cobra.Command {
 			" kubefwd version quiet\n",
 		Long: ``,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
+			fmt.Printf("Kubefwd version: %s\nhttps://github.com/c6o/kubefwd\n", Version)
 		},
 	}
 
@@ -93,7 +93,7 @@ func main() {
 	log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
 	log.Print("")
 	log.Printf("Version %s", Version)
-	log.Print("https://github.com/txn2/kubefwd")
+	log.Print("https://github.com/c6o/kubefwd")
 	log.Print("")
 
 	cmd := newRootCmd()
