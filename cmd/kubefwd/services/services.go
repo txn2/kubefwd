@@ -26,12 +26,12 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
-	"github.com/txn2/kubefwd/pkg/fwdcfg"
-	"github.com/txn2/kubefwd/pkg/fwdhost"
-	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdservice"
-	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
-	"github.com/txn2/kubefwd/pkg/utils"
+	"github.com/c6o/kubefwd/pkg/fwdcfg"
+	"github.com/c6o/kubefwd/pkg/fwdhost"
+	"github.com/c6o/kubefwd/pkg/fwdport"
+	"github.com/c6o/kubefwd/pkg/fwdservice"
+	"github.com/c6o/kubefwd/pkg/fwdsvcregistry"
+	"github.com/c6o/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
 	log "github.com/sirupsen/logrus"

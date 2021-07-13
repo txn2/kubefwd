@@ -2,7 +2,7 @@ package fwdservice
 
 import (
 	"github.com/stretchr/testify/assert"
-	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/c6o/kubefwd/pkg/fwdport"
 	"sync"
 	"testing"
 )

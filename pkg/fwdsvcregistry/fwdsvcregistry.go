@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdservice"
+	"github.com/c6o/kubefwd/pkg/fwdservice"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 

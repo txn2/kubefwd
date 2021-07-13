@@ -9,9 +9,9 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/c6o/kubefwd/pkg/fwdnet"
+	"github.com/c6o/kubefwd/pkg/fwdport"
+	"github.com/c6o/kubefwd/pkg/fwdpub"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,7 +76,7 @@ type ServiceFWD struct {
 
 /**
 add port map
-@url https://github.com/txn2/kubefwd/issues/121
+@url https://github.com/c6o/kubefwd/issues/121
 */
 type PortMap struct {
 	SourcePort string

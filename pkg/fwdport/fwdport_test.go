@@ -4,7 +4,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/c6o/kubefwd/pkg/fwdpub"
 	v1 "k8s.io/api/core/v1"
 	"testing"
 )

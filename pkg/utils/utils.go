@@ -18,7 +18,7 @@ package utils
 import (
 	"sync"
 
-	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/c6o/kubefwd/pkg/fwdport"
 )
 
 var Lock sync.Mutex
