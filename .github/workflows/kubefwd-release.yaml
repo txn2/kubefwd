@@ -1,8 +1,8 @@
 name: release-kubefwd
 on:
   push:
-    branches:
-      - master
+    tags:
+      - '*'
 permissions:
   contents: write
 jobs:
