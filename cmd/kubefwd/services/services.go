@@ -17,7 +17,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -378,9 +380,33 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		},
 	)
 
+	go func() {
+		http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+			status :=
+				Status{
+					Ready: controller.HasSynced(),
+				}
+			json.NewEncoder(w).Encode(status)
+		})
+
+		port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
+		log.Fatal(http.ListenAndServe(":"+port, nil))
+	}()
+
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
 	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
+}
+
+type Status struct {
+	Ready bool `json:"ready"`
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
 
 // AddServiceHandler is the event handler for when a new service comes in from k8s
@@ -417,7 +443,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
-		ManualStopChannel: opts.ManualStopChannel,
+		ManualStopChannel:    opts.ManualStopChannel,
 	}
 
 	// Add the service to the catalog of services being forwarded

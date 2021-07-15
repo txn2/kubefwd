@@ -343,7 +343,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			}()
 
 		}
-
 	}
 }
 
