@@ -1,6 +1,6 @@
 env:
   - GO111MODULE=on
-  - GOPROXY=https://gocenter.io
+  - GOPROXY=direct
 before:
   hooks:
     - go mod download
