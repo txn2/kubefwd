@@ -247,6 +247,9 @@ Try:
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
+	syncedCh := make(chan struct{})
+	defer close(syncedCh)
+
 	for i, ctx := range contexts {
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
@@ -274,6 +277,18 @@ Try:
 			os.Exit(1)
 		}
 
+		namespaceCount := len(namespaces)
+		// monitor for namespace syncs
+		go func() {
+			for range syncedCh {
+				namespaceCount--
+				log.Debug("Recived sync #", namespaceCount)
+				if namespaceCount == 0 {
+					log.Info("Received all syncs")
+					return
+				}
+			}
+		}()
 		for ii, namespace := range namespaces {
 			nsWatchesDone.Add(1)
 
@@ -297,10 +312,24 @@ Try:
 			}
 
 			go func(npo NamespaceOpts) {
-				nameSpaceOpts.watchServiceEvents(stopListenCh)
+				nameSpaceOpts.watchServiceEvents(stopListenCh, syncedCh)
 				nsWatchesDone.Done()
 			}(nameSpaceOpts)
 		}
+
+		go func() {
+			http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+				status :=
+					Status{
+						Ready: namespaceCount == 0,
+					}
+				json.NewEncoder(w).Encode(status)
+			})
+
+			port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
+			log.Fatal(http.ListenAndServe(":"+port, nil))
+			log.Info("Exiting web server")
+		}()
 	}
 
 	nsWatchesDone.Wait()
@@ -349,7 +378,7 @@ type NamespaceOpts struct {
 }
 
 // watchServiceEvents sets up event handlers to act on service-related events.
-func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
+func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}, syncedCh chan<- struct{}) {
 	// Apply filtering
 	optionsModifier := func(options *metav1.ListOptions) {
 		options.FieldSelector = opts.ListOptions.FieldSelector
@@ -381,16 +410,12 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 	)
 
 	go func() {
-		http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-			status :=
-				Status{
-					Ready: controller.HasSynced(),
-				}
-			json.NewEncoder(w).Encode(status)
-		})
-
-		port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
-		log.Fatal(http.ListenAndServe(":"+port, nil))
+		for true {
+			if controller.HasSynced() {
+				syncedCh <- struct{}{}
+				return
+			}
+		}
 	}()
 
 	// Start the informer, blocking call until we receive a stop signal
