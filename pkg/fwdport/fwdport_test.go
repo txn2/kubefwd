@@ -66,6 +66,7 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 	<-pfo.DoneChan
 	assertChannelsClosed(t,
 		assertableChannel{ch:   pfo.DoneChan, name: "DoneChan"},
+		assertableChannel{ch: pfo.ManualStopChan, name: "ManualStopChan"},
 	)
 }
 

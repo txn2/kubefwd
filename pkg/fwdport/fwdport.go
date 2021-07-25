@@ -230,11 +230,11 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error for %s: %s", pfo, err.Error())
-		pfo.shutdown()
+		pfo.stopAndShutdown()
 
 		return err
 	} else {
-		pfo.shutdown()
+		pfo.stopAndShutdown()
 	}
 
 	return nil
