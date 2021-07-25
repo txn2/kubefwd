@@ -55,7 +55,7 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 
 	pfHelper.EXPECT().ForwardPorts(gomock.Any()).Return(pfErr)
 
-	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(true))
+	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(false))
 	hostsOperator.EXPECT().RemoveHosts().Times(1)
 	hostsOperator.EXPECT().RemoveInterfaceAlias().Times(1)
 
@@ -103,7 +103,7 @@ func TestPortForward_OnlyClosesDownstreamChannels_WhenErrorOnWaitUntilPodRunning
 	pfHelper.EXPECT().GetPortForwardRequest(gomock.Any()).Return(nil)
 	hostsOperator.EXPECT().AddHosts().Times(1)
 	waiter.EXPECT().WaitUntilPodRunning(gomock.Any()).Return(nil, untilPodRunningErr)
-	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(true))
+	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(false))
 	hostsOperator.EXPECT().RemoveHosts().Times(1)
 	hostsOperator.EXPECT().RemoveInterfaceAlias().Times(1)
 
