@@ -72,6 +72,8 @@ type ServiceFWD struct {
 	PortForwards        map[string][]*fwdport.PortForwardOpts
 	DoneChannel         chan struct{} // After shutdown is complete, this channel will be closed
 	ManualStopChannel   chan struct{}
+
+	HostsOperator fwdport.HostsOperator
 }
 
 /**
@@ -282,7 +284,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				NamespaceN: svcFwd.NamespaceN,
 				Domain:     svcFwd.Domain,
 
-				ManualStopChan: make(chan struct{}),
+				ManualStopChan: make(chan fwdport.PortForwardStopOpts),
 				DoneChan:       make(chan struct{}),
 
 				StateWaiter: &fwdport.PodStateWaiterImpl{
@@ -293,7 +295,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 			}
-			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
 			if runningPortForwards := svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
@@ -402,12 +403,13 @@ func (svcFwd *ServiceFWD) allMatch(_ *fwdport.PortForwardOpts) bool {
 // removeServicePodPort removes PortForwardOpts from mapping according to filter function with or without port-forward stop
 func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter func(pfo *fwdport.PortForwardOpts) bool, stop bool) {
 	svcFwd.NamespaceServiceLock.Lock()
+	defer svcFwd.NamespaceServiceLock.Unlock()
 	if pods, found := svcFwd.PortForwards[servicePodName]; found {
 		stay := make([]*fwdport.PortForwardOpts, 0, len(pods))
 		for _, pod := range pods {
 			if filter(pod) {
 				if stop {
-					defer svcFwd.stop(pod)
+					svcFwd.stop(pod)
 				}
 			} else {
 				stay = append(stay, pod)
@@ -420,11 +422,14 @@ func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter fun
 		}
 		log.Debugf("ServiceForward: Removed %d pods by key %s", len(pods) - len(stay), servicePodName)
 	}
-	svcFwd.NamespaceServiceLock.Unlock()
 }
 
 func (svcFwd *ServiceFWD) stop(pfo *fwdport.PortForwardOpts) {
-	pfo.Stop()
+	stopOpts := fwdport.PortForwardStopOpts{
+		RemoveHosts:          true,
+		RemoveFromServiceFwd: false,
+	}
+	pfo.Stop(stopOpts)
 	<-pfo.DoneChan
 }
 
@@ -461,4 +466,8 @@ func (svcFwd *ServiceFWD) getPortMap(port int32) string {
 		}
 	}
 	return p
+}
+
+func (svcFwd *ServiceFWD) GetHostsOperator() fwdport.HostsOperator {
+	return svcFwd.HostsOperator
 }

@@ -1,4 +1,4 @@
-//go:generate ${gopath}/bin/mockgen -source=fwdport.go -destination=mock_fwdport.go -package=fwdport
+//go:generate ${GOPATH}/bin/mockgen -source=fwdport.go -destination=mock_fwdport.go -package=fwdport
 package fwdport
 
 import (
@@ -38,6 +38,7 @@ type ServiceFWD interface {
 	GetServicePodPortForwards(servicePodName string) []*PortForwardOpts
 	RemoveServicePod(servicePodName string, stop bool)
 	RemoveServicePodByPort(servicePodName string, podPort string, stop bool)
+	GetHostsOperator() HostsOperator
 }
 
 type PortForwardHelper interface {
@@ -50,15 +51,16 @@ type PortForwardHelper interface {
 }
 
 type HostsOperator interface {
-	AddHosts()
-	RemoveHosts()
-	RemoveInterfaceAlias()
+	AddHosts(pfo *PortForwardOpts)
+	RemoveHosts(pfo *PortForwardOpts)
+	RemoveInterfaceAlias(pfo *PortForwardOpts)
 }
 
 type PortForwardHelperImpl struct {}
 
-type PortForwardOptsHostsOperator struct {
-	Pfo *PortForwardOpts
+type HostsOperatorImpl struct {
+	hostsOperationsMutex     *sync.Mutex
+	hostsFileContainsEntries bool
 }
 
 // HostFileWithLock
@@ -108,15 +110,19 @@ type PortForwardOpts struct {
 	// while > 0 is an external namespace
 	NamespaceN int
 
-	Domain            string
-	HostsParams       *HostsParams
-	Hosts             []string
-	ManualStopChan    chan struct{} // Send a signal on this to stop the portforwarding
-	DoneChan          chan struct{} // Listen on this channel for when the shutdown is completed.
+	Domain         string
+	HostsParams    *HostsParams
+	Hosts          []string
+	ManualStopChan chan PortForwardStopOpts // Send a signal on this to stop the portforwarding
+	DoneChan       chan struct{}            // Listen on this channel for when the shutdown is completed.
 
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
-	HostsOperator     HostsOperator
+}
+
+type PortForwardStopOpts struct {
+	RemoveHosts          bool
+	RemoveFromServiceFwd bool
 }
 
 type pingingDialer struct {
@@ -156,6 +162,10 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 // or after a cancellation signal has been received.
 func PortForward(pfo *PortForwardOpts) error {
 	defer close(pfo.DoneChan)
+	var stopOpts PortForwardStopOpts
+	var stopOptsReceived = false
+
+	defer pfo.handleStop(&stopOpts)
 
 	transport, upgrader, err := pfo.PortForwardHelper.RoundTripperFor(&pfo.Config)
 	if err != nil {
@@ -173,28 +183,37 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
+	pingStopChannel := make(chan struct{})
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
-	pfo.HostsOperator.AddHosts()
-
 	// Close created downstream channels if there are stop signal from above
 	go func() {
-		<-pfo.ManualStopChan
+		stopOpts, stopOptsReceived = <-pfo.ManualStopChan
+		close(pfo.ManualStopChan)
 		close(downstreamStopChannel)
 		close(pfStopChannel)
+		close(pingStopChannel)
 	}()
 
 	// Waiting until the pod is running
 	pod, err := pfo.StateWaiter.WaitUntilPodRunning(downstreamStopChannel)
 	if err != nil {
-		pfo.stopAndShutdown()
+		log.Errorf("Error on wait until pod running. Err: %v", err)
+		if !stopOptsReceived {
+			stopOpts = PortForwardStopOpts{RemoveHosts: false, RemoveFromServiceFwd: true}
+			pfo.Stop(stopOpts)
+		}
 		return err
 	} else if pod == nil {
+		// TODO: Review comment below (is NOT nil? really?)
 		// if err is not nil but pod is nil
 		// mean service deleted but pod is not runnning.
 		// No error, just return
-		pfo.stopAndShutdown()
+		if !stopOptsReceived {
+			stopOpts = PortForwardStopOpts{RemoveHosts: false, RemoveFromServiceFwd: true}
+			pfo.Stop(stopOpts)
+		}
 		return nil
 	}
 
@@ -208,7 +227,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	dialerWithPing := pingingDialer{
 		wrappedDialer:     dialer,
 		pingPeriod:        time.Second * 30,
-		pingStopChan:      pfo.ManualStopChan,
+		pingStopChan:      pingStopChannel,
 		pingTargetPodName: pfo.String(),
 	}
 
@@ -221,34 +240,46 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	fw, err := pfo.PortForwardHelper.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
-		pfo.stopAndShutdown()
+		log.Errorf("Error at creating new PortForwarder. Err: %v", err)
+		if !stopOptsReceived {
+			stopOpts = PortForwardStopOpts{RemoveHosts: false, RemoveFromServiceFwd: true}
+			pfo.Stop(stopOpts)
+		}
 		return err
 	}
 
+	pfo.ServiceFwd.GetHostsOperator().AddHosts(pfo)
+
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
-		log.Errorf("ForwardPorts error: %s", err.Error())
-		pfo.shutdown()
+		log.Errorf("ForwardPorts error for %s: %s", pfo, err.Error())
+		if !stopOptsReceived {
+			stopOpts = PortForwardStopOpts{RemoveHosts: true, RemoveFromServiceFwd: true}
+			pfo.Stop(stopOpts)
+		}
 
 		return err
 	} else {
-		pfo.shutdown()
+		if !stopOptsReceived {
+			stopOpts = PortForwardStopOpts{RemoveHosts: true, RemoveFromServiceFwd: true}
+			pfo.Stop(stopOpts)
+		}
 	}
 
 	return nil
 }
 
-// shutdown removes port-forward from ServiceFwd and removes hosts entries if it's necessary
-func (pfo PortForwardOpts) shutdown() {
-	pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, true)
-	pfo.HostsOperator.RemoveHosts()
-	pfo.HostsOperator.RemoveInterfaceAlias()
-}
-
-// stopAndShutdown is shortcut for closing all downstream channels and shutdown
-func (pfo PortForwardOpts) stopAndShutdown() {
-	pfo.Stop()
-	pfo.shutdown()
+func (pfo *PortForwardOpts) handleStop(opts *PortForwardStopOpts) {
+	log.Debugf("On Port-Forward stop: handle stop for %s:%s", pfo, pfo.PodPort)
+	if opts.RemoveFromServiceFwd {
+		log.Debugf("On Port-Forward stop: remove for %s:%s from service fwd ", pfo, pfo.PodPort)
+		pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, false)
+	}
+	if opts.RemoveHosts {
+		log.Debugf("On Port-Forward stop: remove hosts for %s:%s", pfo, pfo.PodPort)
+		pfo.ServiceFwd.GetHostsOperator().RemoveHosts(pfo)
+		pfo.ServiceFwd.GetHostsOperator().RemoveInterfaceAlias(pfo)
+	}
 }
 
 //// BuildHostsParams constructs the basic hostnames for the service
@@ -270,11 +301,6 @@ func (pfo PortForwardOpts) stopAndShutdown() {
 //	pfo.HostsParams.fullServiceName = fullServiceName
 //	pfo.HostsParams.svcServiceName = svcServiceName
 //}
-
-// getBrothersInPodsAmount returns amount of port-forwards that proceeds on different ports under same pod
-func (pfo *PortForwardOpts) getBrothersInPodsAmount() int {
-	return len(pfo.ServiceFwd.GetServicePodPortForwards(pfo.String()))
-}
 
 // WaitUntilPodRunning Waiting for the pod running
 func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {
@@ -353,7 +379,7 @@ func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struc
 
 // Stop sends the shutdown signal to the port-forwarding process.
 // In case the shutdown signal was already given before, this is a no-op.
-func (pfo *PortForwardOpts) Stop() {
+func (pfo *PortForwardOpts) Stop(opts PortForwardStopOpts) {
 	select {
 	case <-pfo.DoneChan:
 		return
@@ -361,7 +387,7 @@ func (pfo *PortForwardOpts) Stop() {
 		return
 	default:
 	}
-	close(pfo.ManualStopChan)
+	pfo.ManualStopChan <- opts
 }
 
 func (pfo *PortForwardOpts) String() string {
@@ -407,142 +433,166 @@ func (p PortForwardHelperImpl) ForwardPorts(forwarder *portforward.PortForwarder
 }
 
 // AddHosts adds hostname entries to /etc/hosts
-func (operator PortForwardOptsHostsOperator) AddHosts() {
+func (operator *HostsOperatorImpl) AddHosts(pfo *PortForwardOpts) {
+	operator.hostsOperationsMutex.Lock()
+	defer operator.hostsOperationsMutex.Unlock()
 
-	// We must not add multiple hosts entries for different ports on the same service
-	if operator.Pfo.getBrothersInPodsAmount() != 1 {
-		return
+	dealWithHostsFile := !operator.hostsFileContainsEntries
+
+	if dealWithHostsFile {
+		pfo.HostFile.Lock()
 	}
-
-	operator.Pfo.HostFile.Lock()
 
 	// pfo.Service holds only the service name
 	// start with the smallest allowable hostname
 
 	// bare service name
-	if operator.Pfo.ClusterN == 0 && operator.Pfo.NamespaceN == 0 {
-		operator.addHost(operator.Pfo.Service)
+	if pfo.ClusterN == 0 && pfo.NamespaceN == 0 {
+		operator.addHost(pfo, pfo.Service, dealWithHostsFile)
 
-		if operator.Pfo.Domain != "" {
-			operator.addHost(fmt.Sprintf(
+		if pfo.Domain != "" {
+			operator.addHost(pfo, fmt.Sprintf(
 				"%s.%s",
-				operator.Pfo.Service,
-				operator.Pfo.Domain,
-			))
+				pfo.Service,
+				pfo.Domain,
+			), dealWithHostsFile)
 		}
 	}
 
 	// alternate cluster / first namespace
-	if operator.Pfo.ClusterN > 0 && operator.Pfo.NamespaceN == 0 {
-		operator.addHost(fmt.Sprintf(
+	if pfo.ClusterN > 0 && pfo.NamespaceN == 0 {
+		operator.addHost(pfo, fmt.Sprintf(
 			"%s.%s",
-			operator.Pfo.Service,
-			operator.Pfo.Context,
-		))
+			pfo.Service,
+			pfo.Context,
+		), dealWithHostsFile)
 	}
 
 	// namespaced without cluster
-	if operator.Pfo.ClusterN == 0 {
-		operator.addHost(fmt.Sprintf(
+	if pfo.ClusterN == 0 {
+		operator.addHost(pfo, fmt.Sprintf(
 			"%s.%s",
-			operator.Pfo.Service,
-			operator.Pfo.Namespace,
-		))
+			pfo.Service,
+			pfo.Namespace,
+		), dealWithHostsFile)
 
-		operator.addHost(fmt.Sprintf(
+		operator.addHost(pfo, fmt.Sprintf(
 			"%s.%s.svc",
-			operator.Pfo.Service,
-			operator.Pfo.Namespace,
-		))
+			pfo.Service,
+			pfo.Namespace,
+		), dealWithHostsFile)
 
-		operator.addHost(fmt.Sprintf(
+		operator.addHost(pfo, fmt.Sprintf(
 			"%s.%s.svc.cluster.local",
-			operator.Pfo.Service,
-			operator.Pfo.Namespace,
-		))
+			pfo.Service,
+			pfo.Namespace,
+		), dealWithHostsFile)
 
-		if operator.Pfo.Domain != "" {
-			operator.addHost(fmt.Sprintf(
+		if pfo.Domain != "" {
+			operator.addHost(pfo, fmt.Sprintf(
 				"%s.%s.svc.cluster.%s",
-				operator.Pfo.Service,
-				operator.Pfo.Namespace,
-				operator.Pfo.Domain,
-			))
+				pfo.Service,
+				pfo.Namespace,
+				pfo.Domain,
+			), dealWithHostsFile)
 		}
 
 	}
 
-	operator.addHost(fmt.Sprintf(
+	operator.addHost(pfo, fmt.Sprintf(
 		"%s.%s.%s",
-		operator.Pfo.Service,
-		operator.Pfo.Namespace,
-		operator.Pfo.Context,
-	))
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	), dealWithHostsFile)
 
-	operator.addHost(fmt.Sprintf(
+	operator.addHost(pfo, fmt.Sprintf(
 		"%s.%s.svc.%s",
-		operator.Pfo.Service,
-		operator.Pfo.Namespace,
-		operator.Pfo.Context,
-	))
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	), dealWithHostsFile)
 
-	operator.addHost(fmt.Sprintf(
+	operator.addHost(pfo, fmt.Sprintf(
 		"%s.%s.svc.cluster.%s",
-		operator.Pfo.Service,
-		operator.Pfo.Namespace,
-		operator.Pfo.Context,
-	))
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+	), dealWithHostsFile)
 
-	err := operator.Pfo.HostFile.Hosts.Save()
-	if err != nil {
-		log.Error("Error saving hosts file", err)
+	if dealWithHostsFile {
+		err := pfo.HostFile.Hosts.Save()
+		if err != nil {
+			log.Error("Error saving hosts file", err)
+		}
+		pfo.HostFile.Unlock()
 	}
-	operator.Pfo.HostFile.Unlock()
+	if dealWithHostsFile {
+		operator.hostsFileContainsEntries = dealWithHostsFile
+	}
 }
 
 // RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
-func (operator PortForwardOptsHostsOperator) RemoveHosts() {
-	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
-	if operator.Pfo.getBrothersInPodsAmount() > 0 {
-		return
-	}
+func (operator *HostsOperatorImpl) RemoveHosts(pfo *PortForwardOpts) {
+	operator.hostsOperationsMutex.Lock()
+	defer operator.hostsOperationsMutex.Unlock()
 
 	// we should lock the pfo.HostFile here
 	// because sometimes other goroutine write the *txeh.Hosts
-	operator.Pfo.HostFile.Lock()
+	pfo.HostFile.Lock()
+	defer pfo.HostFile.Unlock()
+
+	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
+	if !operator.hostsFileContainsEntries {
+		log.Debugf("Do not remove hosts entry for %s", pfo)
+		return
+	}
+
 	// other applications or process may have written to /etc/hosts
 	// since it was originally updated.
-	err := operator.Pfo.HostFile.Hosts.Reload()
+	err := pfo.HostFile.Hosts.Reload()
 	if err != nil {
 		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
 		return
 	}
 
 	// remove all hosts
-	for _, host := range operator.Pfo.Hosts {
-		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, operator.Pfo.PodName, operator.Pfo.Namespace, operator.Pfo.Context)
-		operator.Pfo.HostFile.Hosts.RemoveHost(host)
+	for _, host := range pfo.Hosts {
+		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, pfo.PodName, pfo.Namespace, pfo.Context)
+		pfo.HostFile.Hosts.RemoveHost(host)
 	}
 
 	// fmt.Printf("Delete Host And Save !\r\n")
-	err = operator.Pfo.HostFile.Hosts.Save()
+	err = pfo.HostFile.Hosts.Save()
 	if err != nil {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
+	} else {
+		operator.hostsFileContainsEntries = false
 	}
-	operator.Pfo.HostFile.Unlock()
 }
 
-func (operator PortForwardOptsHostsOperator) RemoveInterfaceAlias() {
-	fwdnet.RemoveInterfaceAlias(operator.Pfo.LocalIp)
+func (operator *HostsOperatorImpl) RemoveInterfaceAlias(pfo *PortForwardOpts) {
+	operator.hostsOperationsMutex.Lock()
+	defer operator.hostsOperationsMutex.Unlock()
+	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
 }
 
-func (operator PortForwardOptsHostsOperator) addHost(host string) {
+func (operator HostsOperatorImpl) addHost(pfo *PortForwardOpts, host string, editHostFile bool) {
 	// add to list of hostnames for this port-forward
-	operator.Pfo.Hosts = append(operator.Pfo.Hosts, host)
+	pfo.Hosts = append(pfo.Hosts, host)
 
-	// remove host if it already exists in /etc/hosts
-	operator.Pfo.HostFile.Hosts.RemoveHost(host)
+	if editHostFile {
+		// remove host if it already exists in /etc/hosts
+		pfo.HostFile.Hosts.RemoveHost(host)
 
-	// add host to /etc/hosts
-	operator.Pfo.HostFile.Hosts.AddHost(operator.Pfo.LocalIp.String(), host)
+		// add host to /etc/hosts
+		pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
+	}
+}
+
+func NewHostsOperator() *HostsOperatorImpl {
+	return &HostsOperatorImpl{
+		hostsOperationsMutex:     &sync.Mutex{},
+		hostsFileContainsEntries: false,
+	}
 }

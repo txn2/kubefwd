@@ -36,17 +36,16 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 		HostFile:          nil,
 		LocalPort:         "8080",
 		Namespace:         namespace,
-		ManualStopChan:    make(chan struct{}),
+		ManualStopChan:    make(chan PortForwardStopOpts),
 		DoneChan:          make(chan struct{}),
 		StateWaiter:       waiter,
 		PortForwardHelper: pfHelper,
-		HostsOperator:     hostsOperator,
 	}
 	pfErr := errors.New("pf error")
 
 	pfHelper.EXPECT().RoundTripperFor(gomock.Any()).Return(nil, nil, nil)
 	pfHelper.EXPECT().GetPortForwardRequest(gomock.Any()).Return(nil)
-	hostsOperator.EXPECT().AddHosts().Times(1)
+	hostsOperator.EXPECT().AddHosts(gomock.Eq(pfo)).Times(1)
 	waiter.EXPECT().WaitUntilPodRunning(gomock.Any()).Return(&v1.Pod{Status: v1.PodStatus{Phase: v1.PodRunning}}, nil)
 	pfHelper.EXPECT().NewDialer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	pfHelper.EXPECT().
@@ -55,9 +54,11 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 
 	pfHelper.EXPECT().ForwardPorts(gomock.Any()).Return(pfErr)
 
-	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(true))
-	hostsOperator.EXPECT().RemoveHosts().Times(1)
-	hostsOperator.EXPECT().RemoveInterfaceAlias().Times(1)
+	svcFwd.EXPECT().GetHostsOperator().Return(hostsOperator).MaxTimes(3)
+
+	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(false))
+	hostsOperator.EXPECT().RemoveHosts(gomock.Eq(pfo)).Times(1)
+	hostsOperator.EXPECT().RemoveInterfaceAlias(gomock.Eq(pfo)).Times(1)
 
 	err := PortForward(pfo)
 	assert.NotNil(t, err)
@@ -66,6 +67,7 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 	<-pfo.DoneChan
 	assertChannelsClosed(t,
 		assertableChannel{ch:   pfo.DoneChan, name: "DoneChan"},
+		assertableChannel{ch2: pfo.ManualStopChan, name: "ManualStopChan"},
 	)
 }
 
@@ -90,22 +92,19 @@ func TestPortForward_OnlyClosesDownstreamChannels_WhenErrorOnWaitUntilPodRunning
 		HostFile:          nil,
 		LocalPort:         "8080",
 		Namespace:         namespace,
-		ManualStopChan:    make(chan struct{}),
+		ManualStopChan:    make(chan PortForwardStopOpts),
 		DoneChan:          make(chan struct{}),
 		StateWaiter:       waiter,
 		PortForwardHelper: pfHelper,
-		HostsOperator:     hostsOperator,
 	}
 
 	untilPodRunningErr := errors.New("for example, bad credentials error from clientset")
 
 	pfHelper.EXPECT().RoundTripperFor(gomock.Any()).Return(nil, nil, nil)
 	pfHelper.EXPECT().GetPortForwardRequest(gomock.Any()).Return(nil)
-	hostsOperator.EXPECT().AddHosts().Times(1)
 	waiter.EXPECT().WaitUntilPodRunning(gomock.Any()).Return(nil, untilPodRunningErr)
-	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(true))
-	hostsOperator.EXPECT().RemoveHosts().Times(1)
-	hostsOperator.EXPECT().RemoveInterfaceAlias().Times(1)
+	svcFwd.EXPECT().GetHostsOperator().Return(hostsOperator).AnyTimes()
+	svcFwd.EXPECT().RemoveServicePodByPort(gomock.Eq(pfo.String()), gomock.Eq(pfo.PodPort), gomock.Eq(false))
 
 	err := PortForward(pfo)
 	assert.NotNil(t, err)
@@ -114,18 +113,26 @@ func TestPortForward_OnlyClosesDownstreamChannels_WhenErrorOnWaitUntilPodRunning
 	<-pfo.DoneChan
 	assertChannelsClosed(t,
 		assertableChannel{ch:   pfo.DoneChan, name: "DoneChan"},
-		assertableChannel{ch: pfo.ManualStopChan, name: "ManualStopChan"},
+		assertableChannel{ch2: pfo.ManualStopChan, name: "ManualStopChan"},
 	)
 }
 
 func assertChannelsClosed(t *testing.T, channels ...assertableChannel) {
 	for _, assertableCh := range channels {
-		_, open := <-assertableCh.ch
-		assert.False(t, open, "%s must be closed", assertableCh.name)
+		if assertableCh.ch != nil {
+			_, open := <-assertableCh.ch
+			assert.False(t, open, "%s must be closed", assertableCh.name)
+		}
+		if assertableCh.ch2 != nil {
+			_, open := <-assertableCh.ch2
+			assert.False(t, open, "%s must be closed", assertableCh.name)
+		}
+
 	}
 }
 
 type assertableChannel struct {
 	ch chan struct{}
+	ch2 chan PortForwardStopOpts
 	name string
 }

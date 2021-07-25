@@ -63,7 +63,7 @@ func TestServiceFWD_RemoveServicePod(t *testing.T) {
 		PodName:        firstPodName,
 		PodPort:        firstPort,
 		LocalPort:      firstPort,
-		ManualStopChan: make(chan struct{}),
+		ManualStopChan: make(chan fwdport.PortForwardStopOpts),
 		DoneChan:       make(chan struct{}),
 	}
 	pfOnSecondPort := &fwdport.PortForwardOpts{
@@ -72,7 +72,7 @@ func TestServiceFWD_RemoveServicePod(t *testing.T) {
 		PodName:        firstPodName,
 		PodPort:        secondPort,
 		LocalPort:      secondPort,
-		ManualStopChan: make(chan struct{}),
+		ManualStopChan: make(chan fwdport.PortForwardStopOpts),
 		DoneChan:       make(chan struct{}),
 	}
 
@@ -104,7 +104,7 @@ func TestServiceFwd_RemoveServicePodByPort(t *testing.T) {
 		PodName:        firstPodName,
 		PodPort:        firstPort,
 		LocalPort:      firstPort,
-		ManualStopChan: make(chan struct{}),
+		ManualStopChan: make(chan fwdport.PortForwardStopOpts),
 		DoneChan:       make(chan struct{}),
 	}
 	pfOnSecondPort := &fwdport.PortForwardOpts{
@@ -113,7 +113,7 @@ func TestServiceFwd_RemoveServicePodByPort(t *testing.T) {
 		PodName:        firstPodName,
 		PodPort:        secondPort,
 		LocalPort:      secondPort,
-		ManualStopChan: make(chan struct{}),
+		ManualStopChan: make(chan fwdport.PortForwardStopOpts),
 		DoneChan:       make(chan struct{}),
 	}
 
