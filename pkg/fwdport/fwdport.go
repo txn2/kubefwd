@@ -229,12 +229,12 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		//pfo.shutdown()
-		pfo.Stop()
+		pfo.shutdown()
+		//pfo.Stop()
 		return err
 	} else {
-		//pfo.shutdown()
-		pfo.Stop() // Don't shut down, this gives connected clients time to move to a new pod.
+		pfo.shutdown()
+		//pfo.Stop() // Don't shut down, this gives connected clients time to move to a new pod.
 	}
 
 	return nil
