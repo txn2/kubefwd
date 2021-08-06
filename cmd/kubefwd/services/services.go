@@ -413,11 +413,10 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		NamespaceServiceLock: opts.NamespaceIPLock,
 		Svc:                  svc,
 		Headless:             svc.Spec.ClusterIP == "None",
-		PortForwards:         make(map[string][]*fwdport.PortForwardOpts),
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
-		ManualStopChannel: opts.ManualStopChannel,
 	}
 
 	// Add the service to the catalog of services being forwarded
