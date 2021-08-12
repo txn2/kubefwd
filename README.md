@@ -178,12 +178,6 @@ GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
 
 Apache License 2.0
 
-## Similar projects, products, alternatives and complementary utilities
-
-- [inlets](https://inlets.dev) - inlets provides an L7 HTTP tunnel for applications through the use of an exit node, it is used by the inlets operator
-- [inlets-operator](https://github.com/inlets/inlets-operator) - L4 TCP tunnel, which can tunnel any TCP traffic and is on the roadmap for the inlets-operator
-- [telepresence.io](https://www.telepresence.io/) - Telepresence substitutes a two-way network proxy for your normal pod running in the Kubernetes cluster.
-
 # Sponsor
 
 Open source utility by [Craig Johnston](https://twitter.com/cjimti), [imti blog](http://imti.co/) and sponsored by [Deasil Works, Inc.]
