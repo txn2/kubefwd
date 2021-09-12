@@ -92,8 +92,8 @@ var Cmd = &cobra.Command{
 	Run: runCmd,
 }
 
-// SetAllNamespace Form V1Core get all namespace
-func SetAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions, namespaces *[]string) *[]string {
+// setAllNamespace Form V1Core get all namespace
+func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions, namespaces *[]string) {
 	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), options)
 	if err != nil {
 		log.Fatalf("Error get all namespaces by CoreV1: %s\n", err.Error())
@@ -101,7 +101,6 @@ func SetAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions
 	for _, ns := range nsList.Items {
 		*namespaces = append(*namespaces, ns.Name)
 	}
-	return namespaces
 }
 
 // checkConnection tests if you can connect to the cluster in your config,
@@ -275,7 +274,10 @@ Try:
 
 		// if use --all-namespace ,from v1 api get all ns.
 		if isAllNs {
-			SetAllNamespace(clientSet, listOptions, &namespaces)
+			if len(namespaces) >= 1 {
+				log.Fatalf("Error --all-namespace not use -n.")
+			}
+			setAllNamespace(clientSet, listOptions, &namespaces)
 		}
 
 		// check connectivity
