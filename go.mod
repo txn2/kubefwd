@@ -1,19 +1,20 @@
 module github.com/txn2/kubefwd
 
-go 1.13
+go 1.16
 
 require (
 	github.com/bep/debounce v1.2.0
 	github.com/elazarl/goproxy v0.0.0-20181111060418-2ce16c963a8a // indirect
-	github.com/pkg/errors v0.8.1
-	github.com/securego/gosec v0.0.0-20200401082031-e946c8c39989 // indirect
-	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/cobra v0.0.5
+	github.com/onsi/ginkgo v1.12.0 // indirect
+	github.com/onsi/gomega v1.9.0 // indirect
+	github.com/pkg/errors v0.9.1
+	github.com/sirupsen/logrus v1.6.0
+	github.com/spf13/cobra v1.1.1
 	github.com/txn2/txeh v1.2.1
-	golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e
-	k8s.io/api v0.0.0-20191108065827-59e77acf588f
-	k8s.io/apimachinery v0.0.0-20191108065633-c18f71bf2947
-	k8s.io/cli-runtime v0.0.0-20191108072024-9fe36560f3af
-	k8s.io/client-go v0.0.0-20191108070106-f8f007fd456c
-	k8s.io/kubectl v0.0.0-20191108073526-feacf2b3d48e
+	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
+	k8s.io/api v0.20.4
+	k8s.io/apimachinery v0.20.4
+	k8s.io/cli-runtime v0.20.4
+	k8s.io/client-go v0.20.4
+	k8s.io/kubectl v0.20.4
 )

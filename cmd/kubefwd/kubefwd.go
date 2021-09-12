@@ -44,10 +44,11 @@ func newRootCmd() *cobra.Command {
 		Example: " kubefwd services --help\n" +
 			"  kubefwd svc -n the-project\n" +
 			"  kubefwd svc -n the-project -l env=dev,component=api\n" +
+			"  kubefwd svc -n the-project -f metadata.name=service-name\n" +
 			"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 			"  kubefwd svc -n default -n the-project\n" +
-			"  kubefwd svc -n the-project -p \"8080:80,3309:3306\"\n" +
-			"  kubefwd svc -n the-project -p \"8080:80\"\n",
+			"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n",
+
 		Long: globalUsage,
 	}
 

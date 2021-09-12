@@ -16,6 +16,7 @@ limitations under the License.
 package services
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -38,7 +39,6 @@ import (
 	authorizationv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilRuntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -54,7 +54,7 @@ var namespaces []string
 var contexts []string
 var verbose bool
 var domain string
-var port string
+var mappings []string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -67,10 +67,10 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&contexts, "context", "x", []string{}, "specify a context to override the current context")
 	Cmd.Flags().StringSliceVarP(&namespaces, "namespace", "n", []string{}, "Specify a namespace. Specify multiple namespaces by duplicating this argument.")
 	Cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).")
+	Cmd.Flags().StringP("field-selector", "f", "", "Field selector to filter on; supports '=', '==', and '!=' (e.g. -f metadata.name=service-name).")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
-	// "The Issues https://github.com/txn2/kubefwd/issues/121"
-	Cmd.Flags().StringVarP(&port, "port", "p", "", "Map the ports you need.(e.g. host port:container port -p 8080:80")
+	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
 
 }
 
@@ -84,7 +84,8 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
-		"  kubefwd svc -n the-project -x prod-cluster\n",
+		"  kubefwd svc -n the-project -x prod-cluster\n" +
+		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n",
 	Run: runCmd,
 }
 
@@ -110,7 +111,7 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 					ResourceAttributes: &perm,
 				},
 			}
-			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(accessReview)
+			accessReview, err = clientSet.AuthorizationV1().SelfSubjectAccessReviews().Create(context.TODO(), accessReview, metav1.CreateOptions{})
 			if err != nil {
 				return err
 			}
@@ -196,11 +197,9 @@ Try:
 
 	// labels selector to filter services
 	// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-	selector := cmd.Flag("selector").Value.String()
 	listOptions := metav1.ListOptions{}
-	if selector != "" {
-		listOptions.LabelSelector = selector
-	}
+	listOptions.LabelSelector = cmd.Flag("selector").Value.String()
+	listOptions.FieldSelector = cmd.Flag("field-selector").Value.String()
 
 	// if no namespaces were specified via the flags, check config from the k8s context
 	// then explicitly set one to "default"
@@ -292,6 +291,7 @@ Try:
 				NamespaceN:        ii,
 				Domain:            domain,
 				ManualStopChannel: stopListenCh,
+				PortMapping:       mappings,
 			}
 
 			go func(npo NamespaceOpts) {
@@ -340,6 +340,8 @@ type NamespaceOpts struct {
 
 	// Domain is specified by the user and used in place of .local
 	Domain string
+	// meaning any source port maps to target port.
+	PortMapping []string
 
 	ManualStopChannel chan struct{}
 }
@@ -348,7 +350,7 @@ type NamespaceOpts struct {
 func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 	// Apply filtering
 	optionsModifier := func(options *metav1.ListOptions) {
-		options.FieldSelector = fields.Everything().String()
+		options.FieldSelector = opts.ListOptions.FieldSelector
 		options.LabelSelector = opts.ListOptions.LabelSelector
 	}
 
@@ -359,12 +361,12 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				options.Watch = true
 				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(options)
+				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(context.TODO(), options)
 			},
 		},
 		&v1.Service{},
@@ -414,7 +416,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
-		PortMap:              opts.ParsePortMap(port),
+		PortMap:              opts.ParsePortMap(mappings),
 	}
 
 	// Add the service to the catalog of services being forwarded
@@ -442,13 +444,12 @@ func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) 
 }
 
 // parse string port to PortMap
-func (opts *NamespaceOpts) ParsePortMap(port string) *[]fwdservice.PortMap {
+func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap {
 	var portList []fwdservice.PortMap
-	if port == "" {
+	if mappings == nil {
 		return nil
 	}
-	strArr := strings.Split(port, ",")
-	for _, s := range strArr {
+	for _, s := range mappings {
 		portInfo := strings.Split(s, ":")
 		portList = append(portList, fwdservice.PortMap{SourcePort: portInfo[0], TargetPort: portInfo[1]})
 	}

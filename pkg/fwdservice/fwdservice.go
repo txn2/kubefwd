@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -61,6 +62,7 @@ type ServiceFWD struct {
 
 	LastSyncedAt time.Time  // When was the set of pods last synced
 	PortMap      *[]PortMap // port map array.
+
 	// Use debouncer for listing pods so we don't hammer the k8s when a bunch of changes happen at once
 	SyncDebouncer func(f func())
 
@@ -90,7 +92,7 @@ func (svcFwd *ServiceFWD) String() string {
 func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	listOpts := metav1.ListOptions{LabelSelector: svcFwd.PodLabelSelector}
 
-	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(listOpts)
+	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOpts)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -262,11 +264,11 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			podPort = port.TargetPort.String()
 			localPort := svcFwd.getPortMap(port.Port)
-			v, err := strconv.ParseInt(localPort, 10, 32)
+			p, err := strconv.ParseInt(localPort, 10, 32)
 			if err != nil {
 				log.Fatal(err)
 			}
-			port.Port = int32(v)
+			port.Port = int32(p)
 			if _, err := strconv.Atoi(podPort); err != nil {
 				// search a pods containers for the named port
 				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok {
@@ -381,9 +383,9 @@ func (svcFwd *ServiceFWD) getPortMap(port int32) string {
 	p := strconv.Itoa(int(port))
 	if svcFwd.PortMap != nil {
 		for _, portMapInfo := range *svcFwd.PortMap {
-			if p == portMapInfo.TargetPort {
+			if p == portMapInfo.SourcePort {
 				//use map port
-				return portMapInfo.SourcePort
+				return portMapInfo.TargetPort
 			}
 		}
 	}
