@@ -55,6 +55,7 @@ var contexts []string
 var verbose bool
 var domain string
 var mappings []string
+var isAllNs bool
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -71,6 +72,7 @@ func init() {
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output.")
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
+	Cmd.Flags().BoolVarP(&isAllNs, "all-namespaces", "A", false, "Enable --all-namespaces option like kubectl.")
 
 }
 
@@ -85,8 +87,21 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -n the-project\n" +
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n" +
-		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n",
+		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
+		"  kubefwd svc --all-namespaces",
 	Run: runCmd,
+}
+
+// SetAllNamespace Form V1Core get all namespace
+func SetAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions, namespaces *[]string) *[]string {
+	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), options)
+	if err != nil {
+		log.Fatalf("Error get all namespaces by CoreV1: %s\n", err.Error())
+	}
+	for _, ns := range nsList.Items {
+		*namespaces = append(*namespaces, ns.Name)
+	}
+	return namespaces
 }
 
 // checkConnection tests if you can connect to the cluster in your config,
@@ -256,6 +271,11 @@ Try:
 		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
+		}
+
+		// if use --all-namespace ,from v1 api get all ns.
+		if isAllNs {
+			SetAllNamespace(clientSet, listOptions, &namespaces)
 		}
 
 		// check connectivity
@@ -443,7 +463,7 @@ func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) 
 	}
 }
 
-// parse string port to PortMap
+// ParsePortMap parse string port to PortMap
 func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap {
 	var portList []fwdservice.PortMap
 	if mappings == nil {
