@@ -46,10 +46,8 @@ dockers:
     goos: linux
     goarch: amd64
     goarm: ''
-    binaries:
-      - kubefwd
     dockerfile: Dockerfile.alpine
-    builds:
+    ids:
       - kubefwd
     image_templates:
       - "txn2/kubefwd:latest"
@@ -70,10 +68,8 @@ dockers:
     goos: linux
     goarch: amd64
     goarm: ''
-    binaries:
-      - kubefwd
     dockerfile: Dockerfile.ubuntu
-    builds:
+    ids:
       - kubefwd
     image_templates:
       - "txn2/kubefwd:latest_ubuntu-20.04"
