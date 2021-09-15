@@ -275,7 +275,7 @@ Try:
 		// if use --all-namespace ,from v1 api get all ns.
 		if isAllNs {
 			if len(namespaces) > 1 {
-				log.Fatalf("Error --all-namespace not use -n.")
+				log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
 			}
 			setAllNamespace(clientSet, listOptions, &namespaces)
 		}
