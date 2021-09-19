@@ -1,11 +1,11 @@
 package fwdservice
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
-	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -70,6 +70,8 @@ type ServiceFWD struct {
 	// key = podName
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
+
+	Addresses []string
 }
 
 /**
@@ -310,6 +312,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
+				Addresses:      svcFwd.Addresses,
 			}
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.

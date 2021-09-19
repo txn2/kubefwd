@@ -85,6 +85,7 @@ type PortForwardOpts struct {
 	Hosts          []string
 	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
+	Addresses      []string
 }
 
 type pingingDialer struct {
@@ -195,10 +196,14 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	var address []string
-	if pfo.LocalIp != nil {
-		address = []string{pfo.LocalIp.To4().String(), pfo.LocalIp.To16().String()}
+	if len(pfo.Addresses) < 1 {
+		if pfo.LocalIp != nil {
+			address = []string{pfo.LocalIp.To4().String(), pfo.LocalIp.To16().String()}
+		} else {
+			address = []string{"localhost"}
+		}
 	} else {
-		address = []string{"localhost"}
+		address = pfo.Addresses
 	}
 
 	fw, err := portforward.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
