@@ -12,6 +12,7 @@ require (
 	github.com/spf13/cobra v1.1.1
 	github.com/txn2/txeh v1.2.1
 	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
+	gopkg.in/yaml.v2 v2.2.8 // indirect
 	k8s.io/api v0.20.4
 	k8s.io/apimachinery v0.20.4
 	k8s.io/cli-runtime v0.20.4

@@ -56,6 +56,7 @@ var verbose bool
 var domain string
 var mappings []string
 var isAllNs bool
+var svcConfigurationPath string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -73,6 +74,7 @@ func init() {
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
 	Cmd.Flags().BoolVarP(&isAllNs, "all-namespaces", "A", false, "Enable --all-namespaces option like kubectl.")
+	Cmd.Flags().StringVarP(&svcConfigurationPath, "fwd-conf", "z", "", "Define a forward configuration map")
 
 }
 
@@ -88,6 +90,7 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n" +
 		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
+		"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
 		"  kubefwd svc --all-namespaces",
 	Run: runCmd,
 }
@@ -439,6 +442,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
+		ServiceConfigPath:    svcConfigurationPath,
 	}
 
 	// Add the service to the catalog of services being forwarded

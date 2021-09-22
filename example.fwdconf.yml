@@ -1,0 +1,6 @@
+baseIP: 127.1.27.1
+serviceConfigurations:
+  - serviceName: service-name
+    finalOctet: 11 # 127.1.27.11
+  - serviceName: other-service-name
+    finalOctet: 99 # 127.1.27.99

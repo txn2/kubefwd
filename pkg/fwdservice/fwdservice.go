@@ -1,11 +1,11 @@
 package fwdservice
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
-	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
@@ -70,6 +70,8 @@ type ServiceFWD struct {
 	// key = podName
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
+
+	ServiceConfigPath string
 }
 
 /**
@@ -232,7 +234,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			svcName = pod.Name + "." + svcFwd.Svc.Name
 		}
 
-		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
+		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort, svcFwd.ServiceConfigPath)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
@@ -282,10 +284,10 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				svcName,
 			)
 
-			log.Printf("Port-Forward: %s %s:%d to pod %s:%s\n",
+			// 30 chars is a pretty long service name
+			log.Printf("Port-Forward: %-30s %s to pod %s:%s\n",
+				fmt.Sprintf("%s:%d", serviceHostName, port.Port),
 				localIp.String(),
-				serviceHostName,
-				port.Port,
 				pod.Name,
 				podPort,
 			)
