@@ -13,15 +13,15 @@ import (
 
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
-func ReadyInterface(svcName string, podName string, clusterN int, namespaceN int, port string, forwardConfigurationPath string) (net.IP, error) {
+func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 
-	ip, _ := fwdIp.GetIp(svcName, podName, clusterN, namespaceN, forwardConfigurationPath)
+	ip, _ := fwdIp.GetIp(opts)
 
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")
 	if err == nil || runtime.GOOS == "windows" {
 		// if no error then check to see if the ip:port are in use
-		_, err := net.Dial("tcp", ip.String()+":"+port)
+		_, err := net.Dial("tcp", ip.String()+":"+opts.Port)
 		if err != nil {
 			return ip, nil
 		}
@@ -45,7 +45,7 @@ func ReadyInterface(svcName string, podName string, clusterN int, namespaceN int
 		// found a match
 		if addr.String() == ip.String()+"/8" {
 			// found ip, now check for unused port
-			conn, err := net.Dial("tcp", ip.String()+":"+port)
+			conn, err := net.Dial("tcp", ip.String()+":"+opts.Port)
 			if err != nil {
 				return ip, nil
 			}
@@ -62,7 +62,7 @@ func ReadyInterface(svcName string, podName string, clusterN int, namespaceN int
 		os.Exit(1)
 	}
 
-	conn, err := net.Dial("tcp", ip.String()+":"+port)
+	conn, err := net.Dial("tcp", ip.String()+":"+opts.Port)
 	if err != nil {
 		return ip, nil
 	}

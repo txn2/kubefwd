@@ -1,6 +1,16 @@
-baseIP: 127.1.27.1
+baseUnreservedIP: 127.1.27.1
 serviceConfigurations:
-  - serviceName: service-name
-    finalOctet: 11 # 127.1.27.11
-  - serviceName: other-service-name
-    finalOctet: 99 # 127.1.27.99
+  - # identify a single context that will contain this 
+    # namespace and service or wildcard to match all
+    context: "*"
+    # identify a single namespace or match on wildcard
+    # for each namespace containing this service
+    # octet 2 will be incremented
+    namespace: "*"
+    serviceName: service-name
+    # attaching to multiple clusters will inc octet 1
+    ip: 127.1.28.1
+  - context: "foo"
+    namespace: "bar"
+    serviceName: service-name2
+    ip: 127.1.28.1

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdIp"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -234,7 +235,17 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			svcName = pod.Name + "." + svcFwd.Svc.Name
 		}
 
-		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort, svcFwd.ServiceConfigPath)
+		opts := fwdIp.ForwardIPOpts{
+			ServiceName:              svcName,
+			PodName:                  pod.Name,
+			Context:                  svcFwd.Context,
+			ClusterN:                 svcFwd.ClusterN,
+			NamespaceN:               svcFwd.NamespaceN,
+			Namespace:                svcFwd.Namespace,
+			Port:                     podPort,
+			ForwardConfigurationPath: svcFwd.ServiceConfigPath,
+		}
+		localIp, err := fwdnet.ReadyInterface(opts)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
@@ -285,9 +296,10 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			)
 
 			// 30 chars is a pretty long service name
-			log.Printf("Port-Forward: %-30s %s to pod %s:%s\n",
-				fmt.Sprintf("%s:%d", serviceHostName, port.Port),
+			log.Printf("Port-Forward: %16s %s:%d to pod %s:%s\n",
 				localIp.String(),
+				serviceHostName,
+				port.Port,
 				pod.Name,
 				podPort,
 			)
