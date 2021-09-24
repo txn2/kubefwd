@@ -295,7 +295,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				svcName,
 			)
 
-			// 30 chars is a pretty long service name
 			log.Printf("Port-Forward: %16s %s:%d to pod %s:%s\n",
 				localIp.String(),
 				serviceHostName,
