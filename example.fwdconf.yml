@@ -1,16 +1,10 @@
 baseUnreservedIP: 127.1.27.1
 serviceConfigurations:
-  - # identify a single context that will contain this 
-    # namespace and service or wildcard to match all
-    context: "*"
-    # identify a single namespace or match on wildcard
-    # for each namespace containing this service
-    # octet 2 will be incremented
-    namespace: "*"
+  - # context that will contain this namespace
+    context: context.name
+    # namespace expected to hold this service
+    namespace: foobar
+    # name of the service you wish to specify the IP for
     serviceName: service-name
-    # attaching to multiple clusters will inc octet 1
-    ip: 127.1.28.1
-  - context: "foo"
-    namespace: "bar"
-    serviceName: service-name2
+    # ip address you wish to utilize for this service
     ip: 127.1.28.1

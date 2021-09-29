@@ -79,21 +79,10 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	svcConf := getConfigurationForService(opts)
 	if svcConf != nil {
 		if ip, err := ipFromString(svcConf.IP); err == nil {
-			if svcConf.HasWildcardContext() {
-				// for each cluster increment octet 1
-				// if the service could exist in multiple contexts
-				ip[1] = baseUnreservedIP[1] + byte(opts.ClusterN)
+			if err := addToRegistry(regKey, opts, ip); err == nil {
+				return ip
 			}
-
-			if svcConf.HasWildcardNamespace() {
-				// if the service could exist in multiple namespaces
-				ip[2] = baseUnreservedIP[2] + byte(opts.NamespaceN)
-			}
-
-			if err := addToRegistry(regKey, opts, ip); err != nil {
-				panic(fmt.Sprintf("Unable to forward service. %s", err))
-			}
-			return ip
+			log.Errorf("Unable to forward service %s to requested IP %s due to collision", opts.ServiceName, svcConf.IP)
 		} else {
 			log.Errorf("Invalid service ip format %s %s", svcConf.String(), err)
 		}
@@ -120,18 +109,21 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	if err := addToRegistry(regKey, opts, ip); err != nil {
 		// failure to allocate on ip
 		log.Error(err)
+		// this recursive call will continue to inc the ip offset until
+		// an open slot is found or we go out of bounds
 		return determineIP(regKey, opts)
 	}
 	return ip
 }
 
 func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
-	allocationKey := fmt.Sprintf("%s:%s", ip.String(), opts.Port)
+	allocationKey := fmt.Sprintf("%s", ip.String())
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
 		// ip/port pair has allready ben allocated
-		return fmt.Errorf("ip/port pair %s has already been allocated", allocationKey)
+		return fmt.Errorf("ip %s has already been allocated", allocationKey)
 	}
 	ipRegistry.reg[regKey] = ip
+	ipRegistry.allocated[allocationKey] = true
 	return nil
 }
 
@@ -168,9 +160,11 @@ func getBaseUnreservedIP(forwardConfigurationPath string) []byte {
 
 func getConfigurationForService(opts ForwardIPOpts) *ServiceConfiguration {
 	fwdCfg := getForwardConfiguration(opts.ForwardConfigurationPath)
+
 	for _, c := range fwdCfg.ServiceConfigurations {
 		if c.ServiceName == opts.ServiceName &&
-			(c.Namespace == "*" || c.Namespace == opts.Namespace) {
+			c.Namespace == opts.Namespace &&
+			c.Context == opts.Context {
 			return &c
 		}
 	}
@@ -206,14 +200,6 @@ func getForwardConfiguration(forwardConfigurationPath string) *ForwardConfigurat
 
 	forwardConfiguration = conf
 	return forwardConfiguration
-}
-
-func (c ServiceConfiguration) HasWildcardContext() bool {
-	return c.Context == "*"
-}
-
-func (c ServiceConfiguration) HasWildcardNamespace() bool {
-	return c.Namespace == "*"
 }
 
 func (c ServiceConfiguration) String() string {
