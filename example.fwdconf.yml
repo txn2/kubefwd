@@ -1,10 +1,7 @@
 baseUnreservedIP: 127.1.27.1
 serviceConfigurations:
-  - # context that will contain this namespace
-    context: context.name
-    # namespace expected to hold this service
-    namespace: foobar
-    # name of the service you wish to specify the IP for
-    serviceName: service-name
+  - # identifier consisting of context name, namespace, 
+    # and service name separated by a period
+    identifier: context-name.namespace.service-name
     # ip address you wish to utilize for this service
     ip: 127.1.28.1

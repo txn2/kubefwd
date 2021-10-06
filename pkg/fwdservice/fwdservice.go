@@ -72,7 +72,8 @@ type ServiceFWD struct {
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
 
-	ServiceConfigPath string
+	ForwardConfigurationPath string   // file path to IP reservation configuration
+	ForwardIPReservations    []string // cli passed IP reservations
 }
 
 /**
@@ -243,7 +244,8 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			NamespaceN:               svcFwd.NamespaceN,
 			Namespace:                svcFwd.Namespace,
 			Port:                     podPort,
-			ForwardConfigurationPath: svcFwd.ServiceConfigPath,
+			ForwardConfigurationPath: svcFwd.ForwardConfigurationPath,
+			ForwardIPReservations:    svcFwd.ForwardIPReservations,
 		}
 		localIp, err := fwdnet.ReadyInterface(opts)
 		if err != nil {

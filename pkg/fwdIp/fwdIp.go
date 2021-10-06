@@ -21,6 +21,7 @@ type ForwardIPOpts struct {
 	Namespace                string
 	Port                     string
 	ForwardConfigurationPath string
+	ForwardIPReservations    []string
 }
 
 // Registry is a structure to create and hold all of the
@@ -33,15 +34,13 @@ type Registry struct {
 }
 
 type ForwardConfiguration struct {
-	BaseUnreservedIP      string                 `yaml:"baseUnreservedIP"`
-	ServiceConfigurations []ServiceConfiguration `yaml:"serviceConfigurations"`
+	BaseUnreservedIP      string                  `yaml:"baseUnreservedIP"`
+	ServiceConfigurations []*ServiceConfiguration `yaml:"serviceConfigurations"`
 }
 
 type ServiceConfiguration struct {
-	Context     string `yaml:"context"`
-	Namespace   string `yaml:"namespace"`
-	ServiceName string `yaml:"serviceName"`
-	IP          string `yaml:"ip"`
+	Identifier string `yaml:"identifier"`
+	IP         string `yaml:"ip"`
 }
 
 var ipRegistry *Registry
@@ -73,7 +72,7 @@ func GetIp(opts ForwardIPOpts) (net.IP, error) {
 }
 
 func determineIP(regKey string, opts ForwardIPOpts) net.IP {
-	baseUnreservedIP := getBaseUnreservedIP(opts.ForwardConfigurationPath)
+	baseUnreservedIP := getBaseUnreservedIP(opts)
 
 	// if a configuration exists use it
 	svcConf := getConfigurationForService(opts)
@@ -149,8 +148,8 @@ func ipFromString(ipStr string) (net.IP, error) {
 	return net.IP{byte(octet0), byte(octet1), byte(octet2), byte(octet3)}.To4(), nil
 }
 
-func getBaseUnreservedIP(forwardConfigurationPath string) []byte {
-	fwdCfg := getForwardConfiguration(forwardConfigurationPath)
+func getBaseUnreservedIP(opts ForwardIPOpts) []byte {
+	fwdCfg := getForwardConfiguration(opts)
 	ip, err := ipFromString(fwdCfg.BaseUnreservedIP)
 	if err != nil {
 		panic(err)
@@ -159,49 +158,75 @@ func getBaseUnreservedIP(forwardConfigurationPath string) []byte {
 }
 
 func getConfigurationForService(opts ForwardIPOpts) *ServiceConfiguration {
-	fwdCfg := getForwardConfiguration(opts.ForwardConfigurationPath)
+	fwdCfg := getForwardConfiguration(opts)
 
 	for _, c := range fwdCfg.ServiceConfigurations {
-		if c.ServiceName == opts.ServiceName &&
-			c.Namespace == opts.Namespace &&
-			c.Context == opts.Context {
-			return &c
+		toMatch := fmt.Sprintf("%s.%s.%s", opts.Context, opts.Namespace, opts.ServiceName)
+		if c.Identifier == toMatch {
+			return c
 		}
 	}
 	return nil
 }
 
-func getForwardConfiguration(forwardConfigurationPath string) *ForwardConfiguration {
+func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *ForwardConfiguration {
+	for _, resStr := range opts.ForwardIPReservations {
+		parts := strings.Split(resStr, ":")
+		if len(parts) != 2 {
+			continue // invalid syntax
+		}
+		// find any existing
+		identifier := parts[0]
+		ipStr := parts[1]
+		overridden := false
+		for _, c := range f.ServiceConfigurations {
+			if c.Identifier == identifier {
+				c.IP = ipStr
+				overridden = true
+				log.Infof("cli reservation flag overriding config for %s now %s", c.Identifier, c.IP)
+			}
+		}
+		if !overridden {
+			f.ServiceConfigurations = append(f.ServiceConfigurations, &ServiceConfiguration{
+				Identifier: identifier,
+				IP:         ipStr,
+			})
+		}
+	}
+	return f
+}
+
+func getForwardConfiguration(opts ForwardIPOpts) *ForwardConfiguration {
 	if forwardConfiguration != nil {
 		return forwardConfiguration
 	}
 
-	if forwardConfigurationPath == "" {
+	if opts.ForwardConfigurationPath == "" {
 		forwardConfiguration = defaultConfiguration
-		return forwardConfiguration
+		return applyCLIPassedReservations(opts, forwardConfiguration)
 	}
 
-	dat, err := os.ReadFile(forwardConfigurationPath)
+	dat, err := os.ReadFile(opts.ForwardConfigurationPath)
 	if err != nil {
 		// fall back to existing kubefwd base
-		log.Error(fmt.Sprintf("ForwardConfiguration read error %s", err))
+		log.Errorf("ForwardConfiguration read error %s", err)
 		forwardConfiguration = defaultConfiguration
-		return forwardConfiguration
+		return applyCLIPassedReservations(opts, forwardConfiguration)
 	}
 
 	conf := &ForwardConfiguration{}
 	err = yaml.Unmarshal(dat, conf)
 	if err != nil {
 		// fall back to existing kubefwd base
-		log.Error(fmt.Sprintf("ForwardConfiguration parse error %s", err))
+		log.Errorf("ForwardConfiguration parse error %s", err)
 		forwardConfiguration = defaultConfiguration
-		return forwardConfiguration
+		return applyCLIPassedReservations(opts, forwardConfiguration)
 	}
 
 	forwardConfiguration = conf
-	return forwardConfiguration
+	return applyCLIPassedReservations(opts, forwardConfiguration)
 }
 
 func (c ServiceConfiguration) String() string {
-	return fmt.Sprintf("Ctx: %s Ns:%s Svc:%s IP:%s", c.Context, c.Namespace, c.ServiceName, c.IP)
+	return fmt.Sprintf("ID: %s IP:%s", c.Identifier, c.IP)
 }
