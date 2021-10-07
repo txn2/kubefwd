@@ -39,8 +39,8 @@ type ForwardConfiguration struct {
 }
 
 type ServiceConfiguration struct {
-	Identifier string `yaml:"identifier"`
-	IP         string `yaml:"ip"`
+	Name string `yaml:"name"`
+	IP   string `yaml:"ip"`
 }
 
 var ipRegistry *Registry
@@ -160,10 +160,9 @@ func getBaseUnreservedIP(opts ForwardIPOpts) []byte {
 func getConfigurationForService(opts ForwardIPOpts) *ServiceConfiguration {
 	fwdCfg := getForwardConfiguration(opts)
 
-	for _, c := range fwdCfg.ServiceConfigurations {
-		toMatch := fmt.Sprintf("%s.%s.%s", opts.Context, opts.Namespace, opts.ServiceName)
-		if c.Identifier == toMatch {
-			return c
+	for _, svcCfg := range fwdCfg.ServiceConfigurations {
+		if svcCfg.Matches(opts) {
+			return svcCfg
 		}
 	}
 	return nil
@@ -171,26 +170,18 @@ func getConfigurationForService(opts ForwardIPOpts) *ServiceConfiguration {
 
 func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *ForwardConfiguration {
 	for _, resStr := range opts.ForwardIPReservations {
-		parts := strings.Split(resStr, ":")
-		if len(parts) != 2 {
-			continue // invalid syntax
-		}
-		// find any existing
-		identifier := parts[0]
-		ipStr := parts[1]
+		res := ServiceConfigurationFromReservation(resStr)
+
 		overridden := false
-		for _, c := range f.ServiceConfigurations {
-			if c.Identifier == identifier {
-				c.IP = ipStr
+		for _, svcCfg := range f.ServiceConfigurations {
+			if svcCfg.MatchesName(res) {
+				svcCfg.IP = res.IP
 				overridden = true
-				log.Infof("cli reservation flag overriding config for %s now %s", c.Identifier, c.IP)
+				log.Infof("cli reservation flag overriding config for %s now %s", svcCfg.Name, svcCfg.IP)
 			}
 		}
 		if !overridden {
-			f.ServiceConfigurations = append(f.ServiceConfigurations, &ServiceConfiguration{
-				Identifier: identifier,
-				IP:         ipStr,
-			})
+			f.ServiceConfigurations = append(f.ServiceConfigurations, res)
 		}
 	}
 	return f
@@ -227,6 +218,72 @@ func getForwardConfiguration(opts ForwardIPOpts) *ForwardConfiguration {
 	return applyCLIPassedReservations(opts, forwardConfiguration)
 }
 
+func (o ForwardIPOpts) MatchList() []string {
+	if o.ClusterN == 0 && o.NamespaceN == 0 {
+		return []string{
+			fmt.Sprintf("%s", o.ServiceName),
+			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s", o.ServiceName, o.Context),
+			fmt.Sprintf("%s.%s.svc", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+		}
+	}
+
+	if o.ClusterN > 0 && o.NamespaceN == 0 {
+		return []string{
+			fmt.Sprintf("%s.%s", o.ServiceName, o.Context),
+			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+		}
+	}
+
+	if o.ClusterN == 0 && o.NamespaceN > 0 {
+		return []string{
+			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.local", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+		}
+	}
+
+	return []string{
+		fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+	}
+}
+
+func ServiceConfigurationFromReservation(reservation string) *ServiceConfiguration {
+	parts := strings.Split(reservation, ":")
+	if len(parts) != 2 {
+		return nil
+	}
+	return &ServiceConfiguration{
+		Name: parts[0],
+		IP:   parts[1],
+	}
+}
+
 func (c ServiceConfiguration) String() string {
-	return fmt.Sprintf("ID: %s IP:%s", c.Identifier, c.IP)
+	return fmt.Sprintf("Name: %s IP:%s", c.Name, c.IP)
+}
+
+func (c ServiceConfiguration) Matches(opts ForwardIPOpts) bool {
+	matchList := opts.MatchList()
+	for _, toMatch := range matchList {
+		if c.Name == toMatch {
+			return true
+		}
+	}
+	return false
+}
+
+func (c ServiceConfiguration) MatchesName(otherCfg *ServiceConfiguration) bool {
+	return c.Name == otherCfg.Name
 }
