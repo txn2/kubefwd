@@ -221,41 +221,104 @@ func getForwardConfiguration(opts ForwardIPOpts) *ForwardConfiguration {
 func (o ForwardIPOpts) MatchList() []string {
 	if o.ClusterN == 0 && o.NamespaceN == 0 {
 		return []string{
+			fmt.Sprintf("%s", o.PodName),
+
 			fmt.Sprintf("%s", o.ServiceName),
-			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
+
+			fmt.Sprintf("%s.%s", o.PodName, o.ServiceName),
+
+			fmt.Sprintf("%s.%s", o.PodName, o.Context),
+
 			fmt.Sprintf("%s.%s", o.ServiceName, o.Context),
+
+			fmt.Sprintf("%s.%s", o.PodName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc", o.PodName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", o.PodName, o.Namespace),
+
+			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
 			fmt.Sprintf("%s.%s.svc", o.ServiceName, o.Namespace),
 			fmt.Sprintf("%s.%s.svc.cluster.local", o.ServiceName, o.Namespace),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s.svc", o.PodName, o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s.svc.cluster.local", o.PodName, o.ServiceName, o.Namespace),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.ServiceName, o.Context),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.PodName, o.Namespace, o.Context),
+
 			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
 			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
 			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+
+			fmt.Sprintf("%s.%s.%s.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.cluster.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
 		}
 	}
 
 	if o.ClusterN > 0 && o.NamespaceN == 0 {
 		return []string{
+			fmt.Sprintf("%s.%s", o.PodName, o.Context),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.ServiceName, o.Context),
+
 			fmt.Sprintf("%s.%s", o.ServiceName, o.Context),
+
 			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
 			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
 			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.PodName, o.Namespace, o.Context),
+
+			fmt.Sprintf("%s.%s.%s.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.cluster.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
 		}
 	}
 
 	if o.ClusterN == 0 && o.NamespaceN > 0 {
 		return []string{
+			fmt.Sprintf("%s.%s", o.PodName, o.Namespace),
+
 			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
 			fmt.Sprintf("%s.%s.svc", o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", o.ServiceName, o.Namespace),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s.svc", o.PodName, o.ServiceName, o.Namespace),
+			fmt.Sprintf("%s.%s.%s.svc.cluster.local", o.PodName, o.ServiceName, o.Namespace),
+
+			fmt.Sprintf("%s.%s.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.%s", o.PodName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.svc.cluster.%s", o.PodName, o.Namespace, o.Context),
+
 			fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
 			fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
-			fmt.Sprintf("%s.%s.svc.cluster.local", o.ServiceName, o.Namespace),
 			fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+
+			fmt.Sprintf("%s.%s.%s.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+			fmt.Sprintf("%s.%s.%s.svc.cluster.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
 		}
 	}
 
 	return []string{
+		fmt.Sprintf("%s.%s.%s", o.PodName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.svc.%s", o.PodName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.svc.cluster.%s", o.PodName, o.Namespace, o.Context),
+
 		fmt.Sprintf("%s.%s.%s", o.ServiceName, o.Namespace, o.Context),
 		fmt.Sprintf("%s.%s.svc.%s", o.ServiceName, o.Namespace, o.Context),
 		fmt.Sprintf("%s.%s.svc.cluster.%s", o.ServiceName, o.Namespace, o.Context),
+
+		fmt.Sprintf("%s.%s.%s.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.%s.svc.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
+		fmt.Sprintf("%s.%s.%s.svc.cluster.%s", o.PodName, o.ServiceName, o.Namespace, o.Context),
 	}
 }
 
