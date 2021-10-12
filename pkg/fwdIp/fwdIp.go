@@ -224,6 +224,7 @@ func (o ForwardIPOpts) MatchList() []string {
 			fmt.Sprintf("%s", o.PodName),
 
 			fmt.Sprintf("%s", o.ServiceName),
+			fmt.Sprintf("%s.svc", o.ServiceName),
 
 			fmt.Sprintf("%s.%s", o.PodName, o.ServiceName),
 
@@ -284,6 +285,7 @@ func (o ForwardIPOpts) MatchList() []string {
 	if o.ClusterN == 0 && o.NamespaceN > 0 {
 		return []string{
 			fmt.Sprintf("%s.%s", o.PodName, o.Namespace),
+			fmt.Sprintf("%s.%s.svc", o.PodName, o.Namespace),
 
 			fmt.Sprintf("%s.%s", o.ServiceName, o.Namespace),
 			fmt.Sprintf("%s.%s.svc", o.ServiceName, o.Namespace),
