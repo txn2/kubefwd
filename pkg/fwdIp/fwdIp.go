@@ -119,8 +119,16 @@ func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 	allocationKey := fmt.Sprintf("%s", ip.String())
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
 		// ip/port pair has allready ben allocated
-		return fmt.Errorf("ip %s has already been allocated", allocationKey)
+		return fmt.Errorf("ip %s has already been allocated when placing %s. will allocate next available",
+			allocationKey, opts.ServiceName)
 	}
+
+	// check for conflicting reservation
+	if conflicting := hasConflictingReservations(opts, ip.String()); conflicting != nil {
+		return fmt.Errorf("conflicting reservation for %s on %s when placing %s. will allocate next available",
+			conflicting.Name, allocationKey, opts.ServiceName)
+	}
+
 	ipRegistry.reg[regKey] = ip
 	ipRegistry.allocated[allocationKey] = true
 	return nil
@@ -148,6 +156,19 @@ func ipFromString(ipStr string) (net.IP, error) {
 	return net.IP{byte(octet0), byte(octet1), byte(octet2), byte(octet3)}.To4(), nil
 }
 
+func hasConflictingReservations(opts ForwardIPOpts, wantIP string) *ServiceConfiguration {
+	fwdCfg := getForwardConfiguration(opts)
+	for _, cfg := range fwdCfg.ServiceConfigurations {
+		// if the IP we want is reserverd and the
+		// target service is not the one listed in
+		// the forward configuration
+		if wantIP == cfg.IP && !cfg.Matches(opts) {
+			return cfg
+		}
+	}
+	return nil
+}
+
 func getBaseUnreservedIP(opts ForwardIPOpts) []byte {
 	fwdCfg := getForwardConfiguration(opts)
 	ip, err := ipFromString(fwdCfg.BaseUnreservedIP)
@@ -159,13 +180,23 @@ func getBaseUnreservedIP(opts ForwardIPOpts) []byte {
 
 func getConfigurationForService(opts ForwardIPOpts) *ServiceConfiguration {
 	fwdCfg := getForwardConfiguration(opts)
-
 	for _, svcCfg := range fwdCfg.ServiceConfigurations {
 		if svcCfg.Matches(opts) {
 			return svcCfg
 		}
 	}
 	return nil
+}
+
+func blockNonLoopbackIPs(f *ForwardConfiguration) {
+	if ip, err := ipFromString(f.BaseUnreservedIP); err != nil || !ip.IsLoopback() {
+		panic("BaseUnreservedIP is not in the range 127.0.0.0/8")
+	}
+	for _, svcCfg := range f.ServiceConfigurations {
+		if ip, err := ipFromString(svcCfg.IP); err != nil || !ip.IsLoopback() {
+			panic(fmt.Sprintf("IP %s for %s is not in the range 127.0.0.0/8", svcCfg.IP, svcCfg.Name))
+		}
+	}
 }
 
 func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *ForwardConfiguration {
@@ -184,6 +215,7 @@ func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *Fo
 			f.ServiceConfigurations = append(f.ServiceConfigurations, res)
 		}
 	}
+	blockNonLoopbackIPs(f)
 	return f
 }
 
