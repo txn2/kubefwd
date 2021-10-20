@@ -173,7 +173,7 @@ func getBaseUnreservedIP(opts ForwardIPOpts) []byte {
 	fwdCfg := getForwardConfiguration(opts)
 	ip, err := ipFromString(fwdCfg.BaseUnreservedIP)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	return ip
 }
@@ -194,7 +194,7 @@ func blockNonLoopbackIPs(f *ForwardConfiguration) {
 	}
 	for _, svcCfg := range f.ServiceConfigurations {
 		if ip, err := ipFromString(svcCfg.IP); err != nil || !ip.IsLoopback() {
-			panic(fmt.Sprintf("IP %s for %s is not in the range 127.0.0.0/8", svcCfg.IP, svcCfg.Name))
+			log.Fatal(fmt.Sprintf("IP %s for %s is not in the range 127.0.0.0/8", svcCfg.IP, svcCfg.Name))
 		}
 	}
 }
