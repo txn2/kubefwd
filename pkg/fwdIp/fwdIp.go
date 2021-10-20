@@ -83,7 +83,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 			}
 			log.Errorf("Unable to forward service %s to requested IP %s due to collision", opts.ServiceName, svcConf.IP)
 		} else {
-			log.Errorf("Invalid service ip format %s %s", svcConf.String(), err)
+			log.Errorf("Invalid service IP format %s %s", svcConf.String(), err)
 		}
 	}
 
@@ -96,7 +96,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	if opts.ClusterN > 255 ||
 		opts.NamespaceN > 255 ||
 		ipRegistry.inc[opts.ClusterN][opts.NamespaceN] > 255 {
-		panic("Ip address generation has run out of bounds.")
+		panic("IP generation has run out of bounds.")
 	}
 
 	ip := baseUnreservedIP
@@ -119,7 +119,7 @@ func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 	allocationKey := fmt.Sprintf("%s", ip.String())
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
 		// ip/port pair has allready ben allocated
-		return fmt.Errorf("ip %s has already been allocated when placing %s. will allocate next available",
+		return fmt.Errorf("IP %s has already been allocated when placing %s. will allocate next available",
 			allocationKey, opts.ServiceName)
 	}
 
