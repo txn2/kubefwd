@@ -49,7 +49,7 @@ func newRootCmd() *cobra.Command {
 			"  kubefwd svc -n default -n the-project\n" +
 			"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
 			"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
-			"  kubefwd svc -n the-project -r ctx.ns.svc:127.3.3.1\n" +
+			"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
 			"  kubefwd svc --all-namespaces",
 
 		Long: globalUsage,

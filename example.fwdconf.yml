@@ -1,7 +1,36 @@
 baseUnreservedIP: 127.1.27.1
 serviceConfigurations:
-  - # identifier consisting of context name, namespace, 
-    # and service name separated by a period
-    identifier: context-name.namespace.service-name
-    # ip address you wish to utilize for this service
+  - # name of the target service
+    # this will match a service in the first namespace
+    name: myservice
+    # ip address to be bound to
     ip: 127.1.28.1
+  - # you may utilize any of the following formats to identify a service
+    # examples:
+    #   pod
+    #   service
+    #   service.svc
+    #   pod.service
+    #   pod.context
+    #   service.context
+    #   pod.namespace
+    #   pod.namespace.svc
+    #   pod.namespace.svc.cluster.local
+    #   service.namespace
+    #   service.namespace.svc
+    #   service.namespace.svc.cluster.local
+    #   pod.service.namespace
+    #   pod.service.namespace.svc
+    #   pod.service.namespace.svc.cluster.local
+    #   pod.service.context
+    #   pod.namespace.context
+    #   pod.namespace.svc.context
+    #   pod.namespace.svc.cluster.context
+    #   service.namespace.context
+    #   service.namespace.svc.context
+    #   service.namespace.svc.cluster.context
+    #   pod.service.namespace.context
+    #   pod.service.namespace.svc.context
+    #   pod.service.namespace.svc.cluster.context
+    name: your-svc.your-namespace
+    ip: 127.1.28.2
