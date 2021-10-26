@@ -1,6 +1,7 @@
 package fwdIp
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -81,7 +82,6 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 			if err := addToRegistry(regKey, opts, ip); err == nil {
 				return ip
 			}
-			log.Errorf("Unable to forward service %s to requested IP %s due to collision", opts.ServiceName, svcConf.IP)
 		} else {
 			log.Errorf("Invalid service IP format %s %s", svcConf.String(), err)
 		}
@@ -106,8 +106,6 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 
 	ipRegistry.inc[opts.ClusterN][opts.NamespaceN]++
 	if err := addToRegistry(regKey, opts, ip); err != nil {
-		// failure to allocate on ip
-		log.Error(err)
 		// this recursive call will continue to inc the ip offset until
 		// an open slot is found or we go out of bounds
 		return determineIP(regKey, opts)
@@ -119,14 +117,17 @@ func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 	allocationKey := fmt.Sprintf("%s", ip.String())
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
 		// ip/port pair has allready ben allocated
-		return fmt.Errorf("IP %s has already been allocated when placing %s. will allocate next available",
-			allocationKey, opts.ServiceName)
+		msg := fmt.Sprintf("Unable to forward service %s to requested IP %s due to collision. Will allocate next available", opts.ServiceName, allocationKey)
+		log.Error(msg)
+		return errors.New(msg)
 	}
 
 	// check for conflicting reservation
 	if conflicting := hasConflictingReservations(opts, ip.String()); conflicting != nil {
-		return fmt.Errorf("conflicting reservation for %s on %s when placing %s. will allocate next available",
+		msg := fmt.Sprintf("Conflicting reservation for %s on %s when placing %s. Will allocate next available",
 			conflicting.Name, allocationKey, opts.ServiceName)
+		log.Debug(msg)
+		return errors.New(msg)
 	}
 
 	ipRegistry.reg[regKey] = ip
@@ -199,6 +200,22 @@ func blockNonLoopbackIPs(f *ForwardConfiguration) {
 	}
 }
 
+func notifyOfDuplicateIPReservations(f *ForwardConfiguration) {
+	// Alerts the user
+	requestedIPs := map[string]bool{}
+	for _, svcCfg := range f.ServiceConfigurations {
+		if _, ok := requestedIPs[svcCfg.IP]; ok {
+			log.Warn(fmt.Sprintf("IP %s cannot be used as a reservation for multiple services", svcCfg.IP))
+		}
+		requestedIPs[svcCfg.IP] = true
+	}
+}
+
+func validateForwardConfiguration(f *ForwardConfiguration) {
+	blockNonLoopbackIPs(f)
+	notifyOfDuplicateIPReservations(f)
+}
+
 func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *ForwardConfiguration {
 	for _, resStr := range opts.ForwardIPReservations {
 		res := ServiceConfigurationFromReservation(resStr)
@@ -208,14 +225,14 @@ func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *Fo
 			if svcCfg.MatchesName(res) {
 				svcCfg.IP = res.IP
 				overridden = true
-				log.Infof("cli reservation flag overriding config for %s now %s", svcCfg.Name, svcCfg.IP)
+				log.Infof("Cli reservation flag overriding config for %s now %s", svcCfg.Name, svcCfg.IP)
 			}
 		}
 		if !overridden {
 			f.ServiceConfigurations = append(f.ServiceConfigurations, res)
 		}
 	}
-	blockNonLoopbackIPs(f)
+	validateForwardConfiguration(f)
 	return f
 }
 
