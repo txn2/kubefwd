@@ -81,7 +81,9 @@ docker exec the-project curl -s elasticsearch:9200
 Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries.
 
 ## Contribute
-[Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version. We welcome any useful pull requests.
+[Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version.
+Accepting pull requests for bug fixes, tests, stability and compatibility
+enhancements, and documentation only.
 
 ## Usage
 
@@ -116,15 +118,15 @@ sudo kubefwd svc -l "app in (app1, app2)"
 ```bash
 $ kubefwd svc --help
 
-INFO[20:48:38]  _          _           __             _
-INFO[20:48:38] | | ___   _| |__   ___ / _|_      ____| |
-INFO[20:48:38] | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |
-INFO[20:48:38] |   <| |_| | |_) |  __/  _|\ V  V / (_| |
-INFO[20:48:38] |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|
-INFO[20:48:38]
-INFO[20:48:38] Version 1.11.0
-INFO[20:48:38] https://github.com/txn2/kubefwd
-INFO[20:48:38]
+INFO[00:00:48]  _          _           __             _     
+INFO[00:00:48] | | ___   _| |__   ___ / _|_      ____| |    
+INFO[00:00:48] | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |    
+INFO[00:00:48] |   <| |_| | |_) |  __/  _|\ V  V / (_| |    
+INFO[00:00:48] |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|    
+INFO[00:00:48]                                              
+INFO[00:00:48] Version 0.0.0                                
+INFO[00:00:48] https://github.com/txn2/kubefwd              
+INFO[00:00:48]                                              
 Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.
 
 Usage:
@@ -136,25 +138,28 @@ Aliases:
 Examples:
   kubefwd svc -n the-project
   kubefwd svc -n the-project -l app=wx,component=api
-  kubefwd svc -n the-project -f metadata.name=service-name
+  kubefwd svc -n default -l "app in (ws, api)"
   kubefwd svc -n default -n the-project
   kubefwd svc -n default -d internal.example.com
   kubefwd svc -n the-project -x prod-cluster
   kubefwd svc -n the-project -m 80:8080 -m 443:1443
-  kubefwd svc -n the-project --all-namespaces
-
+  kubefwd svc -n the-project -z path/to/conf.yml
+  kubefwd svc -n the-project -r svc.ns:127.3.3.1
+  kubefwd svc --all-namespaces
 
 Flags:
-  -x, --context strings     specify a context to override the current context
-  -d, --domain string       Append a pseudo domain name to generated host names.
-      --exitonfailure       Exit(1) on failure. Useful for forcing a container restart.
-  -h, --help                help for services
-  -c, --kubeconfig string   absolute path to a kubectl config file
-  -n, --namespace strings   Specify a namespace. Specify multiple namespaces by duplicating this argument.
-  -l, --selector string     Selector (label query) to filter on; supports '=', '==', '!=' (e.g. -l key1=value1,key2=value2) and 'in' (e.g. -l "app in (value1, value2)").
-  -m, --mapping strings     Specify a port mapping. Specify multiple mapping by duplicating this argument.
-  --all-namespaces          Enable --all-namespaces or -A option like kubectl.
-  -v, --verbose             Verbose output.
+  -A, --all-namespaces          Enable --all-namespaces option like kubectl.
+  -x, --context strings         specify a context to override the current context
+  -d, --domain string           Append a pseudo domain name to generated host names.
+  -f, --field-selector string   Field selector to filter on; supports '=', '==', and '!=' (e.g. -f metadata.name=service-name).
+  -z, --fwd-conf string         Define an IP reservation configuration
+  -h, --help                    help for services
+  -c, --kubeconfig string       absolute path to a kubectl config file
+  -m, --mapping strings         Specify a port mapping. Specify multiple mapping by duplicating this argument.
+  -n, --namespace strings       Specify a namespace. Specify multiple namespaces by duplicating this argument.
+  -r, --reserve strings         Specify an IP reservation. Specify multiple reservations by duplicating this argument.
+  -l, --selector string         Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
+  -v, --verbose                 Verbose output.
 ```
 
 ### License
