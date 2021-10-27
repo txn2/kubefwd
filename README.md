@@ -157,27 +157,6 @@ Flags:
   -v, --verbose             Verbose output.
 ```
 
-## Development
-
-### Build and Run
- Local
-
-```bash
-go run ./cmd/kubefwd/kubefwd.go
-```
-
-### Build Release
-
-Build test release:
-```bash
-goreleaser --skip-publish --rm-dist --skip-validate
-```
-
-Build and release:
-```bash
-GITHUB_TOKEN=$GITHUB_TOKEN goreleaser --rm-dist
-```
-
 ### License
 
 Apache License 2.0
@@ -203,5 +182,4 @@ Follow me on Twitter: [@cjimti](https://twitter.com/cjimti) ([Craig Johnston](ht
 [services]:https://kubernetes.io/docs/concepts/services-networking/service/
 [homebrew]:https://brew.sh/
 [txn2]:https://txn2.com/
-[golang:1.11.5]:https://hub.docker.com/_/golang/
 [Deasil Works, Inc.]:https://deasil.works/
