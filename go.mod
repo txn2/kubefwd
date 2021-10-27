@@ -12,11 +12,12 @@ require (
 	github.com/spf13/cobra v1.1.1
 	github.com/txn2/txeh v1.2.1
 	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
-	gopkg.in/yaml.v2 v2.2.8 // indirect
+	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.20.4
 	k8s.io/apimachinery v0.20.4
 	k8s.io/cli-runtime v0.20.4
 	k8s.io/client-go v0.20.4
+	k8s.io/klog/v2 v2.4.0 // indirect
 	k8s.io/kubectl v0.20.4
 )
 
@@ -73,9 +74,7 @@ require (
 	google.golang.org/appengine v1.6.5 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v2 v2.2.8 // indirect
 	k8s.io/component-base v0.20.4 // indirect
-	k8s.io/klog/v2 v2.4.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd // indirect
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920 // indirect
 	sigs.k8s.io/kustomize v2.0.3+incompatible // indirect
