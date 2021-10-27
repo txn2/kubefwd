@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package services
 
 import (
@@ -104,6 +105,11 @@ func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions
 	if err != nil {
 		log.Fatalf("Error get all namespaces by CoreV1: %s\n", err.Error())
 	}
+	if nsList == nil {
+		log.Warn("No namespaces returned.")
+		return
+	}
+
 	for _, ns := range nsList.Items {
 		*namespaces = append(*namespaces, ns.Name)
 	}
@@ -338,7 +344,6 @@ Try:
 	log.Infof("Clean exit")
 }
 
-// NamespaceOpts
 type NamespaceOpts struct {
 	NamespaceIPLock *sync.Mutex
 	ListOptions     metav1.ListOptions
