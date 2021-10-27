@@ -2,6 +2,8 @@
 
 Kubernetes port forwarding for local development.
 
+**NOTE:** Accepting pull requests for bug fixes, tests, and documentation only. 
+
 ![kubefwd - kubernetes bulk port forwarding](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
 
 [![Build Status](https://travis-ci.com/txn2/kubefwd.svg?branch=master)](https://travis-ci.com/txn2/kubefwd)

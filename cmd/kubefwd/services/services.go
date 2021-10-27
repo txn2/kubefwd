@@ -56,6 +56,8 @@ var verbose bool
 var domain string
 var mappings []string
 var isAllNs bool
+var fwdConfigurationPath string
+var fwdReservations []string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -73,6 +75,8 @@ func init() {
 	Cmd.Flags().StringVarP(&domain, "domain", "d", "", "Append a pseudo domain name to generated host names.")
 	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
 	Cmd.Flags().BoolVarP(&isAllNs, "all-namespaces", "A", false, "Enable --all-namespaces option like kubectl.")
+	Cmd.Flags().StringSliceVarP(&fwdReservations, "reserve", "r", []string{}, "Specify an IP reservation. Specify multiple reservations by duplicating this argument.")
+	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
 
 }
 
@@ -88,6 +92,8 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n default -d internal.example.com\n" +
 		"  kubefwd svc -n the-project -x prod-cluster\n" +
 		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
+		"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
+		"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
 		"  kubefwd svc --all-namespaces",
 	Run: runCmd,
 }
@@ -422,23 +428,25 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
-		ClientSet:            opts.ClientSet,
-		Context:              opts.Context,
-		Namespace:            opts.Namespace,
-		Hostfile:             opts.HostFile,
-		ClientConfig:         opts.ClientConfig,
-		RESTClient:           opts.RESTClient,
-		NamespaceN:           opts.NamespaceN,
-		ClusterN:             opts.ClusterN,
-		Domain:               opts.Domain,
-		PodLabelSelector:     selector,
-		NamespaceServiceLock: opts.NamespaceIPLock,
-		Svc:                  svc,
-		Headless:             svc.Spec.ClusterIP == "None",
-		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
-		SyncDebouncer:        debounce.New(5 * time.Second),
-		DoneChannel:          make(chan struct{}),
-		PortMap:              opts.ParsePortMap(mappings),
+		ClientSet:                opts.ClientSet,
+		Context:                  opts.Context,
+		Namespace:                opts.Namespace,
+		Hostfile:                 opts.HostFile,
+		ClientConfig:             opts.ClientConfig,
+		RESTClient:               opts.RESTClient,
+		NamespaceN:               opts.NamespaceN,
+		ClusterN:                 opts.ClusterN,
+		Domain:                   opts.Domain,
+		PodLabelSelector:         selector,
+		NamespaceServiceLock:     opts.NamespaceIPLock,
+		Svc:                      svc,
+		Headless:                 svc.Spec.ClusterIP == "None",
+		PortForwards:             make(map[string]*fwdport.PortForwardOpts),
+		SyncDebouncer:            debounce.New(5 * time.Second),
+		DoneChannel:              make(chan struct{}),
+		PortMap:                  opts.ParsePortMap(mappings),
+		ForwardConfigurationPath: fwdConfigurationPath,
+		ForwardIPReservations:    fwdReservations,
 	}
 
 	// Add the service to the catalog of services being forwarded

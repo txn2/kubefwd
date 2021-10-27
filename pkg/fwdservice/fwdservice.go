@@ -1,13 +1,14 @@
 package fwdservice
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
-	"context"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdIp"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -70,6 +71,9 @@ type ServiceFWD struct {
 	// key = podName
 	PortForwards map[string]*fwdport.PortForwardOpts
 	DoneChannel  chan struct{} // After shutdown is complete, this channel will be closed
+
+	ForwardConfigurationPath string   // file path to IP reservation configuration
+	ForwardIPReservations    []string // cli passed IP reservations
 }
 
 /**
@@ -232,7 +236,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			svcName = pod.Name + "." + svcFwd.Svc.Name
 		}
 
-		localIp, err := fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, podPort)
+		opts := fwdIp.ForwardIPOpts{
+			ServiceName:              svcName,
+			PodName:                  pod.Name,
+			Context:                  svcFwd.Context,
+			ClusterN:                 svcFwd.ClusterN,
+			NamespaceN:               svcFwd.NamespaceN,
+			Namespace:                svcFwd.Namespace,
+			Port:                     podPort,
+			ForwardConfigurationPath: svcFwd.ForwardConfigurationPath,
+			ForwardIPReservations:    svcFwd.ForwardIPReservations,
+		}
+		localIp, err := fwdnet.ReadyInterface(opts)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
@@ -282,7 +297,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				svcName,
 			)
 
-			log.Printf("Port-Forward: %s %s:%d to pod %s:%s\n",
+			log.Printf("Port-Forward: %16s %s:%d to pod %s:%s\n",
 				localIp.String(),
 				serviceHostName,
 				port.Port,
