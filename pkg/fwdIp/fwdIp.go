@@ -205,7 +205,7 @@ func notifyOfDuplicateIPReservations(f *ForwardConfiguration) {
 	requestedIPs := map[string]bool{}
 	for _, svcCfg := range f.ServiceConfigurations {
 		if _, ok := requestedIPs[svcCfg.IP]; ok {
-			log.Warn(fmt.Sprintf("IP %s cannot be used as a reservation for multiple services", svcCfg.IP))
+			log.Fatal(fmt.Sprintf("IP %s cannot be used as a reservation for multiple services", svcCfg.IP))
 		}
 		requestedIPs[svcCfg.IP] = true
 	}
