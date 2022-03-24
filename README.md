@@ -13,10 +13,10 @@ Kubernetes port forwarding for local development.
 
 # Please Help the Children of Ukraine
 
-UNICEF is on the ground helping Ukraine's children, please donate to https://www.unicefusa.org/
+UNICEF is on the ground helping Ukraine's children, please donate to https://www.unicefusa.org/ <- "like" this project by donating.
 
-[![Support Ukraine](ukraine.jpeg)](https://www.unicefusa.org/)
 
+[![Support Ukraine](ukraine.jpeg)](https://www.unicefusa.org/) 
 # kubefwd (Kube Forward)
 
 Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. Follow [Craig Johnston](https://twitter.com/cjimti) on Twitter for project updates.
