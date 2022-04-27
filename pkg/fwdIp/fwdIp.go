@@ -375,7 +375,7 @@ func (o ForwardIPOpts) MatchList() []string {
 
 func ServiceConfigurationFromReservation(reservation string) *ServiceConfiguration {
 	parts := strings.Split(reservation, ":")
-	if len(parts) != 2 {
+	if len(parts) != 2 || len(parts[0]) == 0 || len(parts[1]) == 0 {
 		return nil
 	}
 	return &ServiceConfiguration{
