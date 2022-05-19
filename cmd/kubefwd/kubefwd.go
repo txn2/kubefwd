@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -34,6 +35,11 @@ func init() {
 	if len(args) == 2 && args[0] == "version" && args[1] == "quiet" {
 		fmt.Println(Version)
 		os.Exit(0)
+	}
+
+	log.SetOutput(&LogOutputSplitter{})
+	if len(args) > 0 && args[0] == "completion" {
+		log.SetOutput(ioutil.Discard)
 	}
 }
 
@@ -81,13 +87,12 @@ func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
 }
 
 func main() {
+
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,
 		TimestampFormat: "15:04:05",
 	})
-
-	log.SetOutput(&LogOutputSplitter{})
 
 	log.Print(` _          _           __             _`)
 	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
