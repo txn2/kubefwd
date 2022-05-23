@@ -83,7 +83,7 @@ Execute a curl call to an Elasticsearch service in your Kubernetes cluster:
 docker exec the-project curl -s elasticsearch:9200
 ```
 
-## Alternative Installs (tar.gz, RPM, deb, snap)
+## Alternative Installs (tar.gz, RPM, deb)
 Check out the [releases](https://github.com/txn2/kubefwd/releases) section on Github for alternative binaries.
 
 ## Contribute
