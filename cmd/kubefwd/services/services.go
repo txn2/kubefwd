@@ -182,7 +182,6 @@ Try:
 	hostFile, err := txeh.NewHostsDefault()
 	if err != nil {
 		log.Fatalf("HostFile error: %s", err.Error())
-		os.Exit(1)
 	}
 
 	log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
@@ -190,7 +189,6 @@ Try:
 	msg, err := fwdhost.BackupHostFile(hostFile)
 	if err != nil {
 		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
-		os.Exit(1)
 	}
 
 	log.Printf("HostFile management: %s", msg)
@@ -218,7 +216,6 @@ Try:
 	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
 	if err != nil {
 		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
-		os.Exit(1)
 	}
 
 	// labels selector to filter services
@@ -303,7 +300,6 @@ Try:
 		restClient, err := configGetter.GetRESTClient()
 		if err != nil {
 			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
-			os.Exit(1)
 		}
 
 		for ii, namespace := range namespaces {
