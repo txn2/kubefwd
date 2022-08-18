@@ -11,12 +11,6 @@ Kubernetes port forwarding for local development.
 [![Go Report Card](https://goreportcard.com/badge/github.com/txn2/kubefwd)](https://goreportcard.com/report/github.com/txn2/kubefwd)
 [![GitHub release](https://img.shields.io/github/release/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/releases)
 
-# Please Help the Children of Ukraine
-
-UNICEF is on the ground helping Ukraine's children, please donate to https://www.unicefusa.org/ <- "like" this project by donating.
-
-
-[![Support Ukraine](ukraine.jpeg)](https://www.unicefusa.org/) 
 # kubefwd (Kube Forward)
 
 Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. Follow [Craig Johnston](https://twitter.com/cjimti) on Twitter for project updates.
@@ -186,6 +180,11 @@ Source code from the book [Advanced Platform Development with Kubernetes: Enabli
 Read my blog post [Advanced Platform Development with Kubernetes](https://imti.co/kubernetes-platform-book/) for more info and background on the book.
 
 Follow me on Twitter: [@cjimti](https://twitter.com/cjimti) ([Craig Johnston](https://twitter.com/cjimti))
+
+
+## Please Help the Children of Ukraine
+
+UNICEF is on the ground helping Ukraine's children, please donate to https://www.unicefusa.org/ <- "like" this project by donating.
 
 
 [Kubernetes]:https://kubernetes.io/
