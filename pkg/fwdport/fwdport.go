@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,12 +251,18 @@ func (pfo *PortForwardOpts) addHost(host string) {
 	// add host to /etc/hosts
 	pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
 
-	// replace illegal characters with underscore and add another entry if this changes the hostname
-	hostnameIllegalChars := regexp.MustCompile(`[^a-zA-Z0-9\-.]`)
-	sanitizedHost := hostnameIllegalChars.ReplaceAllString(host, `_`)
+	sanitizedHost := sanitizeHost(host)
 	if host != sanitizedHost {
 		pfo.addHost(sanitizedHost) //should recurse only once
 	}
+}
+
+// make sure any non-alphanumeric characters in the context name don't make it to the generated hostname
+func sanitizeHost(host string) string {
+	hostnameIllegalChars := regexp.MustCompile(`[^a-zA-Z0-9\-]`)
+	replacementChar := `-`
+	sanitizedHost := strings.Trim(hostnameIllegalChars.ReplaceAllString(host, replacementChar), replacementChar)
+	return sanitizedHost
 }
 
 // AddHosts adds hostname entries to /etc/hosts
