@@ -87,6 +87,8 @@ type PortForwardOpts struct {
 	Hosts          []string
 	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
+
+	HostLocal bool // This service is hosted locally, don't add a speedy.Dial listener for it.
 }
 
 type pingingDialer struct {
@@ -168,6 +170,12 @@ func (pfo *PortForwardOpts) PortForward() error {
 		close(pfStopChannel)
 
 	}()
+
+	// Skip the port forward listener if this is a host-local service
+	if pfo.HostLocal {
+		log.Infof("Skipped listening for service %s on port %s:%s since host-local is true", pfo.Service, pfo.LocalIp, pfo.LocalPort)
+		return nil
+	}
 
 	// Waiting until the pod is running
 	pod, err := pfo.WaitUntilPodRunning(downstreamStopChannel)

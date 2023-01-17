@@ -20,6 +20,7 @@ func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")
 	if err == nil || runtime.GOOS == "windows" {
+		// TODO - Ignore if this is a host-local service (already running)
 		// if no error then check to see if the ip:port are in use
 		_, err := net.Dial("tcp", ip.String()+":"+opts.Port)
 		if err != nil {
