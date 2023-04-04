@@ -38,7 +38,7 @@ func init() {
 	}
 
 	log.SetOutput(&LogOutputSplitter{})
-	if len(args) > 0 && args[0] == "completion" {
+	if len(args) > 0 && (args[0] == "completion" || args[0] == "__complete") {
 		log.SetOutput(ioutil.Discard)
 	}
 }
