@@ -114,7 +114,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 }
 
 func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
-	allocationKey := fmt.Sprintf("%s", ip.String())
+	allocationKey := ip.String()
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
 		// ip/port pair has allready ben allocated
 		msg := fmt.Sprintf("Unable to forward service %s to requested IP %s due to collision. Will allocate next available", opts.ServiceName, allocationKey)
@@ -270,9 +270,9 @@ func getForwardConfiguration(opts ForwardIPOpts) *ForwardConfiguration {
 func (o ForwardIPOpts) MatchList() []string {
 	if o.ClusterN == 0 && o.NamespaceN == 0 {
 		return []string{
-			fmt.Sprintf("%s", o.PodName),
+			o.PodName,
 
-			fmt.Sprintf("%s", o.ServiceName),
+			o.ServiceName,
 			fmt.Sprintf("%s.svc", o.ServiceName),
 
 			fmt.Sprintf("%s.%s", o.PodName, o.ServiceName),
