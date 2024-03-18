@@ -23,9 +23,10 @@ type ForwardIPOpts struct {
 	Port                     string
 	ForwardConfigurationPath string
 	ForwardIPReservations    []string
+	HostLocalServices        []string
 }
 
-// Registry is a structure to create and hold all of the
+// Registry is a structure to create and hold all the
 // IP address assignments
 type Registry struct {
 	mutex     *sync.Mutex
@@ -107,7 +108,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	ipRegistry.inc[opts.ClusterN][opts.NamespaceN]++
 	if err := addToRegistry(regKey, opts, ip); err != nil {
 		// this recursive call will continue to inc the ip offset until
-		// an open slot is found or we go out of bounds
+		// an open slot is found, or we go out of bounds
 		return determineIP(regKey, opts)
 	}
 	return ip

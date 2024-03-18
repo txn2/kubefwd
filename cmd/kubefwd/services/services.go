@@ -59,6 +59,7 @@ var mappings []string
 var isAllNs bool
 var fwdConfigurationPath string
 var fwdReservations []string
+var hostLocals []string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -77,6 +78,8 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&mappings, "mapping", "m", []string{}, "Specify a port mapping. Specify multiple mapping by duplicating this argument.")
 	Cmd.Flags().BoolVarP(&isAllNs, "all-namespaces", "A", false, "Enable --all-namespaces option like kubectl.")
 	Cmd.Flags().StringSliceVarP(&fwdReservations, "reserve", "r", []string{}, "Specify an IP reservation. Specify multiple reservations by duplicating this argument.")
+	Cmd.Flags().StringSliceVarP(&hostLocals, "host-local", "", []string{}, "Specify which services are hosted locally, and therefore don't tunnel")
+	// TODO - Support digging the local information out of the ip reservation configuration yml file.
 	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
 
 }
@@ -95,6 +98,7 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
 		"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
 		"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
+		"  kubefwd svc -n the-project -h svc.local\n" +
 		"  kubefwd svc --all-namespaces",
 	Run: runCmd,
 }
@@ -448,6 +452,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortMap:                  opts.ParsePortMap(mappings),
 		ForwardConfigurationPath: fwdConfigurationPath,
 		ForwardIPReservations:    fwdReservations,
+		HostLocalServices:        hostLocals,
 	}
 
 	// Add the service to the catalog of services being forwarded
