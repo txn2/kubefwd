@@ -1,10 +1,11 @@
 package fwdsvcregistry
 
 import (
+	"sync"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"sync"
 )
 
 // ServicesRegistry is a structure to hold all of the kubernetes
@@ -76,7 +77,7 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	//go func() {
 	//	for {
 	//		select {
-	//		case <-time.After(10 * time.Second):
+	//		case <-time.After(10 * time.Minute):
 	//			serviceFwd.SyncPodForwards(false)
 	//		case <-serviceFwd.DoneChannel:
 	//			return
