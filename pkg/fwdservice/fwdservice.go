@@ -3,7 +3,9 @@ package fwdservice
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,9 +76,11 @@ type ServiceFWD struct {
 
 	ForwardConfigurationPath string   // file path to IP reservation configuration
 	ForwardIPReservations    []string // cli passed IP reservations
+	HostLocalServices        []string // cli passed locally hosted services
 }
 
-/**
+/*
+*
 add port map
 @url https://github.com/txn2/kubefwd/issues/121
 */
@@ -246,10 +250,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			Port:                     podPort,
 			ForwardConfigurationPath: svcFwd.ForwardConfigurationPath,
 			ForwardIPReservations:    svcFwd.ForwardIPReservations,
+			HostLocalServices:        svcFwd.HostLocalServices,
 		}
-		localIp, err := fwdnet.ReadyInterface(opts)
-		if err != nil {
-			log.Warnf("WARNING: error readying interface: %s\n", err)
+		var localIp net.IP
+		if svcFwd.isHostLocalService(svcName) {
+			localIp = []byte{127, 0, 0, 1}
+			log.Infof("service %s IP forced to %s as a host-local service", svcName, localIp)
+		} else {
+			localIpRdy, err := fwdnet.ReadyInterface(opts)
+			if err != nil {
+				log.Warnf("WARNING: error readying interface: %s\n", err)
+			}
+			localIp = localIpRdy
 		}
 
 		// if this is not the first namespace on the
@@ -325,6 +337,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
+				HostLocal:      svcFwd.isHostLocalService(svcName),
 			}
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
@@ -338,7 +351,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 					}
 				} else {
 					select {
-					case <-pfo.ManualStopChan: // if shutdown was given, don't log a warning as it's an intented stopping.
+					case <-pfo.ManualStopChan: // if shutdown was given, don't log a warning as it's an intended stopping.
 					default:
 						log.Warnf("Stopped forwarding pod %s for %s", pfo.PodName, svcFwd)
 					}
@@ -405,4 +418,14 @@ func (svcFwd *ServiceFWD) getPortMap(port int32) string {
 		}
 	}
 	return p
+}
+
+func (svcFwd *ServiceFWD) isHostLocalService(svcName string) bool {
+	for _, hostLocalName := range svcFwd.HostLocalServices {
+		// TODO - Should we be a case-insensitive compare?
+		if strings.Compare(hostLocalName, svcName) == 0 {
+			return true
+		}
+	}
+	return false
 }
