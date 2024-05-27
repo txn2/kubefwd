@@ -59,6 +59,7 @@ var mappings []string
 var isAllNs bool
 var fwdConfigurationPath string
 var fwdReservations []string
+var timeout int
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -78,6 +79,7 @@ func init() {
 	Cmd.Flags().BoolVarP(&isAllNs, "all-namespaces", "A", false, "Enable --all-namespaces option like kubectl.")
 	Cmd.Flags().StringSliceVarP(&fwdReservations, "reserve", "r", []string{}, "Specify an IP reservation. Specify multiple reservations by duplicating this argument.")
 	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
+	Cmd.Flags().IntVarP(&timeout, "timeout", "t", 300, "Specify a timeout seconds for the port forwarding.")
 
 }
 
@@ -432,6 +434,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		ClientSet:                opts.ClientSet,
 		Context:                  opts.Context,
 		Namespace:                opts.Namespace,
+		Timeout:                  timeout,
 		Hostfile:                 opts.HostFile,
 		ClientConfig:             opts.ClientConfig,
 		RESTClient:               opts.RESTClient,
