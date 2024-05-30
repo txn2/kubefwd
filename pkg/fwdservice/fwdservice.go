@@ -38,6 +38,9 @@ type ServiceFWD struct {
 	// and the pods that back them for port-forwarding
 	Namespace string
 
+	// Timeout is specify a timeout seconds for the port forwarding.
+	Timeout int
+
 	// ClusterN is the ordinal index of the cluster (from configuration)
 	// cluster 0 is considered local while > 0 is remote
 	ClusterN int
@@ -76,7 +79,8 @@ type ServiceFWD struct {
 	ForwardIPReservations    []string // cli passed IP reservations
 }
 
-/**
+/*
+*
 add port map
 @url https://github.com/txn2/kubefwd/issues/121
 */
