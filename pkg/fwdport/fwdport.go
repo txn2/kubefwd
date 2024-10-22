@@ -186,7 +186,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	// Listen for pod is deleted
 	// @TODO need a test for this, does not seem to work as intended
-	// go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
+	go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
@@ -456,10 +456,20 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 			break
 		}
 		switch event.Type {
+		case watch.Modified:
+			log.Warnf("Pod %s modified, service %s pod new status %v", pod.ObjectMeta.Name, pfo.ServiceFwd, pod)
+			if (event.Object.(*v1.Pod)).DeletionTimestamp != nil {
+				log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+				pfo.Stop()
+				pfo.ServiceFwd.SyncPodForwards(false)
+			}
+			//return
 		case watch.Deleted:
 			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			// TODO - Disconnect / reconnect on the provided port
+			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
+			pfo.Stop()
 			pfo.ServiceFwd.SyncPodForwards(false)
-			return
 		}
 	}
 }
