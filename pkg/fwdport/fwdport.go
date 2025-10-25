@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
+
 	"k8s.io/apimachinery/pkg/util/httpstream"
 
 	log "github.com/sirupsen/logrus"
@@ -19,12 +22,153 @@ import (
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
+
+// GlobalPodInformer manages a single informer for all pods across all services
+type GlobalPodInformer struct {
+	mu              sync.RWMutex
+	activePods      map[types.UID]*PortForwardOpts
+	clientSet       *kubernetes.Clientset
+	namespace       string
+	informerFactory informers.SharedInformerFactory
+	stopChannel     chan struct{}
+}
+
+var globalPodInformer *GlobalPodInformer
+var globalPodInformerOnce sync.Once
+
+// GetGlobalPodInformer returns the singleton global pod informer
+func GetGlobalPodInformer(clientSet *kubernetes.Clientset, namespace string) *GlobalPodInformer {
+	globalPodInformerOnce.Do(func() {
+		globalPodInformer = &GlobalPodInformer{
+			activePods:  make(map[types.UID]*PortForwardOpts),
+			clientSet:   clientSet,
+			namespace:   namespace,
+			stopChannel: make(chan struct{}),
+		}
+		globalPodInformer.startInformer()
+	})
+	return globalPodInformer
+}
+
+// startInformer starts the global pod informer
+func (gpi *GlobalPodInformer) startInformer() {
+	gpi.informerFactory = informers.NewSharedInformerFactoryWithOptions(
+		gpi.clientSet,
+		time.Minute,
+		informers.WithNamespace(gpi.namespace),
+	)
+
+	podInformer := gpi.informerFactory.Core().V1().Pods()
+
+	podInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				oldPod, oldPodOk := oldObj.(*v1.Pod)
+				newPod, newPodOk := newObj.(*v1.Pod)
+
+				if !oldPodOk || !newPodOk {
+					log.Warnf("Non-pod object was updated: %v, %v", oldObj, newObj)
+					return
+				}
+
+				pfo, exists := gpi.getPod(oldPod.UID)
+				if !exists {
+					return
+				}
+
+				if newPod.DeletionTimestamp != nil {
+					log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", oldPod.ObjectMeta.Name, pfo.ServiceFwd)
+					pfo.Stop()
+					pfo.ServiceFwd.SyncPodForwards(false)
+					gpi.removePod(oldPod.UID)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				deletedPod, ok := obj.(*v1.Pod)
+
+				if !ok {
+					log.Warnf("Non-pod object was deleted: %v", obj)
+					return
+				}
+
+				pfo, exists := gpi.getPod(deletedPod.UID)
+				if !exists {
+					return
+				}
+
+				log.Warnf("Pod %s deleted, resyncing the %s service pods.", deletedPod.ObjectMeta.Name, pfo.ServiceFwd)
+				pfo.Stop()
+				pfo.ServiceFwd.SyncPodForwards(false)
+				gpi.removePod(deletedPod.UID)
+			},
+		},
+	)
+
+	go gpi.informerFactory.Start(gpi.stopChannel)
+
+	if !cache.WaitForCacheSync(gpi.stopChannel, podInformer.Informer().HasSynced) {
+		log.Errorf("Failed to sync global pod informer cache")
+		return
+	}
+
+	log.Infof("Started listening for pods being deleted in namespace %s", gpi.namespace)
+}
+
+// addPod adds a pod to the active pods map
+func (gpi *GlobalPodInformer) addPod(pod *v1.Pod, pfo *PortForwardOpts) {
+	gpi.mu.Lock()
+	defer gpi.mu.Unlock()
+	gpi.activePods[pod.UID] = pfo
+	log.Debugf("Added pod %s (UID: %s) to global informer", pod.Name, pod.UID)
+}
+
+// getPod retrieves a pod from the active pods map
+func (gpi *GlobalPodInformer) getPod(podUID types.UID) (*PortForwardOpts, bool) {
+	gpi.mu.RLock()
+	defer gpi.mu.RUnlock()
+	pfo, exists := gpi.activePods[podUID]
+	return pfo, exists
+}
+
+// removePod removes a pod from the active pods map
+func (gpi *GlobalPodInformer) removePod(podUID types.UID) {
+	gpi.mu.Lock()
+	defer gpi.mu.Unlock()
+	delete(gpi.activePods, podUID)
+	log.Debugf("Removed pod (UID: %s) from global informer", podUID)
+}
+
+// RemovePodByUID removes a pod from the global informer by UID
+func (gpi *GlobalPodInformer) RemovePodByUID(podUID types.UID) {
+	gpi.removePod(podUID)
+}
+
+// Stop stops the global pod informer
+func (gpi *GlobalPodInformer) Stop() {
+	select {
+	case <-gpi.stopChannel:
+		// Already stopped, nothing to do
+		return
+	default:
+		// Not stopped yet, close the channel to stop the informer
+		close(gpi.stopChannel)
+		log.Infof("Started listening for pods being deleted in namespace %s", gpi.namespace)
+	}
+}
+
+// StopGlobalPodInformer stops the global pod informer
+// This should be called during application shutdown
+func StopGlobalPodInformer() {
+	if globalPodInformer != nil {
+		globalPodInformer.Stop()
+	}
+}
 
 // ServiceFWD PodSyncer interface is used to represent a
 // fwdservice.ServiceFWD reference, which cannot be used directly
@@ -59,6 +203,7 @@ type PortForwardOpts struct {
 	Service    string
 	ServiceFwd ServiceFWD
 	PodName    string
+	PodUID     types.UID
 	PodPort    string
 	LocalIp    net.IP
 	LocalPort  string
@@ -189,9 +334,12 @@ func (pfo *PortForwardOpts) PortForward() error {
 		return nil
 	}
 
-	// Listen for pod is deleted
-	// @TODO need a test for this, does not seem to work as intended
-	go pfo.ListenUntilPodDeleted(downstreamStopChannel, pod)
+	// Set the pod UID for cleanup purposes
+	pfo.PodUID = pod.UID
+
+	// Register this pod with the global informer
+	globalInformer := GetGlobalPodInformer(&pfo.ClientSet, pfo.Namespace)
+	globalInformer.addPod(pod, pfo)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
@@ -481,44 +629,6 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 		}
 	}
 	return nil, nil
-}
-
-// listen for pod is deleted
-func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
-
-	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
-	if err != nil {
-		return
-	}
-
-	// Listen for stop signal from above
-	go func() {
-		<-stopChannel
-		watcher.Stop()
-	}()
-
-	// watcher until the pod is deleted, then trigger a syncpodforwards
-	for {
-		event, ok := <-watcher.ResultChan()
-		if !ok {
-			break
-		}
-		switch event.Type {
-		case watch.Modified:
-			if (event.Object.(*v1.Pod)).DeletionTimestamp != nil {
-				log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
-				pfo.Stop()
-				pfo.ServiceFwd.SyncPodForwards(false)
-			}
-			//return
-		case watch.Deleted:
-			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
-			// TODO - Disconnect / reconnect on the provided port
-			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
-			pfo.Stop()
-			pfo.ServiceFwd.SyncPodForwards(false)
-		}
-	}
 }
 
 // Stop sends the shutdown signal to the port-forwarding process.
