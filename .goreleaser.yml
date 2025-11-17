@@ -1,5 +1,11 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
 env:
   - GO111MODULE=on
+
 before:
   hooks:
     - go mod download
@@ -30,6 +36,19 @@ builds:
       - -v
     ldflags: -s -w -X main.Version={{.Version}}
 
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
 checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
 
@@ -43,14 +62,21 @@ changelog:
       - Merge branch
       - go mod tidy
 
+# Docker Images - Using legacy format for compatibility
+# Note: Consider migrating to dockers_v2 in the future for multi-platform manifests
 dockers:
-  -
+  - id: alpine
     goos: linux
     goarch: amd64
-    goarm: ''
     dockerfile: Dockerfile.alpine
-    ids:
-      - kubefwd
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
     image_templates:
       - "txn2/kubefwd:latest"
       - "txn2/kubefwd:{{ .Tag }}"
@@ -62,47 +88,34 @@ dockers:
       - "txn2/kubefwd:v{{ .Major }}_alpine-3"
       - "txn2/kubefwd:amd64-{{ .Tag }}_alpine-3"
       - "txn2/kubefwd:amd64-v{{ .Major }}_alpine-3"
-    build_flag_templates:
-      - "--label=org.label-schema.schema-version=1.0"
-      - "--label=org.label-schema.version={{.Version}}"
-      - "--label=org.label-schema.name={{.ProjectName}}"
-  -
+
+  - id: ubuntu
     goos: linux
     goarch: amd64
-    goarm: ''
     dockerfile: Dockerfile.ubuntu
-    ids:
-      - kubefwd
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
     image_templates:
       - "txn2/kubefwd:latest_ubuntu-20.04"
       - "txn2/kubefwd:{{ .Tag }}_ubuntu-20.04"
       - "txn2/kubefwd:v{{ .Major }}_ubuntu-20.04"
       - "txn2/kubefwd:amd64-{{ .Tag }}_ubuntu-20.04"
       - "txn2/kubefwd:amd64-v{{ .Major }}_ubuntu-20.04"
-    build_flag_templates:
-      - "--label=org.label-schema.schema-version=1.0"
-      - "--label=org.label-schema.version={{.Version}}"
-      - "--label=org.label-schema.name={{.ProjectName}}"
-
-archives:
-  - name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    replacements:
-      darwin: Darwin
-      linux: Linux
-      windows: Windows
-      386: i386
-      amd64: x86_64
-    format_overrides:
-      - goos: windows
-        format: zip
 
 nfpms:
-  - file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    homepage:  https://github.com/txn2/kubefwd
+  - id: default
+    file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    homepage: https://github.com/txn2/kubefwd
     description: Kubernetes bulk port forwarding utility.
-    maintainer: Craig Johnston https://twitter.com/cjimti
+    maintainer: Craig Johnston <cj@imti.co>
     license: Apache 2.0
-    vendor: https://github.com/txn2
+    vendor: txn2
     formats:
       - apk
       - deb
@@ -114,22 +127,22 @@ release:
   github:
     owner: txn2
     name: kubefwd
-  name_template: "{{.ProjectName}}-v{{.Version}} {{.Env.USER}}"
+  name_template: "{{.ProjectName}}-v{{.Version}}"
 
 brews:
   - name: kubefwd
-    tap:
+    repository:
       owner: txn2
       name: homebrew-tap
     commit_author:
       name: Craig Johnston
       email: cj@imti.co
-    folder: Formula
+    directory: Formula
     homepage: https://github.com/txn2/kubefwd
     description: "Kubernetes bulk port forwarding utility."
-    skip_upload: false
+    license: "Apache-2.0"
     dependencies:
       - name: kubectl
         type: optional
-    test: |-
-      kubefwd version
+    test: |
+      system "#{bin}/kubefwd version"
