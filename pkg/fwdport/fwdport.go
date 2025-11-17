@@ -62,6 +62,8 @@ type PortForwardOpts struct {
 	PodPort    string
 	LocalIp    net.IP
 	LocalPort  string
+	// Timeout for the port-forwarding process
+	Timeout    int
 	HostFile   *HostFileWithLock
 
 	// Context is a unique key (string) in kubectl config representing
@@ -407,14 +409,13 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 	// if the os.signal (we enter the Ctrl+C)
 	// or ManualStop (service delete or some thing wrong)
 	// or RunningChannel channel (the watch for pod runnings is done)
-	// or timeout after 300s
+	// or timeout after 300s(default)
 	// we'll stop the watcher
-	// TODO: change the 300s timeout to custom settings.
 	go func() {
 		defer watcher.Stop()
 		select {
 		case <-stopChannel:
-		case <-time.After(time.Second * 300):
+		case <-time.After(time.Duration(pfo.Timeout) * time.Second):
 		}
 	}()
 
