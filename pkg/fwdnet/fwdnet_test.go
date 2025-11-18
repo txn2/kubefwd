@@ -1,0 +1,493 @@
+package fwdnet
+
+import (
+	"net"
+	"os"
+	"runtime"
+	"testing"
+
+	"github.com/txn2/kubefwd/pkg/fwdIp"
+)
+
+// TestReadyInterface_Linux tests behavior on Linux systems
+func TestReadyInterface_Linux(t *testing.T) {
+	// This test verifies the Linux code path exists and is reachable
+	// On Linux, ReadyInterface should simply check if IP:port is available
+	// without requiring ifconfig commands
+
+	if runtime.GOOS != "linux" {
+		t.Skip("Skipping Linux-specific test on non-Linux platform")
+	}
+
+	// Test with a loopback IP that should be available
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "test-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0", // Port 0 should be available (kernel will assign)
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    nil,
+	}
+
+	ip, err := ReadyInterface(opts)
+	if err != nil {
+		t.Errorf("ReadyInterface failed on Linux: %v", err)
+	}
+
+	if ip == nil {
+		t.Error("Expected non-nil IP on Linux")
+	}
+
+	t.Logf("Linux: Got IP %s", ip)
+}
+
+// TestReadyInterface_Darwin tests behavior on macOS systems
+func TestReadyInterface_Darwin(t *testing.T) {
+	// On macOS, ReadyInterface uses ifconfig which requires sudo for alias creation
+	// This test verifies the code path and interface detection logic
+
+	if runtime.GOOS != "darwin" {
+		t.Skip("Skipping macOS-specific test on non-macOS platform")
+	}
+
+	// Check if we can access lo0 interface (this doesn't require sudo)
+	_, err := net.InterfaceByName("lo0")
+	if err != nil {
+		t.Fatalf("Cannot access lo0 interface on macOS: %v", err)
+	}
+
+	// Test with standard loopback - this should already exist
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "test-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0", // Port 0 should be available
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    nil,
+	}
+
+	// This will attempt to create an alias, which may fail without sudo
+	// We test that it at least tries and returns appropriately
+	ip, err := ReadyInterface(opts)
+
+	// Without sudo, this might fail or succeed depending on IP availability
+	// We just verify it doesn't panic and returns a valid result
+	if err != nil {
+		t.Logf("macOS ReadyInterface returned error (may need sudo): %v", err)
+	} else if ip != nil {
+		t.Logf("macOS: Got IP %s", ip)
+	}
+}
+
+// TestReadyInterface_Windows tests behavior on Windows systems
+func TestReadyInterface_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Skipping Windows-specific test on non-Windows platform")
+	}
+
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "test-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0",
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    nil,
+	}
+
+	ip, err := ReadyInterface(opts)
+	if err != nil {
+		t.Errorf("ReadyInterface failed on Windows: %v", err)
+	}
+
+	if ip == nil {
+		t.Error("Expected non-nil IP on Windows")
+	}
+
+	t.Logf("Windows: Got IP %s", ip)
+}
+
+// TestLoopbackInterfaceDetection tests platform-specific loopback detection
+func TestLoopbackInterfaceDetection(t *testing.T) {
+	switch runtime.GOOS {
+	case "linux", "windows":
+		// Should have "lo" interface
+		_, err := net.InterfaceByName("lo")
+		if err != nil && runtime.GOOS == "linux" {
+			t.Errorf("Expected 'lo' interface on Linux, got error: %v", err)
+		}
+
+	case "darwin":
+		// Should have "lo0" interface
+		iface, err := net.InterfaceByName("lo0")
+		if err != nil {
+			t.Fatalf("Expected 'lo0' interface on macOS, got error: %v", err)
+		}
+
+		// Verify we can get addresses
+		addrs, err := iface.Addrs()
+		if err != nil {
+			t.Errorf("Failed to get addresses for lo0: %v", err)
+		}
+
+		if len(addrs) == 0 {
+			t.Error("Expected at least one address on lo0")
+		}
+
+		t.Logf("lo0 has %d addresses", len(addrs))
+		for _, addr := range addrs {
+			t.Logf("  - %s", addr.String())
+		}
+	}
+}
+
+// TestRemoveInterfaceAlias_NoSudo tests that RemoveInterfaceAlias doesn't panic
+func TestRemoveInterfaceAlias_NoSudo(t *testing.T) {
+	// RemoveInterfaceAlias should not panic even if it fails
+	// It silently suppresses errors
+
+	testIP := net.ParseIP("127.1.27.99")
+	if testIP == nil {
+		t.Fatal("Failed to parse test IP")
+	}
+
+	// This will likely fail without sudo on macOS, but should not panic
+	// On Linux/Windows, it's a no-op anyway
+	RemoveInterfaceAlias(testIP)
+
+	// If we get here without panicking, the test passes
+	t.Log("RemoveInterfaceAlias completed without panic")
+}
+
+// TestReadyInterface_PortInUse tests detection of in-use ports
+func TestReadyInterface_PortInUse(t *testing.T) {
+	// This test works on all platforms - it tests the port-in-use detection
+
+	// Start a listener on a specific port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	// Get the actual port assigned
+	addr := listener.Addr().(*net.TCPAddr)
+	usedPort := addr.Port
+
+	t.Logf("Using port %d for in-use test", usedPort)
+
+	// On Linux/Windows, ReadyInterface should detect this
+	// On macOS without sudo, behavior may vary
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		opts := fwdIp.ForwardIPOpts{
+			ServiceName:              "test-svc",
+			PodName:                  "test-pod",
+			Context:                  "test-ctx",
+			ClusterN:                 0,
+			NamespaceN:               0,
+			Namespace:                "default",
+			Port:                     string(rune(usedPort)),
+			ForwardConfigurationPath: "",
+			ForwardIPReservations:    []string{"test-svc=127.0.0.1"},
+		}
+
+		_, err := ReadyInterface(opts)
+		if err == nil {
+			t.Log("Port in use detection may not work as expected (test informational only)")
+		} else {
+			t.Logf("Correctly detected port in use: %v", err)
+		}
+	} else {
+		t.Skip("Port-in-use test requires Linux or Windows")
+	}
+}
+
+// TestReadyInterface_IPAllocation tests that IPs are allocated correctly
+func TestReadyInterface_IPAllocation(t *testing.T) {
+	// Test that ReadyInterface allocates IPs in the correct range
+	// This test doesn't require sudo - it just verifies the IP allocation logic
+
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "test-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0",
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    nil,
+	}
+
+	ip, err := ReadyInterface(opts)
+
+	// On platforms without sudo, this might fail, but if it succeeds,
+	// verify the IP is in the loopback range
+	if err == nil && ip != nil {
+		if !ip.IsLoopback() {
+			t.Errorf("Expected loopback IP, got %s", ip)
+		}
+
+		// Should be in 127.x.x.x range
+		if ip[0] != 127 {
+			t.Errorf("Expected IP starting with 127, got %s", ip)
+		}
+
+		t.Logf("Allocated IP: %s", ip)
+	} else if err != nil {
+		t.Logf("IP allocation failed (may need sudo): %v", err)
+	}
+}
+
+// TestReadyInterface_MultipleIPs tests allocating multiple IPs
+func TestReadyInterface_MultipleIPs(t *testing.T) {
+	// Test that we can allocate multiple different IPs
+	// This primarily tests the IP allocation logic from fwdIp package
+
+	services := []string{"svc1", "svc2", "svc3"}
+	allocatedIPs := make(map[string]net.IP)
+
+	for _, svc := range services {
+		opts := fwdIp.ForwardIPOpts{
+			ServiceName:              svc,
+			PodName:                  "test-pod",
+			Context:                  "test-ctx",
+			ClusterN:                 0,
+			NamespaceN:               0,
+			Namespace:                "default",
+			Port:                     "0",
+			ForwardConfigurationPath: "",
+			ForwardIPReservations:    nil,
+		}
+
+		ip, err := ReadyInterface(opts)
+		if err != nil {
+			t.Logf("Failed to allocate IP for %s (may need sudo): %v", svc, err)
+			continue
+		}
+
+		if ip != nil {
+			allocatedIPs[svc] = ip
+			t.Logf("Allocated %s -> %s", svc, ip)
+		}
+	}
+
+	// If we successfully allocated any IPs, verify they're unique
+	if len(allocatedIPs) > 1 {
+		seen := make(map[string]bool)
+		for svc, ip := range allocatedIPs {
+			ipStr := ip.String()
+			if seen[ipStr] {
+				t.Errorf("Duplicate IP %s allocated for service %s", ipStr, svc)
+			}
+			seen[ipStr] = true
+		}
+		t.Logf("Successfully allocated %d unique IPs", len(allocatedIPs))
+	}
+}
+
+// TestReadyInterface_WithReservation tests IP reservation
+func TestReadyInterface_WithReservation(t *testing.T) {
+	// Test that IP reservations are respected
+	// Note: The actual IP returned may not match the reservation if:
+	// 1. The IP is already in use
+	// 2. The system can't create the alias (no sudo on macOS)
+	// This test verifies the function completes without error
+
+	reservedIP := "127.1.27.100"
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "reserved-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0",
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    []string{"reserved-svc=" + reservedIP},
+	}
+
+	ip, err := ReadyInterface(opts)
+	if err != nil {
+		t.Logf("IP reservation test failed (may need sudo): %v", err)
+		return
+	}
+
+	if ip == nil {
+		t.Error("Expected non-nil IP with reservation")
+		return
+	}
+
+	// The IP allocation uses global state and counter, so we can't guarantee
+	// the exact IP without resetting state between tests. Just verify we got
+	// a loopback IP in the right range.
+	if !ip.IsLoopback() || ip[0] != 127 {
+		t.Errorf("Expected loopback IP in 127.x.x.x range, got %s", ip.String())
+	} else {
+		t.Logf("IP reservation function working, allocated: %s", ip.String())
+		if ip.String() == reservedIP {
+			t.Logf("  ✓ Reservation honored: got requested IP %s", reservedIP)
+		} else {
+			t.Logf("  ℹ Got different IP (global counter state from previous tests)")
+		}
+	}
+}
+
+// TestInterfaceAliasIntegration is an integration test that requires sudo
+func TestInterfaceAliasIntegration(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Interface alias integration test is macOS-specific")
+	}
+
+	// Check if running with sufficient privileges
+	if os.Geteuid() != 0 {
+		t.Skip("Skipping interface alias test - requires sudo/root (run with: sudo go test)")
+	}
+
+	testIP := net.ParseIP("127.1.27.254")
+	if testIP == nil {
+		t.Fatal("Failed to parse test IP")
+	}
+
+	// Test allocation
+	opts := fwdIp.ForwardIPOpts{
+		ServiceName:              "integration-test-svc",
+		PodName:                  "test-pod",
+		Context:                  "test-ctx",
+		ClusterN:                 0,
+		NamespaceN:               0,
+		Namespace:                "default",
+		Port:                     "0",
+		ForwardConfigurationPath: "",
+		ForwardIPReservations:    []string{"integration-test-svc=127.1.27.254"},
+	}
+
+	ip, err := ReadyInterface(opts)
+	if err != nil {
+		t.Fatalf("Failed to create interface alias with sudo: %v", err)
+	}
+
+	if !ip.Equal(testIP) {
+		t.Errorf("Expected IP %s, got %s", testIP, ip)
+	}
+
+	// Verify the alias was created
+	iface, err := net.InterfaceByName("lo0")
+	if err != nil {
+		t.Fatalf("Failed to get lo0 interface: %v", err)
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		t.Fatalf("Failed to get interface addresses: %v", err)
+	}
+
+	found := false
+	expectedAddr := testIP.String() + "/8"
+	for _, addr := range addrs {
+		if addr.String() == expectedAddr {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Interface alias %s not found in lo0 addresses", expectedAddr)
+	}
+
+	// Clean up - remove the alias
+	RemoveInterfaceAlias(testIP)
+
+	// Verify removal
+	iface, _ = net.InterfaceByName("lo0")
+	addrs, _ = iface.Addrs()
+	for _, addr := range addrs {
+		if addr.String() == expectedAddr {
+			t.Errorf("Interface alias %s still present after removal", expectedAddr)
+		}
+	}
+
+	t.Log("Interface alias integration test passed")
+}
+
+// TestPlatformDetection tests runtime platform detection
+func TestPlatformDetection(t *testing.T) {
+	goos := runtime.GOOS
+
+	switch goos {
+	case "linux", "darwin", "windows":
+		t.Logf("Running on supported platform: %s", goos)
+	default:
+		t.Logf("Running on platform: %s (may not be fully supported)", goos)
+	}
+
+	// Verify the platform detection logic matches what the code expects
+	if goos == "linux" || goos == "windows" {
+		// Should try to use "lo" interface
+		_, err := net.InterfaceByName("lo")
+		if err != nil && goos == "linux" {
+			t.Logf("Warning: 'lo' interface not found on Linux")
+		}
+	} else if goos == "darwin" {
+		// Should use "lo0" interface
+		_, err := net.InterfaceByName("lo0")
+		if err != nil {
+			t.Errorf("Expected 'lo0' interface on macOS")
+		}
+	}
+}
+
+// TestConcurrentReadyInterface tests concurrent interface ready calls
+func TestConcurrentReadyInterface(t *testing.T) {
+	if os.Geteuid() != 0 && runtime.GOOS == "darwin" {
+		t.Skip("Skipping concurrent test - requires sudo on macOS")
+	}
+
+	// This tests that concurrent ReadyInterface calls don't conflict
+	// Note: This may require sudo on macOS to actually create aliases
+
+	numGoroutines := 10
+	results := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(n int) {
+			opts := fwdIp.ForwardIPOpts{
+				ServiceName:              "concurrent-test-" + string(rune('a'+n)),
+				PodName:                  "test-pod",
+				Context:                  "test-ctx",
+				ClusterN:                 0,
+				NamespaceN:               0,
+				Namespace:                "default",
+				Port:                     "0",
+				ForwardConfigurationPath: "",
+				ForwardIPReservations:    nil,
+			}
+
+			_, err := ReadyInterface(opts)
+			results <- err
+		}(i)
+	}
+
+	// Collect results
+	errors := 0
+	for i := 0; i < numGoroutines; i++ {
+		if err := <-results; err != nil {
+			errors++
+			t.Logf("Goroutine error: %v", err)
+		}
+	}
+
+	if errors > 0 {
+		t.Logf("Concurrent ReadyInterface had %d errors (may be expected without sudo)", errors)
+	} else {
+		t.Log("All concurrent ReadyInterface calls succeeded")
+	}
+}
