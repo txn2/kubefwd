@@ -102,7 +102,16 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 
 // ShutDownAll will shutdown all active services and remove them from the registry
 func ShutDownAll() {
+	// Get a snapshot of service names while holding the lock
+	svcRegistry.mutex.Lock()
+	serviceNames := make([]string, 0, len(svcRegistry.services))
 	for name := range svcRegistry.services {
+		serviceNames = append(serviceNames, name)
+	}
+	svcRegistry.mutex.Unlock()
+
+	// Now remove them (RemoveByName handles its own locking)
+	for _, name := range serviceNames {
 		RemoveByName(name)
 	}
 	log.Debugf("Registry: All services have shut down")

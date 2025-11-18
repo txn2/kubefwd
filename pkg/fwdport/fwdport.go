@@ -53,7 +53,7 @@ type HostsParams struct {
 type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     restclient.Config
-	ClientSet  kubernetes.Clientset
+	ClientSet  kubernetes.Interface
 	RESTClient restclient.RESTClient
 
 	Service    string

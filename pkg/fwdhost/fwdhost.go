@@ -3,7 +3,6 @@ package fwdhost
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 
 	"github.com/txn2/txeh"
@@ -27,7 +26,7 @@ func BackupHostFile(hostFile *txeh.Hosts) (string, error) {
 
 		to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
 		if err != nil {
-			log.Fatal(err)
+			return "", err
 		}
 		defer func() { _ = to.Close() }()
 

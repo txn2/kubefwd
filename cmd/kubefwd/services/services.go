@@ -318,7 +318,7 @@ Try:
 			nsWatchesDone.Add(1)
 
 			nameSpaceOpts := NamespaceOpts{
-				ClientSet: *clientSet,
+				ClientSet: clientSet,
 				Context:   ctx,
 				Namespace: namespace,
 
@@ -357,7 +357,7 @@ type NamespaceOpts struct {
 	ListOptions     metav1.ListOptions
 	HostFile        *fwdport.HostFileWithLock
 
-	ClientSet    kubernetes.Clientset
+	ClientSet    kubernetes.Interface
 	ClientConfig restclient.Config
 	RESTClient   restclient.RESTClient
 

@@ -23,7 +23,7 @@ import (
 // ServiceFWD Single service to forward, with a reference to
 // all the pods being forwarded for it
 type ServiceFWD struct {
-	ClientSet    kubernetes.Clientset
+	ClientSet    kubernetes.Interface
 	ListOptions  metav1.ListOptions
 	Hostfile     *fwdport.HostFileWithLock
 	ClientConfig restclient.Config
@@ -376,7 +376,11 @@ func (svcFwd *ServiceFWD) ListServicePodNames() []string {
 }
 
 func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
-	if pod, found := svcFwd.PortForwards[servicePodName]; found {
+	svcFwd.NamespaceServiceLock.Lock()
+	pod, found := svcFwd.PortForwards[servicePodName]
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if found {
 		pod.Stop()
 		<-pod.DoneChan
 		svcFwd.NamespaceServiceLock.Lock()
