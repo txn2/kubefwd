@@ -143,6 +143,7 @@ Flags:
   -m, --mapping strings     Specify a port mapping. Specify multiple mapping by duplicating this argument.
   --all-namespaces          Enable --all-namespaces or -A option like kubectl.
   -v, --verbose             Verbose output.
+      --hosts-path          User-defined Hosts Path. The default value /etc/hosts.
 ```
 
 ## 开发
