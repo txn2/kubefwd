@@ -60,6 +60,7 @@ var isAllNs bool
 var fwdConfigurationPath string
 var fwdReservations []string
 var timeout int
+var hostsPath string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -80,6 +81,7 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&fwdReservations, "reserve", "r", []string{}, "Specify an IP reservation. Specify multiple reservations by duplicating this argument.")
 	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
 	Cmd.Flags().IntVarP(&timeout, "timeout", "t", 300, "Specify a timeout seconds for the port forwarding.")
+	Cmd.Flags().StringVar(&hostsPath, "hosts-path", "/etc/hosts", "Hosts Path default /etc/hosts.")
 
 }
 
@@ -97,7 +99,8 @@ var Cmd = &cobra.Command{
 		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
 		"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
 		"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
-		"  kubefwd svc --all-namespaces",
+		"  kubefwd svc --all-namespaces\n" +
+		"  kubefwd svc --hosts-path /etc/hosts",
 	Run: runCmd,
 }
 
@@ -178,10 +181,15 @@ Try:
 		return
 	}
 
-	log.Println("Press [Ctrl-C] to stop forwarding.")
-	log.Println("'cat /etc/hosts' to see all host entries.")
+	_, err = os.Stat(hostsPath)
+	if err != nil {
+		log.Fatalf("Hosts path does not exist: %s", hostsPath)
+	}
 
-	hostFile, err := txeh.NewHostsDefault()
+	log.Println("Press [Ctrl-C] to stop forwarding.")
+	log.Println("'cat " + hostsPath + "' to see all host entries.")
+
+	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{ReadFilePath: hostsPath, WriteFilePath: hostsPath})
 	if err != nil {
 		log.Fatalf("HostFile error: %s", err.Error())
 	}
