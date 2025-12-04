@@ -271,6 +271,7 @@ Flags:
   -r, --reserve strings         Specify an IP reservation. Specify multiple reservations by duplicating this argument.
   -l, --selector string         Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
   -v, --verbose                 Verbose output.
+      --hosts-path              User-defined Hosts Path. The default value /etc/hosts.
 ```
 
 ## Troubleshooting
