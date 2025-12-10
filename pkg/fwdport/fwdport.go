@@ -63,8 +63,8 @@ type PortForwardOpts struct {
 	LocalIp    net.IP
 	LocalPort  string
 	// Timeout for the port-forwarding process
-	Timeout    int
-	HostFile   *HostFileWithLock
+	Timeout  int
+	HostFile *HostFileWithLock
 
 	// Context is a unique key (string) in kubectl config representing
 	// a user/cluster combination. Kubefwd uses context as the
@@ -156,10 +156,13 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
+	cleanupDone := make(chan struct{})
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
-	pfo.AddHosts()
+	if err := pfo.AddHosts(); err != nil {
+		return err
+	}
 
 	// Wait until the stop signal is received from above
 	go func() {
@@ -168,19 +171,21 @@ func (pfo *PortForwardOpts) PortForward() error {
 		pfo.removeHosts()
 		pfo.removeInterfaceAlias()
 		close(pfStopChannel)
-
+		close(cleanupDone)
 	}()
 
 	// Waiting until the pod is running
 	pod, err := pfo.WaitUntilPodRunning(downstreamStopChannel)
 	if err != nil {
 		pfo.Stop()
+		<-cleanupDone
 		return err
 	} else if pod == nil {
 		// if err is not nil but pod is nil
 		// mean service deleted but pod is not runnning.
 		// No error, just return
 		pfo.Stop()
+		<-cleanupDone
 		return nil
 	}
 
@@ -208,6 +213,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	fw, err := portforward.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		pfo.Stop()
+		<-cleanupDone
 		return err
 	}
 
@@ -216,9 +222,11 @@ func (pfo *PortForwardOpts) PortForward() error {
 		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.Stop()
 		dialerWithPing.stopPing()
+		<-cleanupDone
 		return err
 	}
 
+	<-cleanupDone
 	return nil
 }
 
@@ -268,9 +276,25 @@ func sanitizeHost(host string) string {
 }
 
 // AddHosts adds hostname entries to /etc/hosts
-func (pfo *PortForwardOpts) AddHosts() {
+func (pfo *PortForwardOpts) AddHosts() error {
 
 	pfo.HostFile.Lock()
+	defer pfo.HostFile.Unlock()
+
+	// Reload with retry
+	var err error
+	for i := 0; i < 10; i++ {
+		err = pfo.HostFile.Hosts.Reload()
+		if err == nil {
+			break
+		}
+		log.Warnf("Unable to reload /etc/hosts (attempt %d/10): %s", i+1, err.Error())
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		log.Error("Unable to reload /etc/hosts: " + err.Error())
+		return err
+	}
 
 	// pfo.Service holds only the service name
 	// start with the smallest allowable hostname
@@ -349,11 +373,19 @@ func (pfo *PortForwardOpts) AddHosts() {
 		pfo.Context,
 	))
 
-	err := pfo.HostFile.Hosts.Save()
+	for i := 0; i < 10; i++ {
+		err = pfo.HostFile.Hosts.Save()
+		if err == nil {
+			break
+		}
+		log.Warnf("Error saving /etc/hosts (attempt %d/10): %s", i+1, err.Error())
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		log.Error("Error saving hosts file", err)
+		return err
 	}
-	pfo.HostFile.Unlock()
+	return nil
 }
 
 // removeHosts removes hosts /etc/hosts
@@ -363,9 +395,19 @@ func (pfo *PortForwardOpts) removeHosts() {
 	// we should lock the pfo.HostFile here
 	// because sometimes other goroutine write the *txeh.Hosts
 	pfo.HostFile.Lock()
+	defer pfo.HostFile.Unlock()
+
 	// other applications or process may have written to /etc/hosts
 	// since it was originally updated.
-	err := pfo.HostFile.Hosts.Reload()
+	var err error
+	for i := 0; i < 10; i++ {
+		err = pfo.HostFile.Hosts.Reload()
+		if err == nil {
+			break
+		}
+		log.Warnf("Unable to reload /etc/hosts (attempt %d/10): %s", i+1, err.Error())
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		log.Error("Unable to reload /etc/hosts: " + err.Error())
 		return
@@ -378,11 +420,17 @@ func (pfo *PortForwardOpts) removeHosts() {
 	}
 
 	// fmt.Printf("Delete Host And Save !\r\n")
-	err = pfo.HostFile.Hosts.Save()
+	for i := 0; i < 10; i++ {
+		err = pfo.HostFile.Hosts.Save()
+		if err == nil {
+			break
+		}
+		log.Warnf("Error saving /etc/hosts (attempt %d/10): %s", i+1, err.Error())
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
 	}
-	pfo.HostFile.Unlock()
 }
 
 // removeInterfaceAlias called on stop signal to
@@ -457,7 +505,6 @@ func (pfo *PortForwardOpts) ListenUntilPodDeleted(stopChannel <-chan struct{}, p
 		}
 		switch event.Type {
 		case watch.Modified:
-			log.Warnf("Pod %s modified, service %s pod new status %v", pod.ObjectMeta.Name, pfo.ServiceFwd, pod)
 			if (event.Object.(*v1.Pod)).DeletionTimestamp != nil {
 				log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", pod.ObjectMeta.Name, pfo.ServiceFwd)
 				pfo.Stop()

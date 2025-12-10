@@ -270,6 +270,8 @@ Try:
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
+	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
+
 	for i, ctx := range contexts {
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
@@ -316,7 +318,7 @@ Try:
 				// each cluster and namespace has its own ip range
 				NamespaceIPLock:   &sync.Mutex{},
 				ListOptions:       listOptions,
-				HostFile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+				HostFile:          hostFileWithLock,
 				ClientConfig:      *restConfig,
 				RESTClient:        *restClient,
 				ClusterN:          i,
