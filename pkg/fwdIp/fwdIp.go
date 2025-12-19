@@ -59,6 +59,18 @@ func init() {
 	}
 }
 
+// GetAllocatedIPs returns all IPs allocated during this session
+func GetAllocatedIPs() []string {
+	ipRegistry.mutex.Lock()
+	defer ipRegistry.mutex.Unlock()
+
+	ips := make([]string, 0, len(ipRegistry.allocated))
+	for ip := range ipRegistry.allocated {
+		ips = append(ips, ip)
+	}
+	return ips
+}
+
 // ResetRegistry resets the global IP registry for test isolation.
 // This should only be used in tests.
 func ResetRegistry() {

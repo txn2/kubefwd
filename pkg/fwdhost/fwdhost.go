@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/txn2/kubefwd/pkg/fwdIp"
 	"github.com/txn2/txeh"
 )
 
@@ -38,4 +39,20 @@ func BackupHostFile(hostFile *txeh.Hosts) (string, error) {
 	}
 
 	return fmt.Sprintf("Original hosts backup already exists at %s\n", backupHostsPath), nil
+}
+
+// RemoveAllocatedHosts removes only the IPs that kubefwd allocated during this session
+func RemoveAllocatedHosts() error {
+	allocatedIPs := fwdIp.GetAllocatedIPs()
+	if len(allocatedIPs) == 0 {
+		return nil
+	}
+
+	hosts, err := txeh.NewHostsDefault()
+	if err != nil {
+		return err
+	}
+
+	hosts.RemoveAddresses(allocatedIPs)
+	return hosts.Save()
 }

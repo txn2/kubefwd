@@ -259,14 +259,22 @@ Try:
 
 	// Listen for shutdown signal from user
 	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
-		defer func() {
-			signal.Stop(sigint)
-		}()
-		<-sigint
-		log.Infof("Received shutdown signal")
+		sigChan := make(chan os.Signal, 2)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sigChan)
+
+		// First signal: graceful shutdown
+		<-sigChan
+		log.Infof("Shutting down... (press Ctrl+C again to force)")
 		close(stopListenCh)
+
+		// Second signal: force exit
+		<-sigChan
+		log.Warnf("Forced shutdown - cleaning up hosts file")
+		if err := fwdhost.RemoveAllocatedHosts(); err != nil {
+			log.Errorf("Failed to clean hosts file: %s", err)
+		}
+		os.Exit(1)
 	}()
 
 	// if no context override
