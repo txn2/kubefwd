@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
@@ -114,6 +115,10 @@ func ShutDownAll() {
 	for _, name := range serviceNames {
 		RemoveByName(name)
 	}
+
+	// Stop all global pod informers
+	fwdport.StopGlobalPodInformer()
+
 	log.Debugf("Registry: All services have shut down")
 }
 

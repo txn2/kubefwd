@@ -114,7 +114,8 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning {
+		// Only include pods that are running/pending AND not marked for deletion
+		if (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
 			podsEligible = append(podsEligible, pod)
 		}
 	}
@@ -143,7 +144,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		for _, podName := range svcFwd.ListServicePodNames() {
 			keep := false
 			for _, pod := range k8sPods {
-				if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+				if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
 					keep = true
 					break
 				}
@@ -173,7 +174,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 					break
 				}
 				for _, pod := range k8sPods {
-					if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+					if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
 						podNameToKeep = pod.Name
 						break
 					}
@@ -381,6 +382,11 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 	svcFwd.NamespaceServiceLock.Unlock()
 
 	if found {
+		// Remove from global informer if UID is set
+		if pod.PodUID != "" {
+			globalInformer := fwdport.GetGlobalPodInformer(svcFwd.ClientSet, svcFwd.Namespace)
+			globalInformer.RemovePodByUID(pod.PodUID)
+		}
 		pod.Stop()
 		<-pod.DoneChan
 		svcFwd.NamespaceServiceLock.Lock()
