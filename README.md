@@ -248,6 +248,12 @@ Enable verbose logging for debugging:
 sudo -E kubefwd svc -n the-project -v
 ```
 
+Refresh the hosts file backup (replace existing backup with current /etc/hosts):
+
+```bash
+sudo -E kubefwd svc -n the-project -b
+```
+
 ## Help
 
 ```bash
@@ -284,6 +290,7 @@ Examples:
 
 Flags:
   -A, --all-namespaces          Enable --all-namespaces option like kubectl.
+  -b, --refresh-backup          Refresh the hosts file backup before modifying /etc/hosts.
   -x, --context strings         specify a context to override the current context
   -d, --domain string           Append a pseudo domain name to generated host names.
   -f, --field-selector string   Field selector to filter on; supports '=', '==', and '!=' (e.g. -f metadata.name=service-name).
