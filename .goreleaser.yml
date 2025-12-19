@@ -130,19 +130,21 @@ release:
     name: kubefwd
   name_template: "{{.ProjectName}}-v{{.Version}}"
 
-homebrew_casks:
+# Homebrew Formula - for existing users who installed via `brew install txn2/tap/kubefwd`
+brews:
   - name: kubefwd
-    binaries:
-      - kubefwd
     repository:
       owner: txn2
       name: homebrew-tap
     commit_author:
       name: Craig Johnston
       email: cj@imti.co
-    directory: Casks
+    directory: Formula
     homepage: https://github.com/txn2/kubefwd
     description: "Kubernetes bulk port forwarding utility."
-    caveats: "kubefwd requires sudo to modify /etc/hosts and network interfaces."
+    license: "Apache-2.0"
     dependencies:
-      - formula: kubectl
+      - name: kubectl
+        type: optional
+    test: |
+      system "#{bin}/kubefwd version"
