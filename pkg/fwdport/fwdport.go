@@ -385,7 +385,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {
-		log.Errorf("ForwardPorts error: %s", err.Error())
+		log.Errorf("Lost connection to %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
 		pfo.Stop()
 		dialerWithPing.stopPing()
 		<-cleanupDone

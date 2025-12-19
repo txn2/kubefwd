@@ -52,9 +52,19 @@ func (w *KlogWriter) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 
-	// Skip other klog noise (trace headers, etc.)
+	// Skip trace headers and request noise
 	if strings.Contains(msg, "trace.go:") || strings.Contains(msg, "request.go:") {
 		return len(p), nil
+	}
+
+	// Skip generic "lost connection" messages (lack useful context)
+	if strings.Contains(msg, "lost connection to pod") {
+		return len(p), nil
+	}
+
+	// Log any other unexpected klog messages at debug level
+	if msg != "" {
+		log.Debugf("k8s: %s", msg)
 	}
 
 	return len(p), nil

@@ -334,7 +334,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 					select {
 					case <-pfo.ManualStopChan: // if shutdown was given, we don't bother with the error.
 					default:
-						log.Errorf("PortForward error on %s: %s", pfo.PodName, err.Error())
+						log.Errorf("PortForward error on %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
 					}
 				} else {
 					select {
