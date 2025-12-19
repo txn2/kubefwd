@@ -9,36 +9,41 @@ import (
 	"github.com/txn2/txeh"
 )
 
-// BackupHostFile will write a backup of the pre-modified host file
-// the users home directory, if it does already exist.
-func BackupHostFile(hostFile *txeh.Hosts) (string, error) {
+func BackupHostFile(hostFile *txeh.Hosts, forceRefresh bool) (string, error) {
 	homeDirLocation, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
 	backupHostsPath := homeDirLocation + "/hosts.original"
-	if _, err := os.Stat(backupHostsPath); os.IsNotExist(err) {
-		from, err := os.Open(hostFile.WriteFilePath)
-		if err != nil {
+	if info, err := os.Stat(backupHostsPath); err == nil {
+		if !forceRefresh {
+			return fmt.Sprintf("Original hosts backup already exists at %s (created %s). Use -b to create a fresh backup.\n", backupHostsPath, info.ModTime().Format("2006-01-02 15:04:05")), nil
+		}
+		if err := os.Remove(backupHostsPath); err != nil {
 			return "", err
 		}
-		defer func() { _ = from.Close() }()
-
-		to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
-		if err != nil {
-			return "", err
-		}
-		defer func() { _ = to.Close() }()
-
-		_, err = io.Copy(to, from)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Backing up your original hosts file %s to %s\n", hostFile.WriteFilePath, backupHostsPath), nil
+	} else if !os.IsNotExist(err) {
+		return "", err
 	}
 
-	return fmt.Sprintf("Original hosts backup already exists at %s\n", backupHostsPath), nil
+	from, err := os.Open(hostFile.WriteFilePath)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = from.Close() }()
+
+	to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = to.Close() }()
+
+	_, err = io.Copy(to, from)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Backing up hosts file %s to %s\n", hostFile.WriteFilePath, backupHostsPath), nil
 }
 
 func RemoveAllocatedHosts() error {

@@ -83,13 +83,13 @@ func TestBackupHostFile_CreateBackup(t *testing.T) {
 	}()
 
 	// Create backup
-	msg, err := BackupHostFile(hosts)
+	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("BackupHostFile failed: %v", err)
 	}
 
 	// Verify message indicates backup was created
-	if !strings.Contains(msg, "Backing up your original hosts file") {
+	if !strings.Contains(msg, "Backing up hosts file") {
 		t.Errorf("Expected backup creation message, got: %s", msg)
 	}
 
@@ -143,12 +143,12 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 	}()
 
 	// Create initial backup
-	msg1, err := BackupHostFile(hosts)
+	msg1, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("First backup failed: %v", err)
 	}
 
-	if !strings.Contains(msg1, "Backing up your original hosts file") {
+	if !strings.Contains(msg1, "Backing up hosts file") {
 		t.Errorf("Expected first backup message, got: %s", msg1)
 	}
 
@@ -159,7 +159,7 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 	}
 
 	// Attempt second backup
-	msg2, err := BackupHostFile(hosts)
+	msg2, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("Second backup failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestBackupHostFile_MissingSourceFile(t *testing.T) {
 	}
 
 	// Attempt backup - should fail gracefully
-	_, err = BackupHostFile(hosts)
+	_, err = BackupHostFile(hosts, false)
 	if err == nil {
 		t.Error("Expected error for missing source file, got nil")
 	}
@@ -267,7 +267,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 	}()
 
 	// Attempt backup - should fail due to permissions
-	_, err = BackupHostFile(hosts)
+	_, err = BackupHostFile(hosts, false)
 
 	if err == nil {
 		t.Error("Expected error for read-only location, got nil")
@@ -303,12 +303,12 @@ func TestBackupHostFile_EmptyHostsFile(t *testing.T) {
 		}
 	}()
 
-	msg, err := BackupHostFile(hosts)
+	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("BackupHostFile failed for empty file: %v", err)
 	}
 
-	if !strings.Contains(msg, "Backing up your original hosts file") {
+	if !strings.Contains(msg, "Backing up hosts file") {
 		t.Errorf("Expected backup message for empty file, got: %s", msg)
 	}
 
@@ -361,12 +361,12 @@ func TestBackupHostFile_LargeFile(t *testing.T) {
 		}
 	}()
 
-	msg, err := BackupHostFile(hosts)
+	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("BackupHostFile failed for large file: %v", err)
 	}
 
-	if !strings.Contains(msg, "Backing up your original hosts file") {
+	if !strings.Contains(msg, "Backing up hosts file") {
 		t.Errorf("Expected backup message, got: %s", msg)
 	}
 
@@ -416,12 +416,12 @@ func TestBackupHostFile_SpecialCharacters(t *testing.T) {
 		}
 	}()
 
-	msg, err := BackupHostFile(hosts)
+	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
 		t.Fatalf("BackupHostFile failed: %v", err)
 	}
 
-	if !strings.Contains(msg, "Backing up your original hosts file") {
+	if !strings.Contains(msg, "Backing up hosts file") {
 		t.Errorf("Expected backup message, got: %s", msg)
 	}
 
@@ -478,7 +478,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 			hosts, _, cleanup := createTempHostsFile(t, content)
 			defer cleanup()
 
-			_, err := BackupHostFile(hosts)
+			_, err := BackupHostFile(hosts, false)
 			results <- err
 		}(i)
 	}
@@ -537,12 +537,12 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 	hosts1, _, cleanup1 := createTempHostsFile(t, content)
 	defer cleanup1()
 
-	msg1, err := BackupHostFile(hosts1)
+	msg1, err := BackupHostFile(hosts1, false)
 	if err != nil {
 		t.Fatalf("First backup failed: %v", err)
 	}
 
-	expectedSubstring1 := "Backing up your original hosts file"
+	expectedSubstring1 := "Backing up hosts file"
 	if !strings.Contains(msg1, expectedSubstring1) {
 		t.Errorf("First backup message should contain %q, got: %s",
 			expectedSubstring1, msg1)
@@ -562,7 +562,7 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 	hosts2, _, cleanup2 := createTempHostsFile(t, content)
 	defer cleanup2()
 
-	msg2, err := BackupHostFile(hosts2)
+	msg2, err := BackupHostFile(hosts2, false)
 	if err != nil {
 		t.Fatalf("Second backup failed: %v", err)
 	}
@@ -610,7 +610,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 	hosts1, hostsPath1, cleanup1 := createTempHostsFile(t, originalContent)
 	defer cleanup1()
 
-	_, err = BackupHostFile(hosts1)
+	_, err = BackupHostFile(hosts1, false)
 	if err != nil {
 		t.Fatalf("First backup failed: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 			t.Fatalf("Failed to modify hosts file: %v", err)
 		}
 
-		_, err := BackupHostFile(hosts1)
+		_, err := BackupHostFile(hosts1, false)
 		if err != nil {
 			t.Fatalf("Backup %d failed: %v", i+1, err)
 		}
