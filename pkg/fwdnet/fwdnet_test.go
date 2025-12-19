@@ -176,7 +176,11 @@ func TestReadyInterface_PortInUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Logf("Warning: failed to close listener: %v", err)
+		}
+	}()
 
 	// Get the actual port assigned
 	addr := listener.Addr().(*net.TCPAddr)
@@ -196,7 +200,7 @@ func TestReadyInterface_PortInUse(t *testing.T) {
 			Namespace:                "default",
 			Port:                     string(rune(usedPort)),
 			ForwardConfigurationPath: "",
-			ForwardIPReservations:    []string{"test-svc=127.0.0.1"},
+			ForwardIPReservations:    []string{"test-svc:127.0.0.1"},
 		}
 
 		_, err := ReadyInterface(opts)
@@ -312,7 +316,7 @@ func TestReadyInterface_WithReservation(t *testing.T) {
 		Namespace:                "default",
 		Port:                     "0",
 		ForwardConfigurationPath: "",
-		ForwardIPReservations:    []string{"reserved-svc=" + reservedIP},
+		ForwardIPReservations:    []string{"reserved-svc:" + reservedIP},
 	}
 
 	ip, err := ReadyInterface(opts)
@@ -352,6 +356,9 @@ func TestInterfaceAliasIntegration(t *testing.T) {
 		t.Skip("Skipping interface alias test - requires sudo/root (run with: sudo go test)")
 	}
 
+	// Reset the global IP registry to ensure this test starts fresh
+	fwdIp.ResetRegistry()
+
 	testIP := net.ParseIP("127.1.27.254")
 	if testIP == nil {
 		t.Fatal("Failed to parse test IP")
@@ -367,7 +374,7 @@ func TestInterfaceAliasIntegration(t *testing.T) {
 		Namespace:                "default",
 		Port:                     "0",
 		ForwardConfigurationPath: "",
-		ForwardIPReservations:    []string{"integration-test-svc=127.1.27.254"},
+		ForwardIPReservations:    []string{"integration-test-svc:127.1.27.254"},
 	}
 
 	ip, err := ReadyInterface(opts)
@@ -407,11 +414,19 @@ func TestInterfaceAliasIntegration(t *testing.T) {
 	RemoveInterfaceAlias(testIP)
 
 	// Verify removal
-	iface, _ = net.InterfaceByName("lo0")
-	addrs, _ = iface.Addrs()
-	for _, addr := range addrs {
-		if addr.String() == expectedAddr {
-			t.Errorf("Interface alias %s still present after removal", expectedAddr)
+	iface, err = net.InterfaceByName("lo0")
+	if err != nil {
+		t.Logf("Warning: failed to get lo0 interface for verification: %v", err)
+	} else {
+		addrs, err = iface.Addrs()
+		if err != nil {
+			t.Logf("Warning: failed to get addresses for verification: %v", err)
+		} else {
+			for _, addr := range addrs {
+				if addr.String() == expectedAddr {
+					t.Errorf("Interface alias %s still present after removal", expectedAddr)
+				}
+			}
 		}
 	}
 

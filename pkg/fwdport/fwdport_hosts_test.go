@@ -26,7 +26,9 @@ func createTempHostsFile(t *testing.T) (*HostFileWithLock, string, func()) {
 
 	// Create initial hosts file
 	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0644); err != nil {
-		os.RemoveAll(tempDir)
+		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
+		}
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -36,7 +38,9 @@ func createTempHostsFile(t *testing.T) (*HostFileWithLock, string, func()) {
 		WriteFilePath: hostsPath,
 	})
 	if err != nil {
-		os.RemoveAll(tempDir)
+		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
+		}
 		t.Fatalf("Failed to create txeh.Hosts: %v", err)
 	}
 
@@ -45,7 +49,9 @@ func createTempHostsFile(t *testing.T) (*HostFileWithLock, string, func()) {
 	}
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", err)
+		}
 	}
 
 	return hostFileWithLock, hostsPath, cleanup
@@ -74,7 +80,9 @@ func TestAddHosts_SingleCall(t *testing.T) {
 	localIP := net.ParseIP("127.1.27.1")
 	pfo := createMockPortForwardOpts(hostFile, "test-svc", "default", "test-ctx", localIP)
 
-	pfo.AddHosts()
+	if err := pfo.AddHosts(); err != nil {
+		t.Fatalf("AddHosts failed: %v", err)
+	}
 
 	// Verify hosts were added
 	if len(pfo.Hosts) == 0 {
@@ -99,7 +107,9 @@ func TestRemoveHosts_SingleCall(t *testing.T) {
 	pfo := createMockPortForwardOpts(hostFile, "test-svc", "default", "test-ctx", localIP)
 
 	// First add hosts
-	pfo.AddHosts()
+	if err := pfo.AddHosts(); err != nil {
+		t.Fatalf("AddHosts failed: %v", err)
+	}
 	addedCount := len(pfo.Hosts)
 
 	if addedCount == 0 {
@@ -132,7 +142,7 @@ func TestAddHosts_ConcurrentSameService(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			pfo := createMockPortForwardOpts(hostFile, "test-svc", "default", "test-ctx", localIP)
-			pfo.AddHosts()
+			_ = pfo.AddHosts()
 		}()
 	}
 
@@ -157,7 +167,7 @@ func TestAddHosts_ConcurrentDifferentServices(t *testing.T) {
 			localIP := net.ParseIP(fmt.Sprintf("127.1.27.%d", n+1))
 			service := fmt.Sprintf("svc-%d", n)
 			pfo := createMockPortForwardOpts(hostFile, service, "default", "test-ctx", localIP)
-			pfo.AddHosts()
+			_ = pfo.AddHosts()
 		}(i)
 	}
 
@@ -185,7 +195,7 @@ func TestRemoveHosts_Concurrent(t *testing.T) {
 		localIP := net.ParseIP(fmt.Sprintf("127.1.27.%d", i+1))
 		service := fmt.Sprintf("svc-%d", i)
 		pfo := createMockPortForwardOpts(hostFile, service, "default", "test-ctx", localIP)
-		pfo.AddHosts()
+		_ = pfo.AddHosts()
 		pfos[i] = pfo
 	}
 
@@ -220,7 +230,7 @@ func TestAddAndRemoveHosts_Concurrent(t *testing.T) {
 			localIP := net.ParseIP(fmt.Sprintf("127.1.27.%d", (n%250)+1))
 			service := fmt.Sprintf("svc-%d", n)
 			pfo := createMockPortForwardOpts(hostFile, service, "default", "test-ctx", localIP)
-			pfo.AddHosts()
+			_ = pfo.AddHosts()
 		}(i)
 	}
 
@@ -268,7 +278,7 @@ func TestHostsFileReload_WhileWriting(t *testing.T) {
 				localIP := net.ParseIP(fmt.Sprintf("127.1.27.%d", (counter%250)+1))
 				service := fmt.Sprintf("svc-%d", counter)
 				pfo := createMockPortForwardOpts(hostFile, service, "default", "test-ctx", localIP)
-				pfo.AddHosts()
+				_ = pfo.AddHosts()
 				counter++
 				time.Sleep(time.Millisecond)
 			}
@@ -320,7 +330,9 @@ func TestLockContention(t *testing.T) {
 			hostname := fmt.Sprintf("test-%d.example.com", n)
 			hostFile.Hosts.AddHost(localIP, hostname)
 			time.Sleep(time.Microsecond * 100)
-			_ = hostFile.Hosts.Save()
+			if err := hostFile.Hosts.Save(); err != nil {
+				t.Logf("Save error in test: %v", err)
+			}
 			hostFile.Unlock()
 		}(i)
 	}
@@ -436,7 +448,9 @@ func TestAddHosts_DifferentClusterNamespaceConfigurations(t *testing.T) {
 			pfo.NamespaceN = tt.namespaceN
 			pfo.Domain = tt.domain
 
-			pfo.AddHosts()
+			if err := pfo.AddHosts(); err != nil {
+				t.Fatalf("AddHosts failed: %v", err)
+			}
 
 			if len(pfo.Hosts) < tt.minHosts {
 				t.Errorf("Expected at least %d hosts, got %d. Hosts: %v",
@@ -462,7 +476,7 @@ func TestConcurrentAddRemoveSameHost(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			pfo := createMockPortForwardOpts(hostFile, "same-svc", "default", "test-ctx", localIP)
-			pfo.AddHosts()
+			_ = pfo.AddHosts()
 		}()
 	}
 
@@ -491,7 +505,11 @@ func TestHostsFileSaveError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", err)
+		}
+	}()
 
 	hostsPath := filepath.Join(tempDir, "hosts")
 	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0644); err != nil {
@@ -517,7 +535,7 @@ func TestHostsFileSaveError(t *testing.T) {
 	pfo := createMockPortForwardOpts(hostFile, "test-svc", "default", "test-ctx", localIP)
 
 	// This should not panic, even though save will fail
-	pfo.AddHosts()
+	_ = pfo.AddHosts()
 
 	// Verify it logged the error but didn't crash
 	t.Log("AddHosts with save error handled gracefully")
@@ -531,7 +549,7 @@ func TestHostsFileReloadError(t *testing.T) {
 	// First add some hosts
 	localIP := net.ParseIP("127.1.27.1")
 	pfo := createMockPortForwardOpts(hostFile, "test-svc", "default", "test-ctx", localIP)
-	pfo.AddHosts()
+	_ = pfo.AddHosts()
 
 	// Remove the hosts file to trigger reload error
 	if err := os.Remove(hostsPath); err != nil {

@@ -210,7 +210,10 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 	}, false)
 
 	// Create hosts file mock
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}
@@ -273,7 +276,10 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
 	}, true) // Headless service
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}
@@ -320,7 +326,10 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: false} // Don't execute immediately
@@ -367,7 +376,10 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}
@@ -410,7 +422,10 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}
@@ -453,7 +468,10 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}

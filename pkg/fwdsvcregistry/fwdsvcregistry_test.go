@@ -1,6 +1,7 @@
 package fwdsvcregistry
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +23,11 @@ func createMockServiceFWD(name, namespace, context string) *fwdservice.ServiceFW
 		},
 	}
 
-	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		// In tests, this should not fail with default config
+		panic(fmt.Sprintf("Failed to create txeh.Hosts: %v", err))
+	}
 
 	return &fwdservice.ServiceFWD{
 		ClientSet:            fake.NewSimpleClientset(),

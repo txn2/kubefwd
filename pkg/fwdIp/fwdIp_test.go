@@ -222,7 +222,7 @@ func TestGetIp_BoundsCheckCluster(t *testing.T) {
 		}
 	}()
 
-	GetIp(opts)
+	_, _ = GetIp(opts)
 }
 
 // TestGetIp_BoundsCheckNamespace tests panic when NamespaceN > 255
@@ -243,7 +243,7 @@ func TestGetIp_BoundsCheckNamespace(t *testing.T) {
 		}
 	}()
 
-	GetIp(opts)
+	_, _ = GetIp(opts)
 }
 
 // TestGetIp_BoundsCheckCounter tests panic when counter exceeds 255
@@ -267,7 +267,7 @@ func TestGetIp_BoundsCheckCounter(t *testing.T) {
 		}
 	}()
 
-	GetIp(opts)
+	_, _ = GetIp(opts)
 }
 
 // TestGetIp_WithYAMLConfiguration tests IP allocation with YAML config file
@@ -285,8 +285,7 @@ serviceConfigurations:
   - name: "another-svc.default"
     ip: "127.20.20.20"
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -362,8 +361,7 @@ serviceConfigurations:
   - name: "my-svc"
     ip: "127.100.100.100"
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -451,8 +449,7 @@ serviceConfigurations:
   - name: "reserved-svc"
     ip: "127.10.10.10"
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -818,8 +815,7 @@ func TestGetIp_InvalidConfigFile(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "invalid.yaml")
 
 	// Write invalid YAML
-	err := os.WriteFile(configPath, []byte("invalid: yaml: content: [[["), 0644)
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte("invalid: yaml: content: [[["), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 

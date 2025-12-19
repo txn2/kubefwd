@@ -23,7 +23,7 @@ func (m *mockServiceFWD) String() string {
 	return "mock-service"
 }
 
-func (m *mockServiceFWD) SyncPodForwards(force bool) {
+func (m *mockServiceFWD) SyncPodForwards(_ bool) {
 	m.syncMutex.Lock()
 	defer m.syncMutex.Unlock()
 	m.syncCalled = true

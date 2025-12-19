@@ -24,7 +24,9 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, fun
 
 	// Create initial hosts file
 	if err := os.WriteFile(hostsPath, []byte(content), 0644); err != nil {
-		os.RemoveAll(tempDir)
+		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
+		}
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -34,12 +36,16 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, fun
 		WriteFilePath: hostsPath,
 	})
 	if err != nil {
-		os.RemoveAll(tempDir)
+		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
+		}
 		t.Fatalf("Failed to create txeh.Hosts: %v", err)
 	}
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: failed to cleanup temp dir: %v", err)
+		}
 	}
 
 	return hosts, hostsPath, cleanup
@@ -58,11 +64,21 @@ func TestBackupHostFile_CreateBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
 	// Override HOME for this test
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	// Create backup
 	msg, err := BackupHostFile(hosts)
@@ -107,10 +123,20 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	// Create initial backup
 	msg1, err := BackupHostFile(hosts)
@@ -165,10 +191,20 @@ func TestBackupHostFile_MissingSourceFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	// Delete the source file
 	if err := os.Remove(hostsPath); err != nil {
@@ -200,18 +236,28 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
 	// Make directory read-only
 	if err := os.Chmod(tempHome, 0555); err != nil {
 		t.Fatalf("Failed to make directory read-only: %v", err)
 	}
 
-	os.Setenv("HOME", tempHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
 	defer func() {
-		os.Setenv("HOME", originalHome)
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
 		// Restore permissions before cleanup
-		os.Chmod(tempHome, 0755)
+		if err := os.Chmod(tempHome, 0755); err != nil {
+			t.Logf("Warning: failed to restore permissions: %v", err)
+		}
 	}()
 
 	// Attempt backup - should fail due to permissions
@@ -234,10 +280,20 @@ func TestBackupHostFile_EmptyHostsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	msg, err := BackupHostFile(hosts)
 	if err != nil {
@@ -280,10 +336,20 @@ func TestBackupHostFile_LargeFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	msg, err := BackupHostFile(hosts)
 	if err != nil {
@@ -323,10 +389,20 @@ func TestBackupHostFile_SpecialCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	msg, err := BackupHostFile(hosts)
 	if err != nil {
@@ -360,10 +436,20 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	numGoroutines := 10
 	var wg sync.WaitGroup
@@ -416,10 +502,20 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	// First backup - should get creation message
 	hosts1, _, cleanup1 := createTempHostsFile(t, content)
@@ -477,10 +573,20 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp home: %v", err)
 	}
-	defer os.RemoveAll(tempHome)
+	defer func() {
+		if err := os.RemoveAll(tempHome); err != nil {
+			t.Logf("Warning: failed to cleanup temp home: %v", err)
+		}
+	}()
 
-	os.Setenv("HOME", tempHome)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.Setenv("HOME", tempHome); err != nil {
+		t.Fatalf("Failed to set HOME env var: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("HOME", originalHome); err != nil {
+			t.Errorf("Failed to restore HOME env var: %v", err)
+		}
+	}()
 
 	// Create first backup
 	hosts1, hostsPath1, cleanup1 := createTempHostsFile(t, originalContent)
