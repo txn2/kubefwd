@@ -198,13 +198,11 @@ type ServiceFWD interface {
 	SyncPodForwards(bool)
 }
 
-// HostFileWithLock
 type HostFileWithLock struct {
 	Hosts *txeh.Hosts
 	sync.Mutex
 }
 
-// HostsParams
 type HostsParams struct {
 	localServiceName string
 	nsServiceName    string
@@ -212,7 +210,6 @@ type HostsParams struct {
 	svcServiceName   string
 }
 
-// PortForwardOpts
 type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     restclient.Config
@@ -610,7 +607,6 @@ func (pfo *PortForwardOpts) removeInterfaceAlias() {
 	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
 }
 
-// Waiting for the pod running
 func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {
 	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(context.TODO(), pfo.PodName, metav1.GetOptions{})
 	if err != nil {

@@ -5,14 +5,12 @@ import (
 	"strings"
 )
 
-// Publisher
 type Publisher struct {
 	Output        bool
 	PublisherName string
 	ProducerName  string
 }
 
-// MakeProducer
 func (p *Publisher) MakeProducer(producer string) Publisher {
 	p.ProducerName = producer
 	return *p

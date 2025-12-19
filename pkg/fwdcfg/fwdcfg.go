@@ -7,12 +7,10 @@ import (
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 )
 
-// ConfigGetter
 type ConfigGetter struct {
 	ConfigFlag *genericclioptions.ConfigFlags
 }
 
-// NewConfigGetter
 func NewConfigGetter() *ConfigGetter {
 	configFlag := genericclioptions.NewConfigFlags(false)
 	return &ConfigGetter{
@@ -52,7 +50,6 @@ func (c *ConfigGetter) GetRestConfig(cfgFilePath string, context string) (*restc
 	return restConfig, nil
 }
 
-// GetRestClient return the RESTClient
 func (c *ConfigGetter) GetRESTClient() (*restclient.RESTClient, error) {
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(c.ConfigFlag)
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)

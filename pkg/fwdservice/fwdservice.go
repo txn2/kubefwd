@@ -79,11 +79,6 @@ type ServiceFWD struct {
 	ForwardIPReservations    []string // cli passed IP reservations
 }
 
-/*
-*
-add port map
-@url https://github.com/txn2/kubefwd/issues/121
-*/
 type PortMap struct {
 	SourcePort string
 	TargetPort string
@@ -355,7 +350,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 	}
 }
 
-// AddServicePod
 func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 	svcFwd.NamespaceServiceLock.Lock()
 	ServicePod := pfo.Service + "." + pfo.PodName
@@ -365,7 +359,6 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 	svcFwd.NamespaceServiceLock.Unlock()
 }
 
-// ListServicePodNames
 func (svcFwd *ServiceFWD) ListServicePodNames() []string {
 	svcFwd.NamespaceServiceLock.Lock()
 	currentPodNames := make([]string, 0, len(svcFwd.PortForwards))

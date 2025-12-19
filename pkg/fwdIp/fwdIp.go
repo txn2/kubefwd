@@ -155,19 +155,19 @@ func ipFromString(ipStr string) (net.IP, error) {
 
 	octet0, err := strconv.Atoi(ipParts[0])
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse BaseIP octet 0")
+		return nil, fmt.Errorf("unable to parse BaseIP octet 0")
 	}
 	octet1, err := strconv.Atoi(ipParts[1])
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse BaseIP octet 1")
+		return nil, fmt.Errorf("unable to parse BaseIP octet 1")
 	}
 	octet2, err := strconv.Atoi(ipParts[2])
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse BaseIP octet 2")
+		return nil, fmt.Errorf("unable to parse BaseIP octet 2")
 	}
 	octet3, err := strconv.Atoi(ipParts[3])
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse BaseIP octet 3")
+		return nil, fmt.Errorf("unable to parse BaseIP octet 3")
 	}
 	return net.IP{byte(octet0), byte(octet1), byte(octet2), byte(octet3)}.To4(), nil
 }
