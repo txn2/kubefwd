@@ -1,6 +1,7 @@
 package fwdIp
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -204,7 +205,7 @@ func TestGetIp_NamespaceIncrement(t *testing.T) {
 	}
 }
 
-// TestGetIp_BoundsCheckCluster tests panic when ClusterN > 255
+// TestGetIp_BoundsCheckCluster tests error when ClusterN > 255
 func TestGetIp_BoundsCheckCluster(t *testing.T) {
 	resetRegistry()
 
@@ -216,16 +217,16 @@ func TestGetIp_BoundsCheckCluster(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for ClusterN > 255")
-		}
-	}()
-
-	_, _ = GetIp(opts)
+	_, err := GetIp(opts)
+	if err == nil {
+		t.Error("Expected error for ClusterN > 255")
+	}
+	if !errors.Is(err, ErrIPBoundsExceeded) {
+		t.Errorf("Expected ErrIPBoundsExceeded, got: %v", err)
+	}
 }
 
-// TestGetIp_BoundsCheckNamespace tests panic when NamespaceN > 255
+// TestGetIp_BoundsCheckNamespace tests error when NamespaceN > 255
 func TestGetIp_BoundsCheckNamespace(t *testing.T) {
 	resetRegistry()
 
@@ -237,16 +238,16 @@ func TestGetIp_BoundsCheckNamespace(t *testing.T) {
 		NamespaceN:  256, // Out of bounds
 	}
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for NamespaceN > 255")
-		}
-	}()
-
-	_, _ = GetIp(opts)
+	_, err := GetIp(opts)
+	if err == nil {
+		t.Error("Expected error for NamespaceN > 255")
+	}
+	if !errors.Is(err, ErrIPBoundsExceeded) {
+		t.Errorf("Expected ErrIPBoundsExceeded, got: %v", err)
+	}
 }
 
-// TestGetIp_BoundsCheckCounter tests panic when counter exceeds 255
+// TestGetIp_BoundsCheckCounter tests error when counter exceeds 255
 func TestGetIp_BoundsCheckCounter(t *testing.T) {
 	resetRegistry()
 
@@ -261,13 +262,13 @@ func TestGetIp_BoundsCheckCounter(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic for counter > 255")
-		}
-	}()
-
-	_, _ = GetIp(opts)
+	_, err := GetIp(opts)
+	if err == nil {
+		t.Error("Expected error for counter > 255")
+	}
+	if !errors.Is(err, ErrIPBoundsExceeded) {
+		t.Errorf("Expected ErrIPBoundsExceeded, got: %v", err)
+	}
 }
 
 // TestGetIp_WithYAMLConfiguration tests IP allocation with YAML config file
