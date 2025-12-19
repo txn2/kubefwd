@@ -41,10 +41,9 @@ func BackupHostFile(hostFile *txeh.Hosts) (string, error) {
 	return fmt.Sprintf("Original hosts backup already exists at %s\n", backupHostsPath), nil
 }
 
-// RemoveAllocatedHosts removes only the IPs that kubefwd allocated during this session
 func RemoveAllocatedHosts() error {
-	allocatedIPs := fwdIp.GetAllocatedIPs()
-	if len(allocatedIPs) == 0 {
+	hostnames := fwdIp.GetRegisteredHostnames()
+	if len(hostnames) == 0 {
 		return nil
 	}
 
@@ -53,6 +52,6 @@ func RemoveAllocatedHosts() error {
 		return err
 	}
 
-	hosts.RemoveAddresses(allocatedIPs)
+	hosts.RemoveHosts(hostnames)
 	return hosts.Save()
 }

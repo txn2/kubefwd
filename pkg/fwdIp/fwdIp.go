@@ -32,6 +32,7 @@ type Registry struct {
 	inc       map[int]map[int]int
 	reg       map[string]net.IP
 	allocated map[string]bool
+	hostnames []string
 }
 
 type ForwardConfiguration struct {
@@ -59,7 +60,6 @@ func init() {
 	}
 }
 
-// GetAllocatedIPs returns all IPs allocated during this session
 func GetAllocatedIPs() []string {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()
@@ -69,6 +69,20 @@ func GetAllocatedIPs() []string {
 		ips = append(ips, ip)
 	}
 	return ips
+}
+
+func RegisterHostname(hostname string) {
+	ipRegistry.mutex.Lock()
+	defer ipRegistry.mutex.Unlock()
+	ipRegistry.hostnames = append(ipRegistry.hostnames, hostname)
+}
+
+func GetRegisteredHostnames() []string {
+	ipRegistry.mutex.Lock()
+	defer ipRegistry.mutex.Unlock()
+	result := make([]string, len(ipRegistry.hostnames))
+	copy(result, ipRegistry.hostnames)
+	return result
 }
 
 // ResetRegistry resets the global IP registry for test isolation.

@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/httpstream"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdIp"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/txeh"
@@ -421,13 +422,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 // AddHost
 func (pfo *PortForwardOpts) addHost(host string) {
-	// add to list of hostnames for this port-forward
 	pfo.Hosts = append(pfo.Hosts, host)
-
-	// remove host if it already exists in /etc/hosts
+	fwdIp.RegisterHostname(host)
 	pfo.HostFile.Hosts.RemoveHost(host)
-
-	// add host to /etc/hosts
 	pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
 
 	sanitizedHost := sanitizeHost(host)
