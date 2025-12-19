@@ -62,6 +62,7 @@ var fwdReservations []string
 var timeout int
 var hostsPath string
 var refreshHostsBackup bool
+var purgeStaleIps bool
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -84,6 +85,7 @@ func init() {
 	Cmd.Flags().IntVarP(&timeout, "timeout", "t", 300, "Specify a timeout seconds for the port forwarding.")
 	Cmd.Flags().StringVar(&hostsPath, "hosts-path", "/etc/hosts", "Hosts Path default /etc/hosts.")
 	Cmd.Flags().BoolVarP(&refreshHostsBackup, "refresh-backup", "b", false, "Create a fresh hosts backup, replacing any existing backup.")
+	Cmd.Flags().BoolVarP(&purgeStaleIps, "purge-stale-ips", "p", false, "Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.")
 
 }
 
@@ -204,6 +206,16 @@ Try:
 	}
 
 	log.Printf("HostFile management: %s", msg)
+
+	if purgeStaleIps {
+		count, err := fwdhost.PurgeStaleIps(hostFile)
+		if err != nil {
+			log.Fatalf("Error purging stale IPs: %s\n", err.Error())
+		}
+		if count > 0 {
+			log.Printf("Purged %d stale host entries from previous kubefwd sessions\n", count)
+		}
+	}
 
 	if domain != "" {
 		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)

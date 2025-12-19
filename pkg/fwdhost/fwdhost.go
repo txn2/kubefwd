@@ -3,6 +3,7 @@ package fwdhost
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 
 	"github.com/txn2/kubefwd/pkg/fwdIp"
@@ -59,4 +60,34 @@ func RemoveAllocatedHosts() error {
 
 	hosts.RemoveHosts(hostnames)
 	return hosts.Save()
+}
+
+func isKubefwdIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	ip = ip.To4()
+	if ip == nil || ip[0] != 127 {
+		return false
+	}
+	return ip[1] > 1 || (ip[1] == 1 && ip[2] >= 27)
+}
+
+func PurgeStaleIps(hostFile *txeh.Hosts) (int, error) {
+	lines := hostFile.GetHostFileLines()
+	var hostsToRemove []string
+
+	for _, line := range *lines {
+		if line.LineType == txeh.ADDRESS && isKubefwdIP(line.Address) {
+			hostsToRemove = append(hostsToRemove, line.Hostnames...)
+		}
+	}
+
+	if len(hostsToRemove) == 0 {
+		return 0, nil
+	}
+
+	hostFile.RemoveHosts(hostsToRemove)
+	return len(hostsToRemove), hostFile.Save()
 }
