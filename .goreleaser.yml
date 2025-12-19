@@ -26,6 +26,8 @@ builds:
     ignore:
       - goos: windows
         goarch: arm64
+      - goos: windows
+        goarch: arm
     mod_timestamp: '{{ .CommitTimestamp }}'
     env:
       - CGO_ENABLED=0
@@ -47,7 +49,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
@@ -62,51 +64,50 @@ changelog:
       - Merge branch
       - go mod tidy
 
-# Docker Images - Using legacy format for compatibility
-# Note: Consider migrating to dockers_v2 in the future for multi-platform manifests
-dockers:
+# Docker Images - Using v2 format with multi-platform support
+dockers_v2:
   - id: alpine
-    goos: linux
-    goarch: amd64
     dockerfile: Dockerfile.alpine
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source={{.GitURL}}"
-    image_templates:
-      - "txn2/kubefwd:latest"
-      - "txn2/kubefwd:{{ .Tag }}"
-      - "txn2/kubefwd:v{{ .Major }}"
-      - "txn2/kubefwd:amd64-{{ .Tag }}"
-      - "txn2/kubefwd:amd64-v{{ .Major }}"
-      - "txn2/kubefwd:latest_alpine-3"
-      - "txn2/kubefwd:{{ .Tag }}_alpine-3"
-      - "txn2/kubefwd:v{{ .Major }}_alpine-3"
-      - "txn2/kubefwd:amd64-{{ .Tag }}_alpine-3"
-      - "txn2/kubefwd:amd64-v{{ .Major }}_alpine-3"
+    ids:
+      - kubefwd
+    images:
+      - txn2/kubefwd
+    tags:
+      - latest
+      - "{{ .Tag }}"
+      - "v{{ .Major }}"
+      - latest_alpine-3
+      - "{{ .Tag }}_alpine-3"
+      - "v{{ .Major }}_alpine-3"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
 
   - id: ubuntu
-    goos: linux
-    goarch: amd64
     dockerfile: Dockerfile.ubuntu
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source={{.GitURL}}"
-    image_templates:
-      - "txn2/kubefwd:latest_ubuntu-20.04"
-      - "txn2/kubefwd:{{ .Tag }}_ubuntu-20.04"
-      - "txn2/kubefwd:v{{ .Major }}_ubuntu-20.04"
-      - "txn2/kubefwd:amd64-{{ .Tag }}_ubuntu-20.04"
-      - "txn2/kubefwd:amd64-v{{ .Major }}_ubuntu-20.04"
+    ids:
+      - kubefwd
+    images:
+      - txn2/kubefwd
+    tags:
+      - latest_ubuntu-24.04
+      - "{{ .Tag }}_ubuntu-24.04"
+      - "v{{ .Major }}_ubuntu-24.04"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
 
 nfpms:
   - id: default
@@ -129,20 +130,19 @@ release:
     name: kubefwd
   name_template: "{{.ProjectName}}-v{{.Version}}"
 
-brews:
+homebrew_casks:
   - name: kubefwd
+    binaries:
+      - kubefwd
     repository:
       owner: txn2
       name: homebrew-tap
     commit_author:
       name: Craig Johnston
       email: cj@imti.co
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/txn2/kubefwd
     description: "Kubernetes bulk port forwarding utility."
-    license: "Apache-2.0"
+    caveats: "kubefwd requires sudo to modify /etc/hosts and network interfaces."
     dependencies:
-      - name: kubectl
-        type: optional
-    test: |
-      system "#{bin}/kubefwd version"
+      - formula: kubectl

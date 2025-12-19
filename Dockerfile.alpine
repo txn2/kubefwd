@@ -1,9 +1,11 @@
 FROM alpine:3
 
+ARG TARGETPLATFORM
+
 RUN apk update \
     && apk add --no-cache curl ca-certificates \
     && rm -rf /var/cache/apk/*
 
-COPY kubefwd /
+COPY ${TARGETPLATFORM}/kubefwd /kubefwd
 WORKDIR /
 ENTRYPOINT ["/kubefwd"]

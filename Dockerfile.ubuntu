@@ -1,8 +1,10 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-RUN apt update && apt install -y curl
+ARG TARGETPLATFORM
 
-COPY kubefwd /
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
+COPY ${TARGETPLATFORM}/kubefwd /kubefwd
 WORKDIR /
 ENTRYPOINT ["/kubefwd"]
