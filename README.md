@@ -130,6 +130,30 @@ docker exec the-project curl -s elasticsearch:9200
 - **Port Mapping**: Remap service ports to different local ports
 - **IP Reservation**: Configure specific IP addresses for services
 
+## IP Address Allocation
+
+kubefwd assigns unique loopback IP addresses to each forwarded service, starting from `127.1.27.1`. The allocation scheme uses the IP octets as follows:
+
+```
+127.[1+cluster].[27+namespace].[service_count]
+```
+
+| Octet | Base Value | Incremented By |
+|-------|------------|----------------|
+| 1st   | 127        | (fixed)        |
+| 2nd   | 1          | Cluster index  |
+| 3rd   | 27         | Namespace index|
+| 4th   | 1          | Service count  |
+
+**Examples:**
+- First cluster, first namespace: `127.1.27.1`, `127.1.27.2`, ... `127.1.27.255`
+- First cluster, second namespace: `127.1.28.1`, `127.1.28.2`, ...
+- Second cluster, first namespace: `127.2.27.1`, `127.2.27.2`, ...
+
+This scheme supports up to 255 services per namespace, 229 namespaces per cluster (27+228=255), and 255 clusters.
+
+To use custom IP assignments, see the `-r` (reserve) flag or `-z` (config file) options.
+
 ## Contribute
 
 [Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version.
