@@ -1,5 +1,6 @@
 package fwdport
 
+//goland:noinspection DuplicatedCode
 import (
 	"fmt"
 	"sync"
@@ -66,6 +67,7 @@ func setUpTestPFO(clientset *fake.Clientset, namespace string, podName string) *
 	}
 }
 
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformerManager_AddPod(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create a test pod
@@ -150,6 +152,7 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 	}
 }
 
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create a test pod
@@ -265,6 +268,8 @@ func TestGlobalPodInformerManager_Stop(t *testing.T) {
 }
 
 // TestGlobalPodInformer_DeleteEvent tests that pod deletion triggers reconnection
+//
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformer_DeleteEvent(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create test pod
@@ -303,6 +308,8 @@ func TestGlobalPodInformer_DeleteEvent(t *testing.T) {
 }
 
 // TestGlobalPodInformer_DeletionTimestamp tests that pod marked for deletion triggers reconnection
+//
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformer_DeletionTimestamp(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	now := metav1.Now()
@@ -335,6 +342,8 @@ func TestGlobalPodInformer_DeletionTimestamp(t *testing.T) {
 }
 
 // TestGlobalPodInformer_ModifiedWithoutDeletionTimestamp tests that normal modifications don't trigger sync
+//
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformer_ModifiedWithoutDeletionTimestamp(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
@@ -365,6 +374,8 @@ func TestGlobalPodInformer_ModifiedWithoutDeletionTimestamp(t *testing.T) {
 }
 
 // TestGlobalPodInformer_RapidEvents tests handling of rapid deletion events
+//
+//goland:noinspection DuplicatedCode
 func TestGlobalPodInformer_RapidEvents(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
