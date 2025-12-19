@@ -74,6 +74,19 @@ func isKubefwdIP(ipStr string) bool {
 	return ip[1] > 1 || (ip[1] == 1 && ip[2] >= 27)
 }
 
+func CountStaleEntries(hostFile *txeh.Hosts) int {
+	lines := hostFile.GetHostFileLines()
+	count := 0
+
+	for _, line := range *lines {
+		if line.LineType == txeh.ADDRESS && isKubefwdIP(line.Address) {
+			count += len(line.Hostnames)
+		}
+	}
+
+	return count
+}
+
 func PurgeStaleIps(hostFile *txeh.Hosts) (int, error) {
 	lines := hostFile.GetHostFileLines()
 	var hostsToRemove []string

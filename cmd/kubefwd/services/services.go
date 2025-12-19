@@ -215,6 +215,11 @@ Try:
 		if count > 0 {
 			log.Printf("Purged %d stale host entries from previous kubefwd sessions\n", count)
 		}
+	} else {
+		staleCount := fwdhost.CountStaleEntries(hostFile)
+		if staleCount > 0 {
+			log.Infof("HOUSEKEEPING: Found %d existing host entries in kubefwd IP range. These will not affect operation and will be preserved. Use -p to purge on next run if you no longer need them.", staleCount)
+		}
 	}
 
 	if domain != "" {
