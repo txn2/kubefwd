@@ -31,40 +31,52 @@ import (
 
 // GlobalPodInformer manages a single informer for all pods across all services
 type GlobalPodInformer struct {
-	mu              sync.RWMutex
-	activePods      map[types.UID]*PortForwardOpts
-	clientSet       *kubernetes.Clientset
-	namespace       string
-	informerFactory informers.SharedInformerFactory
-	stopChannel     chan struct{}
+	mu          sync.RWMutex
+	activePods  map[types.UID]*PortForwardOpts
+	clientSet   kubernetes.Interface
+	informers   map[string]informers.SharedInformerFactory
+	stopChannel chan struct{}
 }
 
 var globalPodInformer *GlobalPodInformer
 var globalPodInformerOnce sync.Once
 
 // GetGlobalPodInformer returns the singleton global pod informer
-func GetGlobalPodInformer(clientSet *kubernetes.Clientset, namespace string) *GlobalPodInformer {
+func GetGlobalPodInformer(clientSet kubernetes.Interface, namespace string) *GlobalPodInformer {
 	globalPodInformerOnce.Do(func() {
 		globalPodInformer = &GlobalPodInformer{
 			activePods:  make(map[types.UID]*PortForwardOpts),
 			clientSet:   clientSet,
-			namespace:   namespace,
+			informers:   make(map[string]informers.SharedInformerFactory),
 			stopChannel: make(chan struct{}),
 		}
-		globalPodInformer.startInformer()
 	})
+	globalPodInformer.mu.Lock()
+	if _, ok := globalPodInformer.informers[namespace]; !ok {
+		synced := globalPodInformer.startInformer(namespace)
+		globalPodInformer.mu.Unlock()
+
+		if !cache.WaitForCacheSync(globalPodInformer.stopChannel, synced) {
+			log.Errorf("Failed to sync global pod informer cache")
+		} else {
+			log.Infof("Started listening for pods being deleted in namespace %s", namespace)
+		}
+	} else {
+		globalPodInformer.mu.Unlock()
+	}
+
 	return globalPodInformer
 }
 
 // startInformer starts the global pod informer
-func (gpi *GlobalPodInformer) startInformer() {
-	gpi.informerFactory = informers.NewSharedInformerFactoryWithOptions(
+func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSynced {
+	gpi.informers[namespace] = informers.NewSharedInformerFactoryWithOptions(
 		gpi.clientSet,
 		time.Minute,
-		informers.WithNamespace(gpi.namespace),
+		informers.WithNamespace(namespace),
 	)
 
-	podInformer := gpi.informerFactory.Core().V1().Pods()
+	podInformer := gpi.informers[namespace].Core().V1().Pods()
 
 	podInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
@@ -106,18 +118,14 @@ func (gpi *GlobalPodInformer) startInformer() {
 				pfo.Stop()
 				pfo.ServiceFwd.SyncPodForwards(false)
 				gpi.removePod(deletedPod.UID)
+				log.Debugf("After pod %s was deleted, the %s service pods have been resynced.", deletedPod.ObjectMeta.Name, pfo.ServiceFwd)
 			},
 		},
 	)
 
-	go gpi.informerFactory.Start(gpi.stopChannel)
+	go gpi.informers[namespace].Start(gpi.stopChannel)
 
-	if !cache.WaitForCacheSync(gpi.stopChannel, podInformer.Informer().HasSynced) {
-		log.Errorf("Failed to sync global pod informer cache")
-		return
-	}
-
-	log.Infof("Started listening for pods being deleted in namespace %s", gpi.namespace)
+	return podInformer.Informer().HasSynced
 }
 
 // addPod adds a pod to the active pods map
@@ -158,7 +166,7 @@ func (gpi *GlobalPodInformer) Stop() {
 	default:
 		// Not stopped yet, close the channel to stop the informer
 		close(gpi.stopChannel)
-		log.Infof("Started listening for pods being deleted in namespace %s", gpi.namespace)
+		log.Infof("Stopped listening for pods being deleted")
 	}
 }
 
@@ -168,6 +176,17 @@ func StopGlobalPodInformer() {
 	if globalPodInformer != nil {
 		globalPodInformer.Stop()
 	}
+}
+
+// ResetGlobalPodInformer resets the singleton for testing purposes.
+// This is necessary because sync.Once will otherwise prevent re-initialization
+// with new clientsets in subsequent tests.
+func ResetGlobalPodInformer() {
+	if globalPodInformer != nil {
+		globalPodInformer.Stop()
+	}
+	globalPodInformer = nil
+	globalPodInformerOnce = sync.Once{}
 }
 
 // ServiceFWD PodSyncer interface is used to represent a
@@ -338,7 +357,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	pfo.PodUID = pod.UID
 
 	// Register this pod with the global informer
-	globalInformer := GetGlobalPodInformer(&pfo.ClientSet, pfo.Namespace)
+	globalInformer := GetGlobalPodInformer(pfo.ClientSet, pfo.Namespace)
 	globalInformer.addPod(pod, pfo)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)

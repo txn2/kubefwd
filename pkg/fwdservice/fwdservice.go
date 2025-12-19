@@ -384,7 +384,7 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 	if found {
 		// Remove from global informer if UID is set
 		if pod.PodUID != "" {
-			globalInformer := fwdport.GetGlobalPodInformer(&svcFwd.ClientSet, svcFwd.Namespace)
+			globalInformer := fwdport.GetGlobalPodInformer(svcFwd.ClientSet, svcFwd.Namespace)
 			globalInformer.RemovePodByUID(pod.PodUID)
 		}
 		pod.Stop()
