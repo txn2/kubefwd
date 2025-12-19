@@ -23,10 +23,11 @@ func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 	_, err = net.InterfaceByName("lo")
 	if err == nil || runtime.GOOS == "windows" {
 		// if no error then check to see if the ip:port are in use
-		_, err := net.Dial("tcp", ip.String()+":"+opts.Port)
+		conn, err := net.Dial("tcp", ip.String()+":"+opts.Port)
 		if err != nil {
 			return ip, nil
 		}
+		_ = conn.Close()
 
 		return ip, errors.New("ip and port are in use")
 	}
