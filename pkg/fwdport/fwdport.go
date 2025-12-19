@@ -59,7 +59,7 @@ func GetGlobalPodInformer(clientSet kubernetes.Interface, namespace string) *Glo
 		if !cache.WaitForCacheSync(globalPodInformer.stopChannel, synced) {
 			log.Errorf("Failed to sync global pod informer cache")
 		} else {
-			log.Infof("Started listening for pods being deleted in namespace %s", namespace)
+			log.Infof("Watching pod events in namespace %s", namespace)
 		}
 	} else {
 		globalPodInformer.mu.Unlock()

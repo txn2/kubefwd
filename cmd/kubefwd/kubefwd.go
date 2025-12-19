@@ -20,16 +20,52 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
+	"k8s.io/klog/v2"
 )
 
 var globalUsage = ``
 var Version = "0.0.0"
 
+// KlogWriter captures klog output and reformats it through logrus
+type KlogWriter struct{}
+
+// throttleRegex matches k8s client-side throttling messages
+var throttleRegex = regexp.MustCompile(`Waited for ([\d.]+)s due to client-side throttling`)
+
+func (w *KlogWriter) Write(p []byte) (n int, err error) {
+	msg := strings.TrimSpace(string(p))
+
+	// Skip empty lines and trace detail lines
+	if msg == "" || strings.HasPrefix(msg, "Trace[") {
+		return len(p), nil
+	}
+
+	// Extract and reformat throttling messages
+	if matches := throttleRegex.FindStringSubmatch(msg); len(matches) > 1 {
+		log.Warnf("K8s API throttled: waited %ss", matches[1])
+		return len(p), nil
+	}
+
+	// Skip other klog noise (trace headers, etc.)
+	if strings.Contains(msg, "trace.go:") || strings.Contains(msg, "request.go:") {
+		return len(p), nil
+	}
+
+	return len(p), nil
+}
+
 func init() {
+	// Redirect k8s client-go klog output through our formatter
+	klog.InitFlags(nil)
+	klog.SetOutput(&KlogWriter{})
+	klog.LogToStderr(false)
+
 	// quiet version
 	args := os.Args[1:]
 	if len(args) == 2 && args[0] == "version" && args[1] == "quiet" {
