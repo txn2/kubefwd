@@ -254,6 +254,12 @@ Refresh the hosts file backup (replace existing backup with current /etc/hosts):
 sudo -E kubefwd svc -n the-project -b
 ```
 
+Purge stale host entries from previous kubefwd sessions (removes entries for IPs in the 127.1.27.1 - 127.255.255.255 range):
+
+```bash
+sudo -E kubefwd svc -n the-project -p
+```
+
 ## Help
 
 ```bash
@@ -299,6 +305,7 @@ Flags:
   -c, --kubeconfig string       absolute path to a kubectl config file
   -m, --mapping strings         Specify a port mapping. Specify multiple mapping by duplicating this argument.
   -n, --namespace strings       Specify a namespace. Specify multiple namespaces by duplicating this argument.
+  -p, --purge-stale-ips         Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.
   -r, --reserve strings         Specify an IP reservation. Specify multiple reservations by duplicating this argument.
   -l, --selector string         Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
   -v, --verbose                 Verbose output.
