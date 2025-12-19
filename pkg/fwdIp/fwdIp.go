@@ -234,6 +234,10 @@ func validateForwardConfiguration(f *ForwardConfiguration) {
 func applyCLIPassedReservations(opts ForwardIPOpts, f *ForwardConfiguration) *ForwardConfiguration {
 	for _, resStr := range opts.ForwardIPReservations {
 		res := ServiceConfigurationFromReservation(resStr)
+		if res == nil {
+			log.Warnf("Invalid reservation format: %s (expected 'name:ip')", resStr)
+			continue
+		}
 
 		overridden := false
 		for _, svcCfg := range f.ServiceConfigurations {
