@@ -61,6 +61,7 @@ var fwdConfigurationPath string
 var fwdReservations []string
 var timeout int
 var hostsPath string
+var refreshHostsBackup bool
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -82,6 +83,7 @@ func init() {
 	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
 	Cmd.Flags().IntVarP(&timeout, "timeout", "t", 300, "Specify a timeout seconds for the port forwarding.")
 	Cmd.Flags().StringVar(&hostsPath, "hosts-path", "/etc/hosts", "Hosts Path default /etc/hosts.")
+	Cmd.Flags().BoolVarP(&refreshHostsBackup, "refresh-backup", "b", false, "Create a fresh hosts backup, replacing any existing backup.")
 
 }
 
@@ -196,7 +198,7 @@ Try:
 
 	log.Printf("Loaded hosts file %s\n", hostFile.ReadFilePath)
 
-	msg, err := fwdhost.BackupHostFile(hostFile)
+	msg, err := fwdhost.BackupHostFile(hostFile, refreshHostsBackup)
 	if err != nil {
 		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
 	}
