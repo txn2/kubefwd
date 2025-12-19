@@ -59,6 +59,18 @@ func init() {
 	}
 }
 
+// ResetRegistry resets the global IP registry for test isolation.
+// This should only be used in tests.
+func ResetRegistry() {
+	ipRegistry = &Registry{
+		mutex:     &sync.Mutex{},
+		inc:       map[int]map[int]int{0: {0: 0}},
+		reg:       make(map[string]net.IP),
+		allocated: make(map[string]bool),
+	}
+	forwardConfiguration = nil
+}
+
 func GetIp(opts ForwardIPOpts) (net.IP, error) {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()
