@@ -253,6 +253,8 @@ type PortForwardOpts struct {
 	Hosts          []string
 	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
+
+	stopOnce sync.Once // Ensures ManualStopChan is closed exactly once
 }
 
 type pingingDialer struct {
@@ -392,6 +394,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 		<-cleanupDone
 		return err
 	}
+
+	// Stop the ping goroutine on successful completion
+	dialerWithPing.stopPing()
 
 	<-cleanupDone
 	return nil
@@ -621,15 +626,20 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 		return nil, err
 	}
 
+	// done signals that this function is returning (pod became Running or loop exited)
+	done := make(chan struct{})
+	defer close(done)
+
 	// if the os.signal (we enter the Ctrl+C)
 	// or ManualStop (service delete or some thing wrong)
-	// or RunningChannel channel (the watch for pod runnings is done)
+	// or done channel (the function is returning)
 	// or timeout after 300s(default)
 	// we'll stop the watcher
 	go func() {
 		defer watcher.Stop()
 		select {
 		case <-stopChannel:
+		case <-done:
 		case <-time.After(time.Duration(pfo.Timeout) * time.Second):
 		}
 	}()
@@ -652,13 +662,16 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 
 // Stop sends the shutdown signal to the port-forwarding process.
 // In case the shutdown signal was already given before, this is a no-op.
+// This method is safe to call concurrently from multiple goroutines.
 func (pfo *PortForwardOpts) Stop() {
-	select {
-	case <-pfo.DoneChan:
-		return
-	case <-pfo.ManualStopChan:
-		return
-	default:
-	}
-	close(pfo.ManualStopChan)
+	pfo.stopOnce.Do(func() {
+		select {
+		case <-pfo.DoneChan:
+			return
+		case <-pfo.ManualStopChan:
+			return
+		default:
+		}
+		close(pfo.ManualStopChan)
+	})
 }
