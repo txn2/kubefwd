@@ -81,10 +81,13 @@ func GetIp(opts ForwardIPOpts) (net.IP, error) {
 		return ip, nil
 	}
 
-	return determineIP(regKey, opts), nil
+	return determineIP(regKey, opts)
 }
 
-func determineIP(regKey string, opts ForwardIPOpts) net.IP {
+// ErrIPBoundsExceeded is returned when IP allocation exceeds the available address space
+var ErrIPBoundsExceeded = errors.New("IP generation has run out of bounds: cluster, namespace, or service count exceeds 255")
+
+func determineIP(regKey string, opts ForwardIPOpts) (net.IP, error) {
 	baseUnreservedIP := getBaseUnreservedIP(opts)
 
 	// if a configuration exists use it
@@ -92,7 +95,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	if svcConf != nil {
 		if ip, err := ipFromString(svcConf.IP); err == nil {
 			if err := addToRegistry(regKey, opts, ip); err == nil {
-				return ip
+				return ip, nil
 			}
 		} else {
 			log.Errorf("Invalid service IP format %s %s", svcConf.String(), err)
@@ -108,7 +111,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 	if opts.ClusterN > 255 ||
 		opts.NamespaceN > 255 ||
 		ipRegistry.inc[opts.ClusterN][opts.NamespaceN] > 255 {
-		panic("IP generation has run out of bounds.")
+		return nil, ErrIPBoundsExceeded
 	}
 
 	ip := baseUnreservedIP
@@ -122,7 +125,7 @@ func determineIP(regKey string, opts ForwardIPOpts) net.IP {
 		// an open slot is found or we go out of bounds
 		return determineIP(regKey, opts)
 	}
-	return ip
+	return ip, nil
 }
 
 func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
