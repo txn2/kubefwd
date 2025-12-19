@@ -12,6 +12,8 @@ import (
 )
 
 // TestPodDeletionReconnect tests that kubefwd reconnects when a pod is deleted
+//
+//goland:noinspection DuplicatedCode
 func TestPodDeletionReconnect(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -85,6 +87,8 @@ func TestPodDeletionReconnect(t *testing.T) {
 }
 
 // TestDeploymentScale tests pod selection when scaling deployment
+//
+//goland:noinspection DuplicatedCode
 func TestDeploymentScale(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -240,6 +244,8 @@ func TestRollingUpdate(t *testing.T) {
 }
 
 // TestPodRestartReconnect tests reconnection when a pod restarts (crashes)
+//
+//goland:noinspection DuplicatedCode
 func TestPodRestartReconnect(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)

@@ -196,6 +196,8 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 }
 
 // TestSyncPodForwards_NormalService tests syncing for a normal (non-headless) service
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_NormalService(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -263,6 +265,8 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 }
 
 // TestSyncPodForwards_HeadlessService tests syncing for a headless service
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_HeadlessService(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -315,6 +319,8 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 }
 
 // TestSyncPodForwards_Debouncing tests debouncing behavior
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_Debouncing(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -365,6 +371,8 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 }
 
 // TestSyncPodForwards_ForceBypassesDebouncer tests that force=true bypasses debouncing
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -411,6 +419,8 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 }
 
 // TestSyncPodForwards_ForceSyncAfter5Minutes tests automatic force sync after 5 minutes
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -456,6 +466,8 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 }
 
 // TestSyncPodForwards_RemovesStoppedPods tests that stopped pods are removed
+//
+//goland:noinspection DuplicatedCode
 func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 	namespace := "default"
 	labels := map[string]string{"app": "test"}

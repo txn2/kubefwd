@@ -45,6 +45,8 @@ func TestForwardSingleService(t *testing.T) {
 }
 
 // TestForwardMultipleServices tests forwarding multiple services from one namespace
+//
+//goland:noinspection DuplicatedCode
 func TestForwardMultipleServices(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -133,6 +135,8 @@ func TestForwardWithCustomDomain(t *testing.T) {
 }
 
 // TestForwardMultipleNamespaces tests forwarding services from multiple namespaces
+//
+//goland:noinspection DuplicatedCode
 func TestForwardMultipleNamespaces(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)

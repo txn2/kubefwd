@@ -272,6 +272,8 @@ func TestGetIp_BoundsCheckCounter(t *testing.T) {
 }
 
 // TestGetIp_WithYAMLConfiguration tests IP allocation with YAML config file
+//
+//goland:noinspection DuplicatedCode
 func TestGetIp_WithYAMLConfiguration(t *testing.T) {
 	resetRegistry()
 
@@ -439,6 +441,8 @@ func TestGetIp_ConflictDetection(t *testing.T) {
 }
 
 // TestGetIp_ConflictingReservations tests handling of conflicting reservations
+//
+//goland:noinspection DuplicatedCode
 func TestGetIp_ConflictingReservations(t *testing.T) {
 	resetRegistry()
 

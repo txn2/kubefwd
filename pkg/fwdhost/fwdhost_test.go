@@ -52,6 +52,8 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, fun
 }
 
 // TestBackupHostFile_CreateBackup tests creating a new backup
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_CreateBackup(t *testing.T) {
 	// Create temporary hosts file
 	content := "127.0.0.1 localhost\n192.168.1.1 example.com\n"
@@ -112,6 +114,8 @@ func TestBackupHostFile_CreateBackup(t *testing.T) {
 }
 
 // TestBackupHostFile_ExistingBackup tests behavior when backup already exists
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_ExistingBackup(t *testing.T) {
 	content := "127.0.0.1 localhost\n"
 	hosts, _, cleanup := createTempHostsFile(t, content)
@@ -179,6 +183,8 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 }
 
 // TestBackupHostFile_MissingSourceFile tests error handling for missing source
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_MissingSourceFile(t *testing.T) {
 	// Create a hosts file, then delete it before backup
 	content := "127.0.0.1 localhost\n"
@@ -271,6 +277,8 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 }
 
 // TestBackupHostFile_EmptyHostsFile tests backing up an empty file
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_EmptyHostsFile(t *testing.T) {
 	hosts, _, cleanup := createTempHostsFile(t, "")
 	defer cleanup()
@@ -319,6 +327,8 @@ func TestBackupHostFile_EmptyHostsFile(t *testing.T) {
 }
 
 // TestBackupHostFile_LargeFile tests backing up a large hosts file
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_LargeFile(t *testing.T) {
 	// Create a large hosts file (10,000 lines)
 	var content strings.Builder
@@ -375,6 +385,8 @@ func TestBackupHostFile_LargeFile(t *testing.T) {
 }
 
 // TestBackupHostFile_SpecialCharacters tests backing up file with special characters
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_SpecialCharacters(t *testing.T) {
 	content := "127.0.0.1 localhost\n" +
 		"# Comment with special chars: @#$%^&*()\n" +
@@ -428,6 +440,8 @@ func TestBackupHostFile_SpecialCharacters(t *testing.T) {
 }
 
 // TestBackupHostFile_ConcurrentBackups tests concurrent backup attempts
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 	content := "127.0.0.1 localhost\n"
 
@@ -494,6 +508,8 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 }
 
 // TestBackupHostFile_MessageFormats tests the message return formats
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_MessageFormats(t *testing.T) {
 	content := "127.0.0.1 localhost\n"
 
@@ -565,6 +581,8 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 }
 
 // TestBackupHostFile_Idempotency tests that multiple backups are idempotent
+//
+//goland:noinspection DuplicatedCode
 func TestBackupHostFile_Idempotency(t *testing.T) {
 	originalContent := "127.0.0.1 localhost\n192.168.1.1 original\n"
 
