@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"runtime"
 
@@ -15,10 +14,13 @@ import (
 // the loopback interface.
 func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 
-	ip, _ := fwdIp.GetIp(opts)
+	ip, err := fwdIp.GetIp(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate IP: %w", err)
+	}
 
 	// lo means we are probably on linux and not mac
-	_, err := net.InterfaceByName("lo")
+	_, err = net.InterfaceByName("lo")
 	if err == nil || runtime.GOOS == "windows" {
 		// if no error then check to see if the ip:port are in use
 		_, err := net.Dial("tcp", ip.String()+":"+opts.Port)
@@ -57,9 +59,7 @@ func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "alias", ip.String(), "up"}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		fmt.Println("Cannot ifconfig lo0 alias " + ip.String() + " up")
-		fmt.Println("Error: " + err.Error())
-		os.Exit(1)
+		return nil, fmt.Errorf("cannot ifconfig lo0 alias %s up: %w", ip.String(), err)
 	}
 
 	conn, err := net.Dial("tcp", ip.String()+":"+opts.Port)
