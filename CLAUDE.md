@@ -103,7 +103,7 @@ The verbose flag (`-v`) enables debug-level logging (logrus.DebugLevel), which s
    - Maintains map of active port forwards per pod
 5. **Port Forwarding** (`pkg/fwdport`): Individual pod port forwarding
    - Creates SPDY connection to k8s API server
-   - Manages port forward lifecycle with watch for pod deletion
+   - Manages port forward lifecycle with watch for pod deletion using k8s informers
    - Updates `/etc/hosts` file with service hostnames
 6. **Network/IP Management** (`pkg/fwdnet`, `pkg/fwdIp`): Loopback interface management
    - Allocates unique 127.x.x.x IPs for each service
@@ -237,9 +237,6 @@ Currently limited test coverage (only `fwdport_test.go` exists). When adding tes
 
 Based on known issues, these areas would benefit from development:
 
-### Auto-Reconnect Logic (Issue #21)
-The pod watch in `pkg/fwdport` could be enhanced to detect pod restarts and automatically re-establish port forwards without requiring user intervention. Current implementation watches for deletion but not recreation.
-
 ### Hosts File Synchronization (Issues #74, #79)
 The `HostFileWithLock` mutex in `pkg/fwdport` may not be sufficient for all race conditions. Consider:
 - Batching hosts file updates
@@ -265,8 +262,6 @@ Based on community feedback and GitHub issues, developers should be aware of:
 ### Architectural Limitations
 
 **Services Without Selectors** (Issue #35): kubefwd does not support ClusterIP services without selectors (services backed by manually created Endpoints). The code assumes services have pod selectors and will skip services with empty selector strings.
-
-**No Auto-Reconnect on Pod Restart** (Issue #21): When pods are restarted during development (e.g., deployments, crashloops), kubefwd does not automatically reconnect. Users must stop and restart kubefwd. This is a known limitation in the pod watch implementation.
 
 **UDP Protocol Not Supported**: Kubernetes port-forwarding API limitation (kubernetes/kubernetes#47862).
 
