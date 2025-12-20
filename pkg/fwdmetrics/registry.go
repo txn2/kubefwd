@@ -1,0 +1,194 @@
+/*
+Copyright 2018-2024 Craig Johnston <cjimti@gmail.com>
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fwdmetrics
+
+import (
+	"sync"
+	"time"
+)
+
+// Registry is the global registry for all bandwidth metrics
+type Registry struct {
+	services map[string]*ServiceMetrics
+	mu       sync.RWMutex
+	ticker   *time.Ticker
+	stopCh   chan struct{}
+	started  bool
+}
+
+var globalRegistry *Registry
+var registryOnce sync.Once
+
+// GetRegistry returns the singleton metrics registry
+func GetRegistry() *Registry {
+	registryOnce.Do(func() {
+		globalRegistry = &Registry{
+			services: make(map[string]*ServiceMetrics),
+			stopCh:   make(chan struct{}),
+		}
+	})
+	return globalRegistry
+}
+
+// Start begins the sampling ticker for rate calculation
+func (r *Registry) Start() {
+	r.mu.Lock()
+	if r.started {
+		r.mu.Unlock()
+		return
+	}
+	r.started = true
+	r.mu.Unlock()
+
+	r.ticker = time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-r.ticker.C:
+				r.takeSample()
+			case <-r.stopCh:
+				r.ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+// takeSample records current counters for all port forwards
+func (r *Registry) takeSample() {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, svc := range r.services {
+		svc.mu.RLock()
+		for _, pf := range svc.PortForwards {
+			pf.RecordSample()
+		}
+		svc.mu.RUnlock()
+	}
+}
+
+// Stop shuts down the metrics registry
+func (r *Registry) Stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.started {
+		close(r.stopCh)
+		r.started = false
+	}
+}
+
+// RegisterService adds a service to the registry
+func (r *Registry) RegisterService(svc *ServiceMetrics) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.services[svc.Key()] = svc
+}
+
+// UnregisterService removes a service from the registry
+func (r *Registry) UnregisterService(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.services, key)
+}
+
+// GetService returns a service by key
+func (r *Registry) GetService(key string) *ServiceMetrics {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.services[key]
+}
+
+// RegisterPortForward adds a port forward to its parent service
+func (r *Registry) RegisterPortForward(serviceKey string, pf *PortForwardMetrics) {
+	r.mu.RLock()
+	svc, ok := r.services[serviceKey]
+	r.mu.RUnlock()
+
+	if !ok {
+		// Create service if it doesn't exist
+		svc = NewServiceMetrics(pf.ServiceName, pf.Namespace, pf.Context)
+		r.RegisterService(svc)
+	}
+
+	svc.AddPortForward(pf)
+}
+
+// UnregisterPortForward removes a port forward from its parent service
+func (r *Registry) UnregisterPortForward(serviceKey, podName, localPort string) {
+	r.mu.RLock()
+	svc, ok := r.services[serviceKey]
+	r.mu.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	svc.RemovePortForward(podName, localPort)
+
+	// Remove service if no port forwards left
+	if svc.Count() == 0 {
+		r.UnregisterService(serviceKey)
+	}
+}
+
+// GetAllServices returns all registered services
+func (r *Registry) GetAllServices() []*ServiceMetrics {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]*ServiceMetrics, 0, len(r.services))
+	for _, svc := range r.services {
+		result = append(result, svc)
+	}
+	return result
+}
+
+// ServiceCount returns the number of registered services
+func (r *Registry) ServiceCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.services)
+}
+
+// PortForwardCount returns the total number of port forwards across all services
+func (r *Registry) PortForwardCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for _, svc := range r.services {
+		count += svc.Count()
+	}
+	return count
+}
+
+// GetTotals returns aggregated totals across all services
+func (r *Registry) GetTotals() (bytesIn, bytesOut uint64, rateIn, rateOut float64) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, svc := range r.services {
+		bi, bo, ri, ro := svc.GetTotals()
+		bytesIn += bi
+		bytesOut += bo
+		rateIn += ri
+		rateOut += ro
+	}
+	return
+}
