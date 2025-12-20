@@ -260,6 +260,64 @@ Purge stale host entries from previous kubefwd sessions (removes entries for IPs
 sudo -E kubefwd svc -n the-project -p
 ```
 
+## Selectors
+
+kubefwd uses the same selector syntax as `kubectl`, powered by the standard Kubernetes client-go libraries. This means you can use the same label and field selector patterns you already know.
+
+### Label Selectors (`-l`)
+
+Filter services by their labels:
+
+```bash
+# Forward services with a specific label
+sudo -E kubefwd svc -n the-project -l app=api
+
+# Multiple label requirements (AND logic)
+sudo -E kubefwd svc -n the-project -l app=api,component=backend
+
+# Set-based selectors
+sudo -E kubefwd svc -n the-project -l "app in (api, web)"
+sudo -E kubefwd svc -n the-project -l "tier notin (frontend)"
+```
+
+### Field Selectors (`-f`)
+
+Filter services by their metadata fields:
+
+```bash
+# Forward a single service by name
+sudo -E kubefwd svc -n the-project -f metadata.name=my-service
+```
+
+### Excluding Services
+
+Use the `!=` operator to exclude specific services:
+
+```bash
+# Forward all services EXCEPT one
+sudo -E kubefwd svc -n the-project -f metadata.name!=my-excluded-service
+
+# Exclude multiple services
+sudo -E kubefwd svc -n the-project -f metadata.name!=svc1,metadata.name!=svc2
+
+# Exclude services by label
+sudo -E kubefwd svc -n the-project -l app!=debug
+
+# Combine inclusion and exclusion
+sudo -E kubefwd svc -n the-project -l app=api,component!=legacy
+```
+
+### Combining Selectors
+
+You can use both label and field selectors together:
+
+```bash
+# Forward services with app=api label, excluding a specific service
+sudo -E kubefwd svc -n the-project -l app=api -f metadata.name!=api-debug
+```
+
+For more details on selector syntax, see the [Kubernetes Labels and Selectors documentation](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/).
+
 ## Help
 
 ```bash

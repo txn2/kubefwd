@@ -6,3 +6,4 @@ dist
 vendor
 dist/
 kubefwd
+RELEASE_*
