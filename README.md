@@ -1,5 +1,3 @@
-[English](https://github.com/txn2/kubefwd/blob/master/README.md)|[中文](https://github.com/txn2/kubefwd/blob/master/README_CN.md)
-
 Kubernetes port forwarding for local development.
 
 **NOTE:** Accepting pull requests for bug fixes, tests, and documentation only. 
