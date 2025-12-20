@@ -414,7 +414,6 @@ Or create a configuration file (see `example.fwdconf.yml`).
 
 - **UDP Protocol**: Not supported due to Kubernetes API limitations
 - **Services Without Selectors**: Services backed by manually created Endpoints are not supported
-- **Manual Pod Restart Required**: If pods restart due to deployments or crashes, you may need to restart kubefwd
 
 ## Getting Help
 
