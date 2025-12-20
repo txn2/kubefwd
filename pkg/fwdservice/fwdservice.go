@@ -77,6 +77,12 @@ type ServiceFWD struct {
 
 	ForwardConfigurationPath string   // file path to IP reservation configuration
 	ForwardIPReservations    []string // cli passed IP reservations
+
+	// ResyncInterval is the max time between forced resyncs
+	ResyncInterval time.Duration
+
+	// RetryInterval is how often to retry when no pods found
+	RetryInterval time.Duration
 }
 
 type PortMap struct {
@@ -122,17 +128,28 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 // the forwarding setup for that or those pod(s). It will remove pods in-mem
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
-	sync := func() {
-
-		defer func() { svcFwd.LastSyncedAt = time.Now() }()
-
+	doSync := func() {
 		k8sPods := svcFwd.GetPodsForService()
 
-		// If no pods are found currently. Will try again next re-sync period.
+		// If no pods are found currently, schedule a retry if configured.
 		if len(k8sPods) == 0 {
 			log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
+			// Schedule retry - don't update LastSyncedAt so we retry sooner
+			if svcFwd.RetryInterval > 0 {
+				go func() {
+					select {
+					case <-svcFwd.DoneChannel:
+						return // Service is shutting down
+					case <-time.After(svcFwd.RetryInterval):
+						svcFwd.SyncPodForwards(false)
+					}
+				}()
+			}
 			return
 		}
+
+		// Only update LastSyncedAt after successful pod discovery
+		defer func() { svcFwd.LastSyncedAt = time.Now() }()
 
 		// Check if the pods currently being forwarded still exist in k8s and if
 		// they are not in a (pre-)running state, if not: remove them
@@ -194,16 +211,20 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call.
 	// This would hammer k8s with load needlessly.  We therefore use a debouncer to only update pods
 	// if things have been stable for at least a few seconds.  However, if things never stabilize we
-	// will still reload this information at least once every 5 minutes.
-	if force || time.Since(svcFwd.LastSyncedAt) > 5*time.Minute {
+	// will still reload this information at least once every resyncInterval (default 5 minutes).
+	resyncInterval := svcFwd.ResyncInterval
+	if resyncInterval == 0 {
+		resyncInterval = 5 * time.Minute // default fallback
+	}
+	if force || time.Since(svcFwd.LastSyncedAt) > resyncInterval {
 		// Replace current debounced function with no-op
 		svcFwd.SyncDebouncer(func() {})
 
 		// Do the syncing work
-		sync()
+		doSync()
 	} else {
 		// Queue sync
-		svcFwd.SyncDebouncer(sync)
+		svcFwd.SyncDebouncer(doSync)
 	}
 }
 

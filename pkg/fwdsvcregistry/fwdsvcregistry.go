@@ -45,6 +45,13 @@ func Done() <-chan struct{} {
 	return ch
 }
 
+// Get retrieves a service from the registry by its key (name.namespace.context)
+func Get(key string) *fwdservice.ServiceFWD {
+	svcRegistry.mutex.Lock()
+	defer svcRegistry.mutex.Unlock()
+	return svcRegistry.services[key]
+}
+
 // Add will add this service to the registry of services configured to do forwarding
 // (if it wasn't already configured) and start the port-forwarding process.
 func Add(serviceFwd *fwdservice.ServiceFWD) {

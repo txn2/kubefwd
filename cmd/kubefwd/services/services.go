@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -63,6 +64,8 @@ var timeout int
 var hostsPath string
 var refreshHostsBackup bool
 var purgeStaleIps bool
+var resyncInterval time.Duration
+var retryInterval time.Duration
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -86,6 +89,8 @@ func init() {
 	Cmd.Flags().StringVar(&hostsPath, "hosts-path", "/etc/hosts", "Hosts Path default /etc/hosts.")
 	Cmd.Flags().BoolVarP(&refreshHostsBackup, "refresh-backup", "b", false, "Create a fresh hosts backup, replacing any existing backup.")
 	Cmd.Flags().BoolVarP(&purgeStaleIps, "purge-stale-ips", "p", false, "Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.")
+	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
+	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 
 }
 
@@ -492,6 +497,8 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortMap:                  opts.ParsePortMap(mappings),
 		ForwardConfigurationPath: fwdConfigurationPath,
 		ForwardIPReservations:    fwdReservations,
+		ResyncInterval:           resyncInterval,
+		RetryInterval:            retryInterval,
 	}
 
 	// Add the service to the catalog of services being forwarded
@@ -510,11 +517,28 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 }
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
-// It currently does not do anything.
-func (opts *NamespaceOpts) UpdateServiceHandler(_ interface{}, new interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(new)
-	if err == nil {
-		log.Printf("update service %s.", key)
+// It triggers a resync when the service's selector or ports change.
+func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
+	oldSvc, oldOk := old.(*v1.Service)
+	newSvc, newOk := new.(*v1.Service)
+
+	if !oldOk || !newOk {
+		return
+	}
+
+	// Check if selector or ports changed
+	selectorChanged := !reflect.DeepEqual(oldSvc.Spec.Selector, newSvc.Spec.Selector)
+	portsChanged := !reflect.DeepEqual(oldSvc.Spec.Ports, newSvc.Spec.Ports)
+
+	if selectorChanged || portsChanged {
+		key := newSvc.Name + "." + newSvc.Namespace + "." + opts.Context
+		log.Infof("Service %s updated (selector=%v, ports=%v), triggering resync",
+			key, selectorChanged, portsChanged)
+
+		// Find and resync the service
+		if svcfwd := fwdsvcregistry.Get(key); svcfwd != nil {
+			svcfwd.SyncPodForwards(true) // force=true
+		}
 	}
 }
 
