@@ -18,8 +18,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -334,6 +336,13 @@ func (pfo *PortForwardOpts) PortForward() error {
 		close(downstreamStopChannel)
 		pfo.removeHosts()
 		pfo.removeInterfaceAlias()
+
+		// Unregister from metrics registry if TUI is enabled
+		if fwdtui.IsEnabled() {
+			serviceKey := pfo.Service + "." + pfo.Namespace + "." + pfo.Context
+			fwdmetrics.GetRegistry().UnregisterPortForward(serviceKey, pfo.PodName, pfo.LocalPort)
+		}
+
 		close(pfStopChannel)
 		close(cleanupDone)
 	}()
@@ -370,6 +379,30 @@ func (pfo *PortForwardOpts) PortForward() error {
 		pingTargetPodName: pfo.PodName,
 	}
 
+	// Wrap with metrics dialer if TUI is enabled
+	var finalDialer httpstream.Dialer = dialerWithPing
+	var pfMetrics *fwdmetrics.PortForwardMetrics
+	if fwdtui.IsEnabled() {
+		localIPStr := ""
+		if pfo.LocalIp != nil {
+			localIPStr = pfo.LocalIp.String()
+		}
+		pfMetrics = fwdmetrics.NewPortForwardMetrics(
+			pfo.Service,
+			pfo.Namespace,
+			pfo.Context,
+			pfo.PodName,
+			localIPStr,
+			pfo.LocalPort,
+			pfo.PodPort,
+		)
+		finalDialer = fwdmetrics.NewMetricsDialer(dialerWithPing, pfMetrics)
+
+		// Register with metrics registry
+		serviceKey := pfo.Service + "." + pfo.Namespace + "." + pfo.Context
+		fwdmetrics.GetRegistry().RegisterPortForward(serviceKey, pfMetrics)
+	}
+
 	var address []string
 	if pfo.LocalIp != nil {
 		address = []string{pfo.LocalIp.To4().String(), pfo.LocalIp.To16().String()}
@@ -377,7 +410,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	fw, err := portforward.NewOnAddresses(dialerWithPing, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
+	fw, err := portforward.NewOnAddresses(finalDialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		pfo.Stop()
 		<-cleanupDone
