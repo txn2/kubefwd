@@ -6,6 +6,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
@@ -72,6 +74,16 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 
 	svcRegistry.services[serviceFwd.String()] = serviceFwd
 	log.Debugf("Registry: Start forwarding service %s", serviceFwd)
+
+	// Emit event for TUI
+	if fwdtui.IsEnabled() {
+		fwdtui.Emit(events.NewServiceEvent(
+			events.ServiceAdded,
+			serviceFwd.Svc.Name,
+			serviceFwd.Namespace,
+			serviceFwd.Context,
+		))
+	}
 
 	// Start port forwarding
 	go serviceFwd.SyncPodForwards(false)
@@ -143,6 +155,16 @@ func RemoveByName(name string) {
 	}
 	delete(svcRegistry.services, name)
 	svcRegistry.mutex.Unlock()
+
+	// Emit event for TUI
+	if fwdtui.IsEnabled() {
+		fwdtui.Emit(events.NewServiceEvent(
+			events.ServiceRemoved,
+			serviceFwd.Svc.Name,
+			serviceFwd.Namespace,
+			serviceFwd.Context,
+		))
+	}
 
 	// Synchronously stop the forwarding of all active pods in it
 	activePodForwards := serviceFwd.ListServicePodNames()
