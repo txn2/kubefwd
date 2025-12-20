@@ -66,7 +66,7 @@ var purgeStaleIps bool
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
-	utilRuntime.ErrorHandlers[0] = func(err error) {
+	utilRuntime.ErrorHandlers[0] = func(_ context.Context, err error, _ string, _ ...interface{}) {
 		// "broken pipe" see: https://github.com/kubernetes/kubernetes/issues/74551
 		log.Errorf("Runtime: %s", err.Error())
 	}
@@ -193,7 +193,11 @@ Try:
 	log.Println("Press [Ctrl-C] to stop forwarding.")
 	log.Println("'cat " + hostsPath + "' to see all host entries.")
 
-	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{ReadFilePath: hostsPath, WriteFilePath: hostsPath})
+	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{
+		ReadFilePath:    hostsPath,
+		WriteFilePath:   hostsPath,
+		MaxHostsPerLine: 0, // Auto: 9 on Windows, unlimited elsewhere
+	})
 	if err != nil {
 		log.Fatalf("HostFile error: %s", err.Error())
 	}
@@ -425,8 +429,8 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 	// Construct the informer object which will query the api server,
 	// and send events to our handler functions
 	// https://engineering.bitnami.com/articles/kubewatch-an-example-of-kubernetes-custom-controller.html
-	_, controller := cache.NewInformer(
-		&cache.ListWatch{
+	_, controller := cache.NewInformerWithOptions(cache.InformerOptions{
+		ListerWatcher: &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				optionsModifier(&options)
 				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(context.TODO(), options)
@@ -437,14 +441,14 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(context.TODO(), options)
 			},
 		},
-		&v1.Service{},
-		0,
-		cache.ResourceEventHandlerFuncs{
+		ObjectType:   &v1.Service{},
+		ResyncPeriod: 0,
+		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    opts.AddServiceHandler,
 			DeleteFunc: opts.DeleteServiceHandler,
 			UpdateFunc: opts.UpdateServiceHandler,
 		},
-	)
+	})
 
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)

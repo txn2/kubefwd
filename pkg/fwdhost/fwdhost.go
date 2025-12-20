@@ -78,7 +78,7 @@ func CountStaleEntries(hostFile *txeh.Hosts) int {
 	lines := hostFile.GetHostFileLines()
 	count := 0
 
-	for _, line := range *lines {
+	for _, line := range lines {
 		if line.LineType == txeh.ADDRESS && isKubefwdIP(line.Address) {
 			count += len(line.Hostnames)
 		}
@@ -91,7 +91,7 @@ func PurgeStaleIps(hostFile *txeh.Hosts) (int, error) {
 	lines := hostFile.GetHostFileLines()
 	var hostsToRemove []string
 
-	for _, line := range *lines {
+	for _, line := range lines {
 		if line.LineType == txeh.ADDRESS && isKubefwdIP(line.Address) {
 			hostsToRemove = append(hostsToRemove, line.Hostnames...)
 		}
