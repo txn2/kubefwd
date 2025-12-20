@@ -33,6 +33,8 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
@@ -66,6 +68,7 @@ var refreshHostsBackup bool
 var purgeStaleIps bool
 var resyncInterval time.Duration
 var retryInterval time.Duration
+var tuiMode bool
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -91,6 +94,7 @@ func init() {
 	Cmd.Flags().BoolVarP(&purgeStaleIps, "purge-stale-ips", "p", false, "Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.")
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
+	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
 
 }
 
@@ -195,8 +199,16 @@ Try:
 		log.Fatalf("Hosts path does not exist: %s", hostsPath)
 	}
 
-	log.Println("Press [Ctrl-C] to stop forwarding.")
-	log.Println("'cat " + hostsPath + "' to see all host entries.")
+	// Initialize TUI mode if enabled
+	if tuiMode {
+		fwdtui.Enable()
+	}
+
+	// Only show instructions in non-TUI mode
+	if !tuiMode {
+		log.Println("Press [Ctrl-C] to stop forwarding.")
+		log.Println("'cat " + hostsPath + "' to see all host entries.")
+	}
 
 	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{
 		ReadFilePath:    hostsPath,
@@ -285,6 +297,21 @@ Try:
 
 	stopListenCh := make(chan struct{})
 
+	// Initialize TUI manager if in TUI mode
+	var tuiManager *fwdtui.Manager
+	var stopOnce sync.Once
+	triggerShutdown := func() {
+		stopOnce.Do(func() {
+			close(stopListenCh)
+		})
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG: tuiMode=%v, fwdtui.IsEnabled()=%v\n", tuiMode, fwdtui.IsEnabled())
+	if fwdtui.IsEnabled() {
+		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
+		fmt.Fprintln(os.Stderr, "DEBUG: TUI Init returned")
+	}
+
+	fmt.Fprintln(os.Stderr, "DEBUG: Setting up signal handler...")
 	// Listen for shutdown signal from user
 	go func() {
 		sigChan := make(chan os.Signal, 2)
@@ -293,8 +320,12 @@ Try:
 
 		// First signal: graceful shutdown
 		<-sigChan
-		log.Infof("Shutting down... (press Ctrl+C again to force)")
-		close(stopListenCh)
+		if fwdtui.IsEnabled() {
+			fwdtui.Emit(events.Event{Type: events.ShutdownStarted})
+		} else {
+			log.Infof("Shutting down... (press Ctrl+C again to force)")
+		}
+		triggerShutdown()
 
 		// Second signal: force exit
 		<-sigChan
@@ -305,18 +336,24 @@ Try:
 		os.Exit(1)
 	}()
 
+	fmt.Fprintln(os.Stderr, "DEBUG: Signal handler set up")
+
 	// if no context override
 	if len(contexts) < 1 {
 		contexts = append(contexts, rawConfig.CurrentContext)
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: Initializing service registry...")
 	fwdsvcregistry.Init(stopListenCh)
+	fmt.Fprintln(os.Stderr, "DEBUG: Service registry initialized")
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
 	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
 
+	fmt.Fprintf(os.Stderr, "DEBUG: Starting context loop with %d contexts...\n", len(contexts))
 	for i, ctx := range contexts {
+		fmt.Fprintf(os.Stderr, "DEBUG: Processing context %d: %s\n", i, ctx)
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
 		if err != nil {
@@ -324,6 +361,7 @@ Try:
 		}
 
 		// create the k8s clientSet
+		fmt.Fprintln(os.Stderr, "DEBUG: Creating k8s clientSet...")
 		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
@@ -338,11 +376,12 @@ Try:
 		}
 
 		// check connectivity
+		fmt.Fprintln(os.Stderr, "DEBUG: Checking cluster connectivity...")
 		err = checkConnection(clientSet, namespaces)
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
-		log.Infof("Successfully connected context: %v", ctx)
+		fmt.Fprintf(os.Stderr, "DEBUG: Successfully connected to context: %s\n", ctx)
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
@@ -379,11 +418,49 @@ Try:
 		}
 	}
 
-	nsWatchesDone.Wait()
-	log.Debugf("All namespace watchers are done")
+	fmt.Fprintln(os.Stderr, "DEBUG: All namespace watchers launched")
 
-	// Shutdown all active services
-	<-fwdsvcregistry.Done()
+	// If TUI mode, run the TUI (blocks until user quits)
+	if tuiManager != nil {
+		fmt.Fprintln(os.Stderr, "DEBUG: tuiManager is not nil, about to call Run()")
+		if err := tuiManager.Run(); err != nil {
+			log.Errorf("TUI error: %s", err)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "DEBUG: tuiManager is nil!")
+	}
+
+	// Wait for namespace watchers with timeout
+	watchersDone := make(chan struct{})
+	go func() {
+		nsWatchesDone.Wait()
+		close(watchersDone)
+	}()
+
+	select {
+	case <-watchersDone:
+		log.Debugf("All namespace watchers are done")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for namespace watchers, forcing exit")
+	}
+
+	// Shutdown all active services with timeout
+	select {
+	case <-fwdsvcregistry.Done():
+		log.Debugf("Service registry shutdown complete")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for service registry, forcing exit")
+	}
+
+	// Wait for TUI cleanup if enabled
+	if tuiManager != nil {
+		select {
+		case <-tuiManager.Done():
+			log.Debugf("TUI cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for TUI cleanup")
+		}
+	}
 
 	log.Infof("Clean exit")
 }
