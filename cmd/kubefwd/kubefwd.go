@@ -133,6 +133,16 @@ func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
 	return os.Stdout.Write(p)
 }
 
+// isTUIMode checks if --tui flag is present in args
+func isTUIMode() bool {
+	for _, arg := range os.Args {
+		if arg == "--tui" {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 
 	log.SetFormatter(&log.TextFormatter{
@@ -141,15 +151,18 @@ func main() {
 		TimestampFormat: "15:04:05",
 	})
 
-	log.Print(` _          _           __             _`)
-	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
-	log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
-	log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
-	log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
-	log.Print("")
-	log.Printf("Version %s", Version)
-	log.Print("https://github.com/txn2/kubefwd")
-	log.Print("")
+	// Only print banner in non-TUI mode
+	if !isTUIMode() {
+		log.Print(` _          _           __             _`)
+		log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
+		log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
+		log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
+		log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
+		log.Print("")
+		log.Printf("Version %s", Version)
+		log.Print("https://github.com/txn2/kubefwd")
+		log.Print("")
+	}
 
 	cmd := newRootCmd()
 
