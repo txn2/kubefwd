@@ -12,6 +12,8 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -374,10 +376,28 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 	svcFwd.NamespaceServiceLock.Lock()
 	ServicePod := pfo.Service + "." + pfo.PodName
+	isNew := false
 	if _, found := svcFwd.PortForwards[ServicePod]; !found {
 		svcFwd.PortForwards[ServicePod] = pfo
+		isNew = true
 	}
 	svcFwd.NamespaceServiceLock.Unlock()
+
+	// Emit event for TUI if this is a new pod
+	if isNew && fwdtui.IsEnabled() {
+		event := events.NewPodEvent(
+			events.PodAdded,
+			svcFwd.Svc.Name,
+			svcFwd.Namespace,
+			svcFwd.Context,
+			pfo.PodName,
+		)
+		event.LocalIP = pfo.LocalIp.String()
+		event.LocalPort = pfo.LocalPort
+		event.PodPort = pfo.PodPort
+		event.Hostnames = pfo.Hosts
+		fwdtui.Emit(event)
+	}
 }
 
 func (svcFwd *ServiceFWD) ListServicePodNames() []string {
@@ -406,6 +426,17 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 		svcFwd.NamespaceServiceLock.Lock()
 		delete(svcFwd.PortForwards, servicePodName)
 		svcFwd.NamespaceServiceLock.Unlock()
+
+		// Emit event for TUI
+		if fwdtui.IsEnabled() {
+			fwdtui.Emit(events.NewPodEvent(
+				events.PodRemoved,
+				svcFwd.Svc.Name,
+				svcFwd.Namespace,
+				svcFwd.Context,
+				pod.PodName,
+			))
+		}
 	}
 }
 
