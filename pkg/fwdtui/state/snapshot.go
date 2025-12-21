@@ -85,12 +85,18 @@ type ForwardSnapshot struct {
 	AvgRateOut float64 // bytes/sec 10-second average
 }
 
-// PrimaryHostname returns the first hostname or service name if no hostnames
+// PrimaryHostname returns the shortest hostname or service name if no hostnames
 func (f *ForwardSnapshot) PrimaryHostname() string {
-	if len(f.Hostnames) > 0 {
-		return f.Hostnames[0]
+	if len(f.Hostnames) == 0 {
+		return f.ServiceName
 	}
-	return f.ServiceName
+	shortest := f.Hostnames[0]
+	for _, h := range f.Hostnames[1:] {
+		if len(h) < len(shortest) {
+			shortest = h
+		}
+	}
+	return shortest
 }
 
 // LocalAddress returns the local IP:Port string

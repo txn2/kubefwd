@@ -71,6 +71,8 @@ func (v *LogsView) AppendLogWithTime(timestamp time.Time, level logrus.Level, me
 	// Format the log entry with color
 	color := levelColor(level)
 	levelStr := levelString(level)
+	// Trim trailing newlines to avoid double-spacing
+	message = strings.TrimRight(message, "\n\r")
 	formatted := fmt.Sprintf("[%s][%s]%s[-] %s\n",
 		timestamp.Format("15:04:05"),
 		color,

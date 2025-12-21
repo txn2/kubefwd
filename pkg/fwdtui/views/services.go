@@ -46,8 +46,8 @@ var columnHeaders = []string{
 	"Namespace",
 	"Context",
 	"Status",
-	"In",
-	"Out",
+	"Total In",
+	"Total Out",
 	"Rate In",
 	"Rate Out",
 }
@@ -99,15 +99,27 @@ func NewServicesView(store *state.Store, bus *events.Bus, app *tview.Application
 	return v
 }
 
+// Column max widths for compact display
+const (
+	maxHostnameWidth  = 35
+	maxPodWidth       = 45 // Pod gets more space (favored)
+	maxNamespaceWidth = 10
+	maxContextWidth   = 10
+)
+
 // renderHeaders renders the table header row
 func (v *ServicesView) renderHeaders() {
 	for i, h := range columnHeaders {
 		cell := tview.NewTableCell(h).
 			SetTextColor(tcell.ColorYellow).
-			SetSelectable(false).
-			SetExpansion(1)
-		if i == colHostname {
-			cell.SetExpansion(2) // Hostname gets more space
+			SetSelectable(false)
+
+		// Match expansion with data cells
+		switch i {
+		case colHostname:
+			cell.SetExpansion(1)
+		case colPod:
+			cell.SetExpansion(2) // Pod gets most space
 		}
 		v.Table.SetCell(0, i, cell)
 	}
@@ -116,6 +128,12 @@ func (v *ServicesView) renderHeaders() {
 // Refresh updates the table with current data
 func (v *ServicesView) Refresh() {
 	forwards := v.store.GetFiltered()
+
+	// Capture current selection before clearing
+	currentRow, _ := v.Table.GetSelection()
+	if currentRow > 0 {
+		v.selectedRow = currentRow
+	}
 
 	// Clear existing data rows (keep header)
 	rowCount := v.Table.GetRowCount()
@@ -127,29 +145,25 @@ func (v *ServicesView) Refresh() {
 	for i, fwd := range forwards {
 		row := i + 1 // Skip header row
 
-		// Hostname
-		v.Table.SetCell(row, colHostname, tview.NewTableCell(fwd.PrimaryHostname()).
+		// Hostname - truncated, expands to fill space
+		v.Table.SetCell(row, colHostname, tview.NewTableCell(truncate(fwd.PrimaryHostname(), maxHostnameWidth)).
+			SetExpansion(1))
+
+		// Local Address - fixed width
+		v.Table.SetCell(row, colLocalAddr, tview.NewTableCell(fwd.LocalAddress()))
+
+		// Pod - truncated, gets most expansion (favored)
+		v.Table.SetCell(row, colPod, tview.NewTableCell(truncate(fwd.PodName, maxPodWidth)).
 			SetExpansion(2))
 
-		// Local Address
-		v.Table.SetCell(row, colLocalAddr, tview.NewTableCell(fwd.LocalAddress()).
-			SetExpansion(1))
+		// Namespace - fixed width
+		v.Table.SetCell(row, colNamespace, tview.NewTableCell(truncate(fwd.Namespace, maxNamespaceWidth)))
 
-		// Pod
-		v.Table.SetCell(row, colPod, tview.NewTableCell(truncate(fwd.PodName, 25)).
-			SetExpansion(1))
+		// Context - fixed width
+		v.Table.SetCell(row, colContext, tview.NewTableCell(truncate(fwd.Context, maxContextWidth)))
 
-		// Namespace
-		v.Table.SetCell(row, colNamespace, tview.NewTableCell(fwd.Namespace).
-			SetExpansion(1))
-
-		// Context
-		v.Table.SetCell(row, colContext, tview.NewTableCell(truncate(fwd.Context, 15)).
-			SetExpansion(1))
-
-		// Status
-		statusCell := tview.NewTableCell(fwd.Status.String()).
-			SetExpansion(1)
+		// Status - fixed width
+		statusCell := tview.NewTableCell(fwd.Status.String())
 		switch fwd.Status {
 		case state.StatusActive:
 			statusCell.SetTextColor(tcell.ColorGreen)
@@ -164,23 +178,19 @@ func (v *ServicesView) Refresh() {
 
 		// Bytes In
 		v.Table.SetCell(row, colBytesIn, tview.NewTableCell(humanBytes(fwd.BytesIn)).
-			SetAlign(tview.AlignRight).
-			SetExpansion(1))
+			SetAlign(tview.AlignRight))
 
 		// Bytes Out
 		v.Table.SetCell(row, colBytesOut, tview.NewTableCell(humanBytes(fwd.BytesOut)).
-			SetAlign(tview.AlignRight).
-			SetExpansion(1))
+			SetAlign(tview.AlignRight))
 
 		// Rate In
 		v.Table.SetCell(row, colRateIn, tview.NewTableCell(humanRate(fwd.RateIn)).
-			SetAlign(tview.AlignRight).
-			SetExpansion(1))
+			SetAlign(tview.AlignRight))
 
 		// Rate Out
 		v.Table.SetCell(row, colRateOut, tview.NewTableCell(humanRate(fwd.RateOut)).
-			SetAlign(tview.AlignRight).
-			SetExpansion(1))
+			SetAlign(tview.AlignRight))
 	}
 
 	// Restore selection if possible
@@ -270,35 +280,44 @@ func (v *ServicesView) GetFilterInput() *tview.InputField {
 	return v.filterInput
 }
 
-// humanBytes formats bytes to human-readable string
+// humanBytes formats bytes to human-readable string with fixed width
 func humanBytes(b uint64) string {
+	var s string
 	const unit = 1024
 	if b < unit {
-		return fmt.Sprintf("%d B", b)
+		s = fmt.Sprintf("%d B", b)
+	} else {
+		div, exp := uint64(unit), 0
+		for n := b / unit; n >= unit; n /= unit {
+			div *= unit
+			exp++
+		}
+		s = fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 	}
-	div, exp := uint64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+	// Pad to 9 chars for stable column width
+	return fmt.Sprintf("%9s", s)
 }
 
-// humanRate formats bytes/sec to human-readable string
+// humanRate formats bytes/sec to human-readable string with fixed width
 func humanRate(rate float64) string {
+	var s string
 	if rate < 1 {
-		return "0 B/s"
+		s = "0 B/s"
+	} else {
+		const unit = 1024.0
+		if rate < unit {
+			s = fmt.Sprintf("%.0f B/s", rate)
+		} else {
+			div, exp := unit, 0
+			for n := rate / unit; n >= unit; n /= unit {
+				div *= unit
+				exp++
+			}
+			s = fmt.Sprintf("%.1f %cB/s", rate/div, "KMGTPE"[exp])
+		}
 	}
-	const unit = 1024.0
-	if rate < unit {
-		return fmt.Sprintf("%.0f B/s", rate)
-	}
-	div, exp := unit, 0
-	for n := rate / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB/s", rate/div, "KMGTPE"[exp])
+	// Pad to 10 chars for stable column width
+	return fmt.Sprintf("%10s", s)
 }
 
 // truncate truncates a string to max length with ellipsis

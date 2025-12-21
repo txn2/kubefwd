@@ -75,7 +75,7 @@ func (mc *MetricsConnection) RemoveStreams(streams ...httpstream.Stream) {
 	unwrapped := make([]httpstream.Stream, len(streams))
 	for i, s := range streams {
 		if ms, ok := s.(*MetricsStream); ok {
-			unwrapped[i] = ms.Stream
+			unwrapped[i] = ms.stream
 		} else {
 			unwrapped[i] = s
 		}

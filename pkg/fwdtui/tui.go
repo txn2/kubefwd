@@ -81,15 +81,9 @@ func GetEventBus() *events.Bus {
 // shutdownChan is used to listen for external shutdown signals
 // triggerShutdown is called when the TUI wants to trigger app shutdown (e.g., user presses 'q')
 func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
-	fmt.Fprintln(os.Stderr, "DEBUG: TUI Init() called")
 	once.Do(func() {
-		fmt.Fprintln(os.Stderr, "DEBUG: TUI once.Do executing")
-
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating tview.Application...")
 		app := tview.NewApplication()
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating state.Store...")
 		store := state.NewStore(1000)
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating events.Bus...")
 		eventBus := events.NewBus(1000)
 
 		tuiManager = &Manager{
@@ -100,60 +94,44 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			doneChan:        make(chan struct{}),
 			triggerShutdown: triggerShutdown,
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Manager created")
 
 		// Create layout
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating layout...")
 		tuiManager.layout = views.NewLayout(
 			tuiManager.app,
 			tuiManager.store,
 			tuiManager.eventBus,
 		)
-		fmt.Fprintln(os.Stderr, "DEBUG: Layout created")
 
 		// Create logrus hook
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating logrus hook...")
 		tuiManager.logHook = hooks.NewTUILogHook(
 			tuiManager.layout.GetLogsView(),
 			tuiManager.app,
 		)
-		fmt.Fprintln(os.Stderr, "DEBUG: Logrus hook created")
 
 		// Add logrus hook and suppress terminal output
 		tuiManager.originalOut = log.StandardLogger().Out
 		log.AddHook(tuiManager.logHook)
 		log.SetOutput(io.Discard)
-		fmt.Fprintln(os.Stderr, "DEBUG: Log output redirected")
 
 		// Subscribe to events
-		fmt.Fprintln(os.Stderr, "DEBUG: Subscribing to events...")
 		tuiManager.subscribeToEvents()
-		fmt.Fprintln(os.Stderr, "DEBUG: Events subscribed")
 
 		// Start event bus
-		fmt.Fprintln(os.Stderr, "DEBUG: Starting event bus...")
 		tuiManager.eventBus.Start()
-		fmt.Fprintln(os.Stderr, "DEBUG: Event bus started")
 
 		// Start metrics registry
-		fmt.Fprintln(os.Stderr, "DEBUG: Starting metrics registry...")
 		fwdmetrics.GetRegistry().Start()
-		fmt.Fprintln(os.Stderr, "DEBUG: Metrics registry started")
 
 		// Subscribe to metrics updates
-		fmt.Fprintln(os.Stderr, "DEBUG: Subscribing to metrics updates...")
 		metricsCh, cancel := fwdmetrics.GetRegistry().Subscribe(500 * time.Millisecond)
 		tuiManager.metricsCancel = cancel
 		go tuiManager.handleMetricsUpdates(metricsCh)
-		fmt.Fprintln(os.Stderr, "DEBUG: Metrics subscription done")
 
 		// Handle shutdown signal
 		go func() {
 			<-shutdownChan
 			tuiManager.Stop()
 		}()
-
-		fmt.Fprintln(os.Stderr, "DEBUG: Init complete")
 	})
 
 	return tuiManager
@@ -161,73 +139,38 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 
 // Run starts the TUI application
 func (m *Manager) Run() error {
-	fmt.Fprintln(os.Stderr, "DEBUG: TUI Run() called")
-
-	// Check if we have a proper terminal
-	// Check stdin is a TTY
-	stdinFi, err := os.Stdin.Stat()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Cannot stat stdin: %v\n", err)
-	} else {
-		mode := stdinFi.Mode()
-		fmt.Fprintf(os.Stderr, "DEBUG: stdin mode: %v, isCharDevice: %v\n", mode, mode&os.ModeCharDevice != 0)
-	}
-
-	// Check stdout is a TTY
-	stdoutFi, err := os.Stdout.Stat()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "DEBUG: Cannot stat stdout: %v\n", err)
-	} else {
-		mode := stdoutFi.Mode()
-		fmt.Fprintf(os.Stderr, "DEBUG: stdout mode: %v, isCharDevice: %v\n", mode, mode&os.ModeCharDevice != 0)
-	}
-
-	// Check TERM environment variable
-	term := os.Getenv("TERM")
-	if term == "" {
-		fmt.Fprintln(os.Stderr, "DEBUG: WARNING: TERM environment variable not set, setting to xterm-256color")
+	// Ensure TERM is set for proper terminal handling
+	if os.Getenv("TERM") == "" {
 		os.Setenv("TERM", "xterm-256color")
-	} else {
-		fmt.Fprintf(os.Stderr, "DEBUG: TERM=%s\n", term)
 	}
 
 	// Build and set the root
 	root := m.layout.Build()
 	if root == nil {
-		// Restore log output for error message
 		log.SetOutput(m.originalOut)
 		log.Error("TUI: layout.Build() returned nil")
 		return fmt.Errorf("layout.Build() returned nil")
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: TUI layout built, setting root")
 	m.app.SetRoot(root, true)
-
-	// Enable mouse support
 	m.app.EnableMouse(true)
 
 	// Add welcome message to logs
 	m.layout.GetLogsView().AppendLog(log.InfoLevel, "kubefwd TUI started. Press ? for help, q to quit.")
 	m.layout.GetLogsView().AppendLog(log.InfoLevel, "Waiting for services to be discovered...")
 
-	fmt.Fprintln(os.Stderr, "DEBUG: TUI calling app.Run() - this should take over the terminal")
-
-	// Run the application - this should block until app.Stop() is called
-	err = m.app.Run()
-
-	fmt.Fprintf(os.Stderr, "DEBUG: TUI app.Run() returned, err=%v\n", err)
+	// Run the application - blocks until app.Stop() is called
+	err := m.app.Run()
 
 	// Restore log output
 	log.SetOutput(m.originalOut)
 
-	// If there was an error, log it
 	if err != nil {
 		log.Errorf("TUI: app.Run() error: %v", err)
 	}
 
 	// Trigger shutdown of the main application
 	if m.triggerShutdown != nil {
-		fmt.Fprintln(os.Stderr, "DEBUG: Triggering main app shutdown...")
 		m.triggerShutdown()
 	}
 
@@ -236,7 +179,6 @@ func (m *Manager) Run() error {
 	// Force exit after a short delay - the cleanup can take too long
 	go func() {
 		time.Sleep(2 * time.Second)
-		fmt.Fprintln(os.Stderr, "DEBUG: Force exiting after timeout")
 		os.Exit(0)
 	}()
 
@@ -365,26 +307,62 @@ func (m *Manager) subscribeToEvents() {
 	})
 }
 
+// podMetrics aggregates metrics for a single pod across all its ports
+type podMetrics struct {
+	bytesIn    uint64
+	bytesOut   uint64
+	rateIn     float64
+	rateOut    float64
+	avgRateIn  float64
+	avgRateOut float64
+}
+
 // handleMetricsUpdates processes metrics updates from the registry
 func (m *Manager) handleMetricsUpdates(ch <-chan []fwdmetrics.ServiceSnapshot) {
 	for snapshots := range ch {
 		m.app.QueueUpdateDraw(func() {
+			// Aggregate metrics by pod key (a pod may have multiple ports)
+			podTotals := make(map[string]*podMetrics)
+
 			for _, svc := range snapshots {
 				for _, pf := range svc.PortForwards {
 					key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName
-					m.store.UpdateMetrics(
-						key,
-						pf.BytesIn,
-						pf.BytesOut,
-						pf.RateIn,
-						pf.RateOut,
-						pf.AvgRateIn,
-						pf.AvgRateOut,
-					)
+					if pm, ok := podTotals[key]; ok {
+						// Accumulate metrics from multiple ports
+						pm.bytesIn += pf.BytesIn
+						pm.bytesOut += pf.BytesOut
+						pm.rateIn += pf.RateIn
+						pm.rateOut += pf.RateOut
+						pm.avgRateIn += pf.AvgRateIn
+						pm.avgRateOut += pf.AvgRateOut
+					} else {
+						podTotals[key] = &podMetrics{
+							bytesIn:    pf.BytesIn,
+							bytesOut:   pf.BytesOut,
+							rateIn:     pf.RateIn,
+							rateOut:    pf.RateOut,
+							avgRateIn:  pf.AvgRateIn,
+							avgRateOut: pf.AvgRateOut,
+						}
+					}
 				}
 			}
-			// Update status bar with totals
-			m.layout.GetStatusBar().Update(m.store.GetSummary())
+
+			// Update store with aggregated metrics
+			for key, pm := range podTotals {
+				m.store.UpdateMetrics(
+					key,
+					pm.bytesIn,
+					pm.bytesOut,
+					pm.rateIn,
+					pm.rateOut,
+					pm.avgRateIn,
+					pm.avgRateOut,
+				)
+			}
+
+			// Refresh layout to show updated metrics (both table and status bar)
+			m.layout.Refresh()
 		})
 	}
 }

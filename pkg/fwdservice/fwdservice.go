@@ -384,12 +384,13 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 	svcFwd.NamespaceServiceLock.Unlock()
 
 	// Emit event for TUI if this is a new pod
+	// Use pfo values to match metrics key construction exactly
 	if isNew && fwdtui.IsEnabled() {
 		event := events.NewPodEvent(
 			events.PodAdded,
-			svcFwd.Svc.Name,
-			svcFwd.Namespace,
-			svcFwd.Context,
+			pfo.Service,
+			pfo.Namespace,
+			pfo.Context,
 			pfo.PodName,
 		)
 		event.LocalIP = pfo.LocalIp.String()
@@ -428,12 +429,13 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 		svcFwd.NamespaceServiceLock.Unlock()
 
 		// Emit event for TUI
+		// Use pod (PortForwardOpts) values to match metrics key construction exactly
 		if fwdtui.IsEnabled() {
 			fwdtui.Emit(events.NewPodEvent(
 				events.PodRemoved,
-				svcFwd.Svc.Name,
-				svcFwd.Namespace,
-				svcFwd.Context,
+				pod.Service,
+				pod.Namespace,
+				pod.Context,
 				pod.PodName,
 			))
 		}

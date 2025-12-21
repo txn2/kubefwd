@@ -30,6 +30,7 @@ import (
 	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
@@ -202,6 +203,9 @@ Try:
 	// Initialize TUI mode if enabled
 	if tuiMode {
 		fwdtui.Enable()
+		// Start metrics registry sampling EARLY, before port forwards begin
+		// This ensures rate calculation has samples from the start of data transfer
+		fwdmetrics.GetRegistry().Start()
 	}
 
 	// Only show instructions in non-TUI mode
