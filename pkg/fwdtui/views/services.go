@@ -25,7 +25,7 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
 
-// Column indices
+// Column identifiers
 const (
 	colHostname = iota
 	colLocalAddr
@@ -37,6 +37,7 @@ const (
 	colBytesOut
 	colRateIn
 	colRateOut
+	colCount // total number of possible columns
 )
 
 var columnHeaders = []string{
@@ -61,6 +62,9 @@ type ServicesView struct {
 	selectedRow int
 	filterInput *tview.InputField
 	filtering   bool
+	visibleCols []int // which columns are currently visible
+	showNS      bool  // show namespace column
+	showCtx     bool  // show context column
 }
 
 // NewServicesView creates a new services table view
@@ -93,36 +97,10 @@ func NewServicesView(store *state.Store, bus *events.Bus, app *tview.Application
 	// Set up keyboard handling
 	v.Table.SetInputCapture(v.handleInput)
 
-	// Initialize with headers
-	v.renderHeaders()
+	// Initialize visible columns (will be updated on first Refresh with data)
+	v.visibleCols = []int{colHostname, colLocalAddr, colPod, colStatus, colBytesIn, colBytesOut, colRateIn, colRateOut}
 
 	return v
-}
-
-// Column max widths for compact display
-const (
-	maxHostnameWidth  = 35
-	maxPodWidth       = 45 // Pod gets more space (favored)
-	maxNamespaceWidth = 10
-	maxContextWidth   = 10
-)
-
-// renderHeaders renders the table header row
-func (v *ServicesView) renderHeaders() {
-	for i, h := range columnHeaders {
-		cell := tview.NewTableCell(h).
-			SetTextColor(tcell.ColorYellow).
-			SetSelectable(false)
-
-		// Match expansion with data cells
-		switch i {
-		case colHostname:
-			cell.SetExpansion(1)
-		case colPod:
-			cell.SetExpansion(2) // Pod gets most space
-		}
-		v.Table.SetCell(0, i, cell)
-	}
 }
 
 // Refresh updates the table with current data
@@ -135,62 +113,34 @@ func (v *ServicesView) Refresh() {
 		v.selectedRow = currentRow
 	}
 
-	// Clear existing data rows (keep header)
-	rowCount := v.Table.GetRowCount()
-	for row := rowCount - 1; row > 0; row-- {
-		v.Table.RemoveRow(row)
+	// Determine which optional columns to show
+	v.updateVisibleColumns(forwards)
+
+	// Clear table completely and rebuild
+	v.Table.Clear()
+
+	// Render headers for visible columns
+	for displayCol, logicalCol := range v.visibleCols {
+		cell := tview.NewTableCell(columnHeaders[logicalCol]).
+			SetTextColor(tcell.ColorYellow).
+			SetSelectable(false)
+		// Expandable columns get extra space
+		switch logicalCol {
+		case colHostname:
+			cell.SetExpansion(1).SetMaxWidth(60)
+		case colPod:
+			cell.SetExpansion(2).SetMaxWidth(80) // Pod gets 2x priority
+		}
+		v.Table.SetCell(0, displayCol, cell)
 	}
 
 	// Render data rows
 	for i, fwd := range forwards {
 		row := i + 1 // Skip header row
-
-		// Hostname - truncated, expands to fill space
-		v.Table.SetCell(row, colHostname, tview.NewTableCell(truncate(fwd.PrimaryHostname(), maxHostnameWidth)).
-			SetExpansion(1))
-
-		// Local Address - fixed width
-		v.Table.SetCell(row, colLocalAddr, tview.NewTableCell(fwd.LocalAddress()))
-
-		// Pod - truncated, gets most expansion (favored)
-		v.Table.SetCell(row, colPod, tview.NewTableCell(truncate(fwd.PodName, maxPodWidth)).
-			SetExpansion(2))
-
-		// Namespace - fixed width
-		v.Table.SetCell(row, colNamespace, tview.NewTableCell(truncate(fwd.Namespace, maxNamespaceWidth)))
-
-		// Context - fixed width
-		v.Table.SetCell(row, colContext, tview.NewTableCell(truncate(fwd.Context, maxContextWidth)))
-
-		// Status - fixed width
-		statusCell := tview.NewTableCell(fwd.Status.String())
-		switch fwd.Status {
-		case state.StatusActive:
-			statusCell.SetTextColor(tcell.ColorGreen)
-		case state.StatusError:
-			statusCell.SetTextColor(tcell.ColorRed)
-		case state.StatusConnecting:
-			statusCell.SetTextColor(tcell.ColorYellow)
-		case state.StatusStopping:
-			statusCell.SetTextColor(tcell.ColorOrange)
+		for displayCol, logicalCol := range v.visibleCols {
+			cell := v.createCell(logicalCol, fwd)
+			v.Table.SetCell(row, displayCol, cell)
 		}
-		v.Table.SetCell(row, colStatus, statusCell)
-
-		// Bytes In
-		v.Table.SetCell(row, colBytesIn, tview.NewTableCell(humanBytes(fwd.BytesIn)).
-			SetAlign(tview.AlignRight))
-
-		// Bytes Out
-		v.Table.SetCell(row, colBytesOut, tview.NewTableCell(humanBytes(fwd.BytesOut)).
-			SetAlign(tview.AlignRight))
-
-		// Rate In
-		v.Table.SetCell(row, colRateIn, tview.NewTableCell(humanRate(fwd.RateIn)).
-			SetAlign(tview.AlignRight))
-
-		// Rate Out
-		v.Table.SetCell(row, colRateOut, tview.NewTableCell(humanRate(fwd.RateOut)).
-			SetAlign(tview.AlignRight))
 	}
 
 	// Restore selection if possible
@@ -198,6 +148,69 @@ func (v *ServicesView) Refresh() {
 		v.Table.Select(v.selectedRow, 0)
 	} else if v.Table.GetRowCount() > 1 {
 		v.Table.Select(1, 0)
+	}
+}
+
+// updateVisibleColumns determines which columns to show based on data
+func (v *ServicesView) updateVisibleColumns(forwards []state.ForwardSnapshot) {
+	// Check for unique namespaces and contexts
+	namespaces := make(map[string]struct{})
+	contexts := make(map[string]struct{})
+	for _, fwd := range forwards {
+		namespaces[fwd.Namespace] = struct{}{}
+		contexts[fwd.Context] = struct{}{}
+	}
+
+	v.showNS = len(namespaces) > 1
+	v.showCtx = len(contexts) > 1
+
+	// Build visible columns list
+	v.visibleCols = []int{colHostname, colLocalAddr, colPod}
+	if v.showNS {
+		v.visibleCols = append(v.visibleCols, colNamespace)
+	}
+	if v.showCtx {
+		v.visibleCols = append(v.visibleCols, colContext)
+	}
+	v.visibleCols = append(v.visibleCols, colStatus, colBytesIn, colBytesOut, colRateIn, colRateOut)
+}
+
+// createCell creates a table cell for the given column and forward
+func (v *ServicesView) createCell(col int, fwd state.ForwardSnapshot) *tview.TableCell {
+	switch col {
+	case colHostname:
+		return tview.NewTableCell(fwd.PrimaryHostname()).SetExpansion(1).SetMaxWidth(60)
+	case colLocalAddr:
+		return tview.NewTableCell(fwd.LocalAddress())
+	case colPod:
+		return tview.NewTableCell(fwd.PodName).SetExpansion(2).SetMaxWidth(80)
+	case colNamespace:
+		return tview.NewTableCell(fwd.Namespace)
+	case colContext:
+		return tview.NewTableCell(fwd.Context)
+	case colStatus:
+		cell := tview.NewTableCell(fwd.Status.String())
+		switch fwd.Status {
+		case state.StatusActive:
+			cell.SetTextColor(tcell.ColorGreen)
+		case state.StatusError:
+			cell.SetTextColor(tcell.ColorRed)
+		case state.StatusConnecting:
+			cell.SetTextColor(tcell.ColorYellow)
+		case state.StatusStopping:
+			cell.SetTextColor(tcell.ColorOrange)
+		}
+		return cell
+	case colBytesIn:
+		return tview.NewTableCell(humanBytes(fwd.BytesIn)).SetAlign(tview.AlignRight)
+	case colBytesOut:
+		return tview.NewTableCell(humanBytes(fwd.BytesOut)).SetAlign(tview.AlignRight)
+	case colRateIn:
+		return tview.NewTableCell(humanRate(fwd.RateIn)).SetAlign(tview.AlignRight)
+	case colRateOut:
+		return tview.NewTableCell(humanRate(fwd.RateOut)).SetAlign(tview.AlignRight)
+	default:
+		return tview.NewTableCell("")
 	}
 }
 
