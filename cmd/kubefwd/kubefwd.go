@@ -119,6 +119,9 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
+	// Pass version to services package for TUI header
+	services.Version = Version
+
 	cmd.AddCommand(versionCmd, services.Cmd)
 
 	return cmd

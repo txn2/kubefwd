@@ -71,6 +71,9 @@ var resyncInterval time.Duration
 var retryInterval time.Duration
 var tuiMode bool
 
+// Version is set by the main package
+var Version string
+
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
 	utilRuntime.ErrorHandlers[0] = func(_ context.Context, err error, _ string, _ ...interface{}) {
@@ -202,6 +205,7 @@ Try:
 
 	// Initialize TUI mode if enabled
 	if tuiMode {
+		fwdtui.Version = Version
 		fwdtui.Enable()
 		// Start metrics registry sampling EARLY, before port forwards begin
 		// This ensures rate calculation has samples from the start of data transfer
@@ -309,13 +313,10 @@ Try:
 			close(stopListenCh)
 		})
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: tuiMode=%v, fwdtui.IsEnabled()=%v\n", tuiMode, fwdtui.IsEnabled())
 	if fwdtui.IsEnabled() {
 		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
-		fmt.Fprintln(os.Stderr, "DEBUG: TUI Init returned")
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: Setting up signal handler...")
 	// Listen for shutdown signal from user
 	go func() {
 		sigChan := make(chan os.Signal, 2)
@@ -340,24 +341,18 @@ Try:
 		os.Exit(1)
 	}()
 
-	fmt.Fprintln(os.Stderr, "DEBUG: Signal handler set up")
-
 	// if no context override
 	if len(contexts) < 1 {
 		contexts = append(contexts, rawConfig.CurrentContext)
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: Initializing service registry...")
 	fwdsvcregistry.Init(stopListenCh)
-	fmt.Fprintln(os.Stderr, "DEBUG: Service registry initialized")
 
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
 	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
 
-	fmt.Fprintf(os.Stderr, "DEBUG: Starting context loop with %d contexts...\n", len(contexts))
 	for i, ctx := range contexts {
-		fmt.Fprintf(os.Stderr, "DEBUG: Processing context %d: %s\n", i, ctx)
 		// k8s REST config
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
 		if err != nil {
@@ -365,7 +360,6 @@ Try:
 		}
 
 		// create the k8s clientSet
-		fmt.Fprintln(os.Stderr, "DEBUG: Creating k8s clientSet...")
 		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
@@ -380,12 +374,10 @@ Try:
 		}
 
 		// check connectivity
-		fmt.Fprintln(os.Stderr, "DEBUG: Checking cluster connectivity...")
 		err = checkConnection(clientSet, namespaces)
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: Successfully connected to context: %s\n", ctx)
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
@@ -422,16 +414,11 @@ Try:
 		}
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: All namespace watchers launched")
-
 	// If TUI mode, run the TUI (blocks until user quits)
 	if tuiManager != nil {
-		fmt.Fprintln(os.Stderr, "DEBUG: tuiManager is not nil, about to call Run()")
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
-	} else {
-		fmt.Fprintln(os.Stderr, "DEBUG: tuiManager is nil!")
 	}
 
 	// Wait for namespace watchers with timeout

@@ -1,6 +1,8 @@
 package views
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -12,6 +14,7 @@ type Layout struct {
 	app          *tview.Application
 	flex         *tview.Flex
 	pages        *tview.Pages
+	header       *tview.Box
 	servicesView *ServicesView
 	logsView     *LogsView
 	helpModal    *HelpModal
@@ -22,12 +25,48 @@ type Layout struct {
 }
 
 // NewLayout creates a new TUI layout
-func NewLayout(app *tview.Application, store *state.Store, eventBus *events.Bus) *Layout {
+func NewLayout(app *tview.Application, store *state.Store, eventBus *events.Bus, version string) *Layout {
 	l := &Layout{
 		app:      app,
 		store:    store,
 		eventBus: eventBus,
 	}
+
+	// Create header with clickable hyperlink using SetDrawFunc for direct tcell access
+	l.header = tview.NewBox()
+	l.header.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
+		// Build header segments
+		titleText := "kubefwd"
+		versionText := fmt.Sprintf(" v%s | ", version)
+		linkText := "github.com/txn2/kubefwd"
+		linkURL := "https://github.com/txn2/kubefwd"
+
+		totalWidth := len(titleText) + len(versionText) + len(linkText)
+		startX := x + (width-totalWidth)/2
+
+		// Draw title in yellow bold
+		titleStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true)
+		for _, r := range titleText {
+			screen.SetContent(startX, y, r, nil, titleStyle)
+			startX++
+		}
+
+		// Draw version in white
+		whiteStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		for _, r := range versionText {
+			screen.SetContent(startX, y, r, nil, whiteStyle)
+			startX++
+		}
+
+		// Draw link in blue with underline and URL
+		linkStyle := tcell.StyleDefault.Foreground(tcell.ColorBlue).Underline(true).Url(linkURL)
+		for _, r := range linkText {
+			screen.SetContent(startX, y, r, nil, linkStyle)
+			startX++
+		}
+
+		return x, y, width, height
+	})
 
 	// Create views
 	l.servicesView = NewServicesView(store, eventBus, app)
@@ -42,14 +81,17 @@ func NewLayout(app *tview.Application, store *state.Store, eventBus *events.Bus)
 func (l *Layout) Build() tview.Primitive {
 	// Main layout:
 	//  +------------------------------------------+
+	//  |           Header (1 row)                 |
+	//  +------------------------------------------+
 	//  |           Services Table (70%)           |
 	//  +------------------------------------------+
 	//  |           Log Panel (30%)                |
 	//  +------------------------------------------+
-	//  |           Status Bar                     |
+	//  |           Status Bar (1 row)             |
 	//  +------------------------------------------+
 
 	l.flex = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(l.header, 1, 0, false).
 		AddItem(l.servicesView.Table, 0, 7, true).
 		AddItem(l.logsView.TextView, 0, 3, false).
 		AddItem(l.statusBar.TextView, 1, 0, false)

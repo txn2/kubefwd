@@ -21,6 +21,7 @@ var (
 	tuiManager *Manager
 	once       sync.Once
 	mu         sync.RWMutex
+	Version    string // Set by main package before Init
 )
 
 // Manager manages the TUI lifecycle
@@ -84,6 +85,7 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			tuiManager.app,
 			tuiManager.store,
 			tuiManager.eventBus,
+			Version,
 		)
 
 		// Create logrus hook
