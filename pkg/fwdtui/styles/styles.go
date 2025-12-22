@@ -1,0 +1,141 @@
+package styles
+
+import "github.com/charmbracelet/lipgloss"
+
+// Color palette
+var (
+	ColorYellow  = lipgloss.Color("226")
+	ColorBlue    = lipgloss.Color("39")
+	ColorGreen   = lipgloss.Color("42")
+	ColorRed     = lipgloss.Color("196")
+	ColorOrange  = lipgloss.Color("208")
+	ColorGray    = lipgloss.Color("240")
+	ColorWhite   = lipgloss.Color("255")
+	ColorFocused = lipgloss.Color("62")
+	ColorCyan    = lipgloss.Color("51")
+)
+
+// Header styles
+var (
+	HeaderTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorYellow)
+
+	HeaderLinkStyle = lipgloss.NewStyle().
+			Foreground(ColorBlue).
+			Underline(true)
+
+	HeaderVersionStyle = lipgloss.NewStyle().
+				Foreground(ColorWhite)
+)
+
+// Status styles for port forwards
+var (
+	StatusActiveStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen)
+
+	StatusConnectingStyle = lipgloss.NewStyle().
+				Foreground(ColorYellow)
+
+	StatusErrorStyle = lipgloss.NewStyle().
+				Foreground(ColorRed)
+
+	StatusStoppingStyle = lipgloss.NewStyle().
+				Foreground(ColorOrange)
+
+	StatusPendingStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+)
+
+// Log level styles
+var (
+	LogPanicStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorRed)
+
+	LogFatalStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorRed)
+
+	LogErrorStyle = lipgloss.NewStyle().
+			Foreground(ColorRed)
+
+	LogWarnStyle = lipgloss.NewStyle().
+			Foreground(ColorYellow)
+
+	LogInfoStyle = lipgloss.NewStyle().
+			Foreground(ColorGreen)
+
+	LogDebugStyle = lipgloss.NewStyle().
+			Foreground(ColorBlue)
+
+	LogTraceStyle = lipgloss.NewStyle().
+			Foreground(ColorGray)
+
+	LogTimestampStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+)
+
+// Border styles for focused/unfocused components
+var (
+	FocusedBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorFocused)
+
+	UnfocusedBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorGray)
+)
+
+// Table styles
+var (
+	TableHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorYellow)
+
+	TableSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(ColorWhite)
+)
+
+// Status bar styles
+var (
+	StatusBarStyle = lipgloss.NewStyle().
+			Foreground(ColorWhite)
+
+	StatusBarErrorStyle = lipgloss.NewStyle().
+				Foreground(ColorRed)
+
+	StatusBarHelpStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+)
+
+// Help modal styles
+var (
+	HelpModalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorFocused).
+			Padding(1, 2)
+
+	HelpTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ColorYellow).
+			MarginBottom(1)
+
+	HelpKeyStyle = lipgloss.NewStyle().
+			Foreground(ColorBlue).
+			Width(12)
+
+	HelpDescStyle = lipgloss.NewStyle().
+			Foreground(ColorWhite)
+)
+
+// Section styles
+var (
+	SectionTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorCyan)
+
+	FocusAccentStyle = lipgloss.NewStyle().
+				Foreground(ColorCyan)
+)
