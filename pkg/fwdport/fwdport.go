@@ -22,6 +22,7 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
 	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -412,14 +413,56 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	fw, err := portforward.NewOnAddresses(finalDialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
+		// Emit status change event for TUI
+		if fwdtui.IsEnabled() {
+			event := events.NewPodEvent(
+				events.PodStatusChanged,
+				pfo.Service,
+				pfo.Namespace,
+				pfo.Context,
+				pfo.PodName,
+			)
+			event.Status = "error"
+			event.Error = err
+			fwdtui.Emit(event)
+		}
+
 		pfo.Stop()
 		<-cleanupDone
 		return err
 	}
 
+	// Emit active status - port forward is now ready
+	if fwdtui.IsEnabled() {
+		event := events.NewPodEvent(
+			events.PodStatusChanged,
+			pfo.Service,
+			pfo.Namespace,
+			pfo.Context,
+			pfo.PodName,
+		)
+		event.Status = "active"
+		fwdtui.Emit(event)
+	}
+
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {
 		log.Errorf("Lost connection to %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
+
+		// Emit status change event for TUI
+		if fwdtui.IsEnabled() {
+			event := events.NewPodEvent(
+				events.PodStatusChanged,
+				pfo.Service,
+				pfo.Namespace,
+				pfo.Context,
+				pfo.PodName,
+			)
+			event.Status = "error"
+			event.Error = err
+			fwdtui.Emit(event)
+		}
+
 		pfo.Stop()
 		dialerWithPing.stopPing()
 		<-cleanupDone

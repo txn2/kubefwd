@@ -446,9 +446,9 @@ func (m *RootModel) updateSizes() {
 		availableHeight = 10
 	}
 
-	// Split 50/50 between services and logs
-	servicesHeight := availableHeight / 2
-	logsHeight := availableHeight - servicesHeight
+	// Split 75/25 between services and logs (table is more important)
+	logsHeight := availableHeight / 4
+	servicesHeight := availableHeight - logsHeight
 
 	if servicesHeight < 6 {
 		servicesHeight = 6
@@ -539,7 +539,7 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 			LocalPort:   e.LocalPort,
 			PodPort:     e.PodPort,
 			Hostnames:   e.Hostnames,
-			Status:      state.StatusActive,
+			Status:      state.StatusConnecting,
 			StartedAt:   e.Timestamp,
 		}
 		m.store.AddForward(snapshot)

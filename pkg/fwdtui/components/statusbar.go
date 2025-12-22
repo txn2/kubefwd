@@ -43,9 +43,6 @@ func (m *StatusBarModel) UpdateStats(stats state.SummaryStats) {
 func (m StatusBarModel) View() string {
 	s := m.stats
 
-	// Services count
-	services := fmt.Sprintf("Services: %d/%d", s.ActiveServices, s.TotalServices)
-
 	// Forwards count
 	forwards := fmt.Sprintf("Forwards: %d/%d", s.ActiveForwards, s.TotalForwards)
 
@@ -65,8 +62,8 @@ func (m StatusBarModel) View() string {
 	help := styles.StatusBarHelpStyle.Render("Press ? for help")
 
 	// Compose the status bar
-	left := fmt.Sprintf(" %s | %s | %s | %s | %s",
-		services, forwards, errors, rateIn, rateOut)
+	left := fmt.Sprintf(" %s | %s | %s | %s",
+		forwards, errors, rateIn, rateOut)
 
 	// Calculate padding to right-align help
 	leftWidth := lipgloss.Width(left)
