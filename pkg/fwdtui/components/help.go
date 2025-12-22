@@ -85,6 +85,10 @@ func (m HelpModel) View() string {
 		{"Tab", "Switch focus"},
 		{"?", "Toggle help"},
 		{"q", "Quit"},
+		{"", ""},
+		{"Display", ""},
+		{"b", "Toggle bandwidth columns"},
+		{"c", "Toggle compact view"},
 	}
 
 	var lines []string

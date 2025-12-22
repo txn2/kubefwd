@@ -15,6 +15,7 @@ const (
 	colKeyHostname  = "hostname"
 	colKeyLocalAddr = "localaddr"
 	colKeyPod       = "pod"
+	colKeyPort      = "port"
 	colKeyNamespace = "namespace"
 	colKeyContext   = "context"
 	colKeyStatus    = "status"
@@ -26,24 +27,28 @@ const (
 
 // ServicesModel displays the services table
 type ServicesModel struct {
-	table      table.Model
-	store      *state.Store
-	width      int
-	height     int
-	focused    bool
-	showNS     bool // Show namespace column
-	showCtx    bool // Show context column
-	filtering  bool
-	filterText string
+	table         table.Model
+	store         *state.Store
+	width         int
+	height        int
+	focused       bool
+	showNS        bool // Show namespace column
+	showCtx       bool // Show context column
+	showBandwidth bool // Show bandwidth columns (Total In/Out, Rate In/Out)
+	compactView   bool // Compact view: show Port instead of Local Address + Pod
+	filtering     bool
+	filterText    string
 }
 
 // NewServicesModel creates a new services model
 func NewServicesModel(store *state.Store) ServicesModel {
-	columns := buildColumns(false, false)
+	columns := buildColumns(false, false, true, false)
 
 	m := ServicesModel{
-		store:   store,
-		focused: true,
+		store:         store,
+		focused:       true,
+		showBandwidth: true,
+		compactView:   false,
 	}
 
 	m.table = table.New(columns).
@@ -59,11 +64,18 @@ func NewServicesModel(store *state.Store) ServicesModel {
 }
 
 // buildColumns creates the table columns based on visibility settings
-func buildColumns(showNS, showCtx bool) []table.Column {
+func buildColumns(showNS, showCtx, showBandwidth, compactView bool) []table.Column {
 	cols := []table.Column{
-		table.NewFlexColumn(colKeyHostname, "Hostname", 2),
-		table.NewColumn(colKeyLocalAddr, "Local Address", 18),
-		table.NewFlexColumn(colKeyPod, "Pod", 3),
+		table.NewFlexColumn(colKeyHostname, "Hostname", 3),
+	}
+
+	if compactView {
+		cols = append(cols, table.NewColumn(colKeyPort, "Port", 12))
+	} else {
+		cols = append(cols,
+			table.NewColumn(colKeyLocalAddr, "Local Address", 18),
+			table.NewFlexColumn(colKeyPod, "Pod", 2),
+		)
 	}
 
 	if showNS {
@@ -73,13 +85,16 @@ func buildColumns(showNS, showCtx bool) []table.Column {
 		cols = append(cols, table.NewColumn(colKeyContext, "Context", 15))
 	}
 
-	cols = append(cols,
-		table.NewColumn(colKeyStatus, "Status", 12),
-		table.NewColumn(colKeyBytesIn, "Total In", 10),
-		table.NewColumn(colKeyBytesOut, "Total Out", 10),
-		table.NewColumn(colKeyRateIn, "Rate In", 11),
-		table.NewColumn(colKeyRateOut, "Rate Out", 11),
-	)
+	cols = append(cols, table.NewColumn(colKeyStatus, "Status", 12))
+
+	if showBandwidth {
+		cols = append(cols,
+			table.NewColumn(colKeyBytesIn, "Total In", 10),
+			table.NewColumn(colKeyBytesOut, "Total Out", 10),
+			table.NewColumn(colKeyRateIn, "Rate In", 11),
+			table.NewColumn(colKeyRateOut, "Rate Out", 11),
+		)
+	}
 
 	return cols
 }
@@ -146,6 +161,14 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 			m.filterText = ""
 			m.Refresh()
 			return m, nil
+		case "b":
+			m.showBandwidth = !m.showBandwidth
+			m.rebuildColumns()
+			return m, nil
+		case "c":
+			m.compactView = !m.compactView
+			m.rebuildColumns()
+			return m, nil
 		case "g", "home":
 			m.table = m.table.PageFirst()
 		case "G", "end":
@@ -160,6 +183,15 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// rebuildColumns rebuilds the table columns based on current visibility settings
+func (m *ServicesModel) rebuildColumns() {
+	columns := buildColumns(m.showNS, m.showCtx, m.showBandwidth, m.compactView)
+	m.table = m.table.WithColumns(columns)
+	if m.width > 0 {
+		m.table = m.table.WithTargetWidth(m.width - 2)
+	}
 }
 
 // Refresh updates the table with current data from the store
@@ -181,8 +213,7 @@ func (m *ServicesModel) Refresh() {
 	if newShowNS != m.showNS || newShowCtx != m.showCtx {
 		m.showNS = newShowNS
 		m.showCtx = newShowCtx
-		columns := buildColumns(m.showNS, m.showCtx)
-		m.table = m.table.WithColumns(columns)
+		m.rebuildColumns()
 	}
 
 	// Build rows
@@ -192,6 +223,7 @@ func (m *ServicesModel) Refresh() {
 			colKeyHostname:  fwd.PrimaryHostname(),
 			colKeyLocalAddr: fwd.LocalAddress(),
 			colKeyPod:       fwd.PodName,
+			colKeyPort:      formatPort(fwd.LocalPort, fwd.PodPort),
 			colKeyStatus:    table.NewStyledCell(fwd.Status.String(), statusStyle(fwd.Status)),
 			colKeyBytesIn:   humanBytes(fwd.BytesIn),
 			colKeyBytesOut:  humanBytes(fwd.BytesOut),
@@ -302,4 +334,12 @@ func humanRate(rate float64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB/s", rate/div, "KMGTPE"[exp])
+}
+
+// formatPort formats the port mapping (local→pod)
+func formatPort(localPort, podPort string) string {
+	if localPort == podPort {
+		return localPort
+	}
+	return fmt.Sprintf("%s→%s", localPort, podPort)
 }
