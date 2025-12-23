@@ -567,7 +567,7 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 		detailKey := m.detail.GetForwardKey()
 		for _, svc := range msg.Snapshots {
 			for _, pf := range svc.PortForwards {
-				key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName
+				key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName + "." + pf.LocalPort
 				if key == detailKey && len(pf.HTTPLogs) > 0 {
 					// Convert metrics HTTP logs to detail HTTP logs
 					logs := make([]components.HTTPLogEntry, len(pf.HTTPLogs))

@@ -36,7 +36,7 @@ func (s ForwardStatus) String() string {
 // ForwardSnapshot represents an immutable snapshot of a port forward for TUI rendering
 type ForwardSnapshot struct {
 	// Identification
-	Key        string // unique key: "service.namespace.context.podname"
+	Key        string // unique key: "service.namespace.context.podname.localport"
 	ServiceKey string // "service.namespace.context"
 
 	// Service info
