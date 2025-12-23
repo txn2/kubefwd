@@ -425,6 +425,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 				pfo.Context,
 				pfo.PodName,
 			)
+			event.LocalPort = pfo.LocalPort
 			event.Status = "error"
 			event.Error = err
 			fwdtui.Emit(event)
@@ -444,6 +445,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 			pfo.Context,
 			pfo.PodName,
 		)
+		event.LocalPort = pfo.LocalPort
 		event.Status = "active"
 		event.Hostnames = pfo.Hosts // Include hostnames now that AddHosts() has run
 		fwdtui.Emit(event)
@@ -462,6 +464,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 				pfo.Context,
 				pfo.PodName,
 			)
+			event.LocalPort = pfo.LocalPort
 			event.Status = "error"
 			event.Error = err
 			fwdtui.Emit(event)

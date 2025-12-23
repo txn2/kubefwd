@@ -375,7 +375,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 	svcFwd.NamespaceServiceLock.Lock()
-	ServicePod := pfo.Service + "." + pfo.PodName
+	ServicePod := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
 	isNew := false
 	if _, found := svcFwd.PortForwards[ServicePod]; !found {
 		svcFwd.PortForwards[ServicePod] = pfo

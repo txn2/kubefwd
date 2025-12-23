@@ -272,28 +272,65 @@ func (s *Store) matchesFilter(fwd *ForwardSnapshot) bool {
 // Must be called with lock held
 func (s *Store) sortForwards(forwards []ForwardSnapshot) {
 	sort.Slice(forwards, func(i, j int) bool {
-		var cmp bool
+		var cmp int // -1 = i < j, 0 = equal, 1 = i > j
 		switch s.sortField {
 		case "hostname":
-			cmp = forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname()
+			if forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname() {
+				cmp = -1
+			} else if forwards[i].PrimaryHostname() > forwards[j].PrimaryHostname() {
+				cmp = 1
+			}
 		case "namespace":
-			cmp = forwards[i].Namespace < forwards[j].Namespace
+			if forwards[i].Namespace < forwards[j].Namespace {
+				cmp = -1
+			} else if forwards[i].Namespace > forwards[j].Namespace {
+				cmp = 1
+			}
 		case "service":
-			cmp = forwards[i].ServiceName < forwards[j].ServiceName
+			if forwards[i].ServiceName < forwards[j].ServiceName {
+				cmp = -1
+			} else if forwards[i].ServiceName > forwards[j].ServiceName {
+				cmp = 1
+			}
 		case "status":
-			cmp = forwards[i].Status < forwards[j].Status
+			if forwards[i].Status < forwards[j].Status {
+				cmp = -1
+			} else if forwards[i].Status > forwards[j].Status {
+				cmp = 1
+			}
 		case "rateIn":
-			cmp = forwards[i].RateIn < forwards[j].RateIn
+			if forwards[i].RateIn < forwards[j].RateIn {
+				cmp = -1
+			} else if forwards[i].RateIn > forwards[j].RateIn {
+				cmp = 1
+			}
 		case "rateOut":
-			cmp = forwards[i].RateOut < forwards[j].RateOut
+			if forwards[i].RateOut < forwards[j].RateOut {
+				cmp = -1
+			} else if forwards[i].RateOut > forwards[j].RateOut {
+				cmp = 1
+			}
 		default:
-			cmp = forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname()
+			if forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname() {
+				cmp = -1
+			} else if forwards[i].PrimaryHostname() > forwards[j].PrimaryHostname() {
+				cmp = 1
+			}
+		}
+
+		// Tiebreaker: sort by port for stable ordering
+		if cmp == 0 {
+			if forwards[i].LocalPort < forwards[j].LocalPort {
+				cmp = -1
+			} else if forwards[i].LocalPort > forwards[j].LocalPort {
+				cmp = 1
+			}
 		}
 
 		if s.sortAsc {
-			return cmp
+			return cmp < 0
 		}
-		return !cmp
+		return cmp > 0
 	})
 }
 

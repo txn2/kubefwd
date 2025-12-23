@@ -529,7 +529,7 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 
 	for _, svc := range msg.Snapshots {
 		for _, pf := range svc.PortForwards {
-			key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName
+			key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName + "." + pf.LocalPort
 			if pm, ok := podTotals[key]; ok {
 				pm.bytesIn += pf.BytesIn
 				pm.bytesOut += pf.BytesOut
@@ -594,7 +594,7 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 	switch e.Type {
 	case events.PodAdded:
 		snapshot := state.ForwardSnapshot{
-			Key:         e.ServiceKey + "." + e.PodName,
+			Key:         e.ServiceKey + "." + e.PodName + "." + e.LocalPort,
 			ServiceKey:  e.ServiceKey,
 			ServiceName: e.Service,
 			Namespace:   e.Namespace,
@@ -610,11 +610,11 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 		m.store.AddForward(snapshot)
 
 	case events.PodRemoved:
-		key := e.ServiceKey + "." + e.PodName
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
 		m.store.RemoveForward(key)
 
 	case events.PodStatusChanged:
-		key := e.ServiceKey + "." + e.PodName
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
 		var status state.ForwardStatus
 		switch e.Status {
 		case "connecting":
