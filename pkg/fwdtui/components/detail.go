@@ -798,14 +798,14 @@ func (m *DetailModel) renderHTTPTab() string {
 
 	viewportHeight := m.getViewportHeight()
 
-	// Show logs in reverse order (newest first) with scrolling
+	// Show logs in chronological order (oldest first, newest at bottom)
 	start := m.httpScrollOffset
 	end := start + viewportHeight
 	if end > len(m.httpLogs) {
 		end = len(m.httpLogs)
 	}
 
-	for i := len(m.httpLogs) - 1 - start; i >= len(m.httpLogs)-end && i >= 0; i-- {
+	for i := start; i < end; i++ {
 		entry := m.httpLogs[i]
 
 		// Timestamp
