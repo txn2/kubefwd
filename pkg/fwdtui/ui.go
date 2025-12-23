@@ -1,6 +1,8 @@
 package fwdtui
 
 import (
+	"bufio"
+	"context"
 	"io"
 	"os"
 	"sync"
@@ -48,6 +50,10 @@ type Manager struct {
 	triggerShutdown func()
 }
 
+// PodLogsStreamer is a function that streams pod logs from Kubernetes
+// It returns an io.ReadCloser that streams log lines
+type PodLogsStreamer func(ctx context.Context, namespace, podName, k8sContext string, tailLines int64) (io.ReadCloser, error)
+
 // RootModel is the main bubbletea model
 type RootModel struct {
 	// Components
@@ -77,8 +83,13 @@ type RootModel struct {
 	logCh     <-chan LogEntryMsg
 	stopCh    <-chan struct{}
 
-	// Callback
+	// Callbacks
 	triggerShutdown func()
+	streamPodLogs   PodLogsStreamer
+
+	// Pod log streaming state
+	logStreamCancel context.CancelFunc
+	logStreamCh     chan string
 }
 
 // Enable marks TUI mode as enabled
@@ -173,6 +184,13 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 	})
 
 	return tuiManager
+}
+
+// SetPodLogsStreamer sets the function used to stream pod logs
+func (m *Manager) SetPodLogsStreamer(streamer PodLogsStreamer) {
+	if m.model != nil {
+		m.model.streamPodLogs = streamer
+	}
 }
 
 // Run starts the TUI application
@@ -287,12 +305,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail view captures all input when visible
 		if m.detail.IsVisible() {
-			m.detail, _ = m.detail.Update(msg)
+			var cmd tea.Cmd
+			m.detail, cmd = m.detail.Update(msg)
 			// If detail closed, return focus to services
 			if !m.detail.IsVisible() {
 				m.focus = FocusServices
 			}
-			return m, nil
+			return m, cmd
 		}
 
 		// Global keys
@@ -390,9 +409,110 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RefreshMsg:
 		m.services.Refresh()
 		m.statusBar.UpdateStats(m.store.GetSummary())
+
+	case components.PodLogsRequestMsg:
+		// Request to stream pod logs
+		if m.streamPodLogs != nil {
+			// Cancel any existing stream
+			if m.logStreamCancel != nil {
+				m.logStreamCancel()
+			}
+
+			// Create new context for this stream
+			ctx, cancel := context.WithCancel(context.Background())
+			m.logStreamCancel = cancel
+
+			// Create channel for log lines
+			m.logStreamCh = make(chan string, 100)
+
+			namespace := msg.Namespace
+			podName := msg.PodName
+			k8sContext := msg.Context
+			tailLines := msg.TailLines
+			logCh := m.logStreamCh
+
+			// Start streaming goroutine
+			go func() {
+				defer close(logCh)
+
+				stream, err := m.streamPodLogs(ctx, namespace, podName, k8sContext, tailLines)
+				if err != nil {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						// Send error as a special message
+						logCh <- "\x00ERROR:" + err.Error()
+						return
+					}
+				}
+				defer stream.Close()
+
+				scanner := bufio.NewScanner(stream)
+				for scanner.Scan() {
+					select {
+					case <-ctx.Done():
+						return
+					case logCh <- scanner.Text():
+					}
+				}
+			}()
+
+			// Set streaming state and return command to listen for lines
+			m.detail.SetLogsStreaming(true)
+			m.detail.SetLogsLoading(false)
+			return m, m.waitForLogLine()
+		} else {
+			// No streamer configured
+			m.detail.SetLogsError("Pod logs not available - streamer not configured")
+		}
+
+	case components.PodLogsStopMsg:
+		// Stop the current log stream
+		if m.logStreamCancel != nil {
+			m.logStreamCancel()
+			m.logStreamCancel = nil
+		}
+		m.logStreamCh = nil
+
+	case components.PodLogLineMsg:
+		// Received a log line from the stream
+		line := msg.Line
+		// Check for error marker
+		if len(line) > 7 && line[:7] == "\x00ERROR:" {
+			m.detail.SetLogsError(line[7:])
+			m.detail.SetLogsStreaming(false)
+		} else {
+			// Update the detail model
+			m.detail.AppendLogLine(line)
+			// Continue listening for more lines if still streaming
+			if m.detail.IsLogsStreaming() && m.logStreamCh != nil {
+				return m, m.waitForLogLine()
+			}
+		}
+
+	case components.PodLogsErrorMsg:
+		m.detail.SetLogsError(msg.Error.Error())
+		m.detail.SetLogsStreaming(false)
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// waitForLogLine returns a command that waits for the next log line
+func (m *RootModel) waitForLogLine() tea.Cmd {
+	logCh := m.logStreamCh
+	if logCh == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		line, ok := <-logCh
+		if !ok {
+			// Channel closed, stream ended
+			return components.PodLogsStopMsg{}
+		}
+		return components.PodLogLineMsg{Line: line}
+	}
 }
 
 // View renders the UI

@@ -223,3 +223,16 @@ var (
 	DetailFooterKeyStyle = lipgloss.NewStyle().
 				Foreground(ColorBlue)
 )
+
+// Tab styles
+var (
+	TabActiveStyle = lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Background(ColorBlue).
+			Bold(true).
+			Padding(0, 1)
+
+	TabInactiveStyle = lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Padding(0, 1)
+)

@@ -19,6 +19,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -313,8 +314,30 @@ Try:
 			close(stopListenCh)
 		})
 	}
+	// Map of context -> clientSet for pod log streaming
+	clientSets := make(map[string]*kubernetes.Clientset)
+	var clientSetsMu sync.RWMutex
+
 	if fwdtui.IsEnabled() {
 		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
+
+		// Set up pod logs streamer
+		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+			clientSetsMu.RLock()
+			clientSet, ok := clientSets[k8sContext]
+			clientSetsMu.RUnlock()
+
+			if !ok {
+				return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+			}
+
+			opts := &v1.PodLogOptions{
+				Follow:    true,
+				TailLines: &tailLines,
+			}
+
+			return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+		})
 	}
 
 	// Listen for shutdown signal from user
@@ -364,6 +387,11 @@ Try:
 		if err != nil {
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
 		}
+
+		// Store clientSet for pod log streaming
+		clientSetsMu.Lock()
+		clientSets[ctx] = clientSet
+		clientSetsMu.Unlock()
 
 		// if use --all-namespace ,from v1 api get all ns.
 		if isAllNs {

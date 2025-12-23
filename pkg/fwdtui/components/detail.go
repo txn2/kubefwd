@@ -13,6 +13,13 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
 
+// Tab constants
+const (
+	TabInfo = iota
+	TabHTTP
+	TabLogs
+)
+
 // HTTPLogEntry represents an HTTP request/response log entry
 type HTTPLogEntry struct {
 	Timestamp  time.Time
@@ -33,16 +40,21 @@ type DetailModel struct {
 	store       *state.Store
 	rateHistory *state.RateHistory
 
-	// Content scrolling
-	scrollOffset   int
-	contentHeight  int
-	viewportHeight int
+	// Tab state
+	currentTab int // 0=Info, 1=HTTP, 2=Logs
 
-	// HTTP log state
-	httpLogs      []HTTPLogEntry
-	httpVisible   bool
-	httpScrollPos int
-	maxHTTPLogs   int
+	// HTTP tab state
+	httpLogs         []HTTPLogEntry
+	httpScrollOffset int
+	maxHTTPLogs      int
+
+	// Logs tab state
+	podLogs          []string
+	logsScrollOffset int
+	logsLoading      bool
+	logsStreaming    bool
+	logsError        string
+	maxPodLogs       int
 
 	// Sparkline width
 	sparklineWidth int
@@ -57,8 +69,8 @@ func NewDetailModel(store *state.Store, history *state.RateHistory) DetailModel 
 	return DetailModel{
 		store:          store,
 		rateHistory:    history,
-		httpVisible:    true,
-		maxHTTPLogs:    50,
+		maxHTTPLogs:    100,
+		maxPodLogs:     1000,
 		sparklineWidth: 30,
 		copiedIndex:    -1,
 	}
@@ -68,8 +80,13 @@ func NewDetailModel(store *state.Store, history *state.RateHistory) DetailModel 
 func (m *DetailModel) Show(forwardKey string) {
 	m.visible = true
 	m.forwardKey = forwardKey
-	m.httpScrollPos = 0
-	m.scrollOffset = 0
+	m.currentTab = TabInfo
+	m.httpScrollOffset = 0
+	m.logsScrollOffset = 0
+	m.podLogs = nil
+	m.logsLoading = false
+	m.logsStreaming = false
+	m.logsError = ""
 	m.copiedIndex = -1
 	m.copiedVisible = false
 
@@ -79,11 +96,20 @@ func (m *DetailModel) Show(forwardKey string) {
 	}
 }
 
-// Hide closes the detail view
-func (m *DetailModel) Hide() {
+// Hide closes the detail view and returns a command to stop log streaming
+func (m *DetailModel) Hide() tea.Cmd {
+	wasStreaming := m.logsStreaming
 	m.visible = false
 	m.forwardKey = ""
 	m.snapshot = nil
+	m.logsStreaming = false
+
+	if wasStreaming {
+		return func() tea.Msg {
+			return PodLogsStopMsg{}
+		}
+	}
+	return nil
 }
 
 // IsVisible returns whether the detail view is visible
@@ -128,7 +154,7 @@ func (m *DetailModel) AddHTTPLog(entry HTTPLogEntry) {
 // ClearHTTPLogs clears all HTTP log entries
 func (m *DetailModel) ClearHTTPLogs() {
 	m.httpLogs = nil
-	m.httpScrollPos = 0
+	m.httpScrollOffset = 0
 }
 
 // SetHTTPLogs sets the HTTP log entries (used when getting logs from metrics)
@@ -136,8 +162,82 @@ func (m *DetailModel) SetHTTPLogs(logs []HTTPLogEntry) {
 	m.httpLogs = logs
 }
 
+// SetPodLogs sets the pod logs
+func (m *DetailModel) SetPodLogs(logs []string) {
+	m.podLogs = logs
+	m.logsLoading = false
+}
+
+// AppendLogLine appends a single log line
+func (m *DetailModel) AppendLogLine(line string) {
+	m.podLogs = append(m.podLogs, line)
+	// Trim if exceeding max
+	if len(m.podLogs) > m.maxPodLogs {
+		m.podLogs = m.podLogs[len(m.podLogs)-m.maxPodLogs:]
+		// Adjust scroll offset if we trimmed lines
+		if m.logsScrollOffset > 0 {
+			m.logsScrollOffset--
+			if m.logsScrollOffset < 0 {
+				m.logsScrollOffset = 0
+			}
+		}
+	}
+}
+
+// SetLogsLoading sets the loading state for logs
+func (m *DetailModel) SetLogsLoading(loading bool) {
+	m.logsLoading = loading
+}
+
+// SetLogsStreaming sets the streaming state for logs
+func (m *DetailModel) SetLogsStreaming(streaming bool) {
+	m.logsStreaming = streaming
+}
+
+// IsLogsStreaming returns whether logs are currently streaming
+func (m DetailModel) IsLogsStreaming() bool {
+	return m.logsStreaming
+}
+
+// SetLogsError sets an error message for the logs tab
+func (m *DetailModel) SetLogsError(err string) {
+	m.logsError = err
+	m.logsLoading = false
+}
+
+// GetCurrentTab returns the current tab index
+func (m DetailModel) GetCurrentTab() int {
+	return m.currentTab
+}
+
+// GetSnapshot returns the current snapshot
+func (m DetailModel) GetSnapshot() *state.ForwardSnapshot {
+	return m.snapshot
+}
+
 // ClearCopiedMsg is sent to clear the "Copied!" feedback
 type ClearCopiedMsg struct{}
+
+// PodLogsRequestMsg is sent to request pod logs streaming
+type PodLogsRequestMsg struct {
+	Namespace string
+	PodName   string
+	Context   string
+	TailLines int64
+}
+
+// PodLogsStopMsg is sent to stop pod logs streaming
+type PodLogsStopMsg struct{}
+
+// PodLogLineMsg contains a single log line from the stream
+type PodLogLineMsg struct {
+	Line string
+}
+
+// PodLogsErrorMsg indicates an error fetching logs
+type PodLogsErrorMsg struct {
+	Error error
+}
 
 // Init implements tea.Model
 func (m DetailModel) Init() tea.Cmd {
@@ -152,11 +252,22 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		m.copiedIndex = -1
 		return m, nil
 
+	case PodLogLineMsg:
+		// Append log line from stream
+		m.AppendLogLine(msg.Line)
+		return m, nil
+
+	case PodLogsErrorMsg:
+		m.logsError = msg.Error.Error()
+		m.logsLoading = false
+		m.logsStreaming = false
+		return m, nil
+
 	case tea.KeyMsg:
 		key := msg.String()
 
-		// Number keys 1-9 copy specific connect strings
-		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		// Number keys 1-9 copy specific connect strings (only on Info tab)
+		if m.currentTab == TabInfo && len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			idx := int(key[0] - '1') // Convert '1'-'9' to 0-8
 			connectStrings := m.getConnectStrings()
 			if idx < len(connectStrings) {
@@ -171,100 +282,262 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 
 		switch key {
 		case "esc", "q":
-			m.Hide()
+			cmd := m.Hide()
+			return m, cmd
+
+		case "tab", "right":
+			prevTab := m.currentTab
+			m.currentTab = (m.currentTab + 1) % 3
+
+			var cmds []tea.Cmd
+
+			// Stop streaming if leaving Logs tab
+			if prevTab == TabLogs && m.logsStreaming {
+				m.logsStreaming = false
+				cmds = append(cmds, func() tea.Msg { return PodLogsStopMsg{} })
+			}
+
+			// Start streaming if entering Logs tab
+			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
+				m.logsLoading = true
+				m.podLogs = nil // Clear old logs
+				m.logsScrollOffset = 0
+				cmds = append(cmds, m.requestPodLogs())
+			}
+
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
+			}
 			return m, nil
-		case "h":
-			m.httpVisible = !m.httpVisible
+
+		case "shift+tab", "left":
+			prevTab := m.currentTab
+			m.currentTab = (m.currentTab + 2) % 3 // +2 is same as -1 mod 3
+
+			// Stop streaming if leaving Logs tab
+			if prevTab == TabLogs && m.logsStreaming {
+				m.logsStreaming = false
+				return m, func() tea.Msg { return PodLogsStopMsg{} }
+			}
+
+			// Start streaming if entering Logs tab
+			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
+				m.logsLoading = true
+				m.podLogs = nil
+				m.logsScrollOffset = 0
+				return m, m.requestPodLogs()
+			}
 			return m, nil
-		case "y": // Yank/copy first connect string
-			connectStrings := m.getConnectStrings()
-			if len(connectStrings) > 0 {
-				if copyToClipboard(connectStrings[0]) {
-					m.copiedIndex = 0
-					m.copiedVisible = true
-					return m, clearCopiedAfterDelay()
+
+		case "y": // Yank/copy first connect string (only on Info tab)
+			if m.currentTab == TabInfo {
+				connectStrings := m.getConnectStrings()
+				if len(connectStrings) > 0 {
+					if copyToClipboard(connectStrings[0]) {
+						m.copiedIndex = 0
+						m.copiedVisible = true
+						return m, clearCopiedAfterDelay()
+					}
 				}
 			}
 			return m, nil
+
+		case "r":
+			// Refresh/restart logs (only on Logs tab)
+			if m.currentTab == TabLogs {
+				var cmds []tea.Cmd
+
+				// Stop current stream if active
+				if m.logsStreaming {
+					m.logsStreaming = false
+					cmds = append(cmds, func() tea.Msg { return PodLogsStopMsg{} })
+				}
+
+				// Clear and restart
+				m.logsError = ""
+				m.podLogs = nil
+				m.logsScrollOffset = 0
+				m.logsLoading = true
+				cmds = append(cmds, m.requestPodLogs())
+				return m, tea.Batch(cmds...)
+			}
+			return m, nil
+
 		case "j", "down":
-			// Scroll content down
-			maxScroll := m.contentHeight - m.viewportHeight
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.scrollOffset < maxScroll {
-				m.scrollOffset++
+			// Scroll down (only on HTTP and Logs tabs)
+			if m.currentTab == TabHTTP {
+				maxScroll := m.getHTTPMaxScroll()
+				if m.httpScrollOffset < maxScroll {
+					m.httpScrollOffset++
+				}
+			} else if m.currentTab == TabLogs {
+				maxScroll := m.getLogsMaxScroll()
+				if m.logsScrollOffset < maxScroll {
+					m.logsScrollOffset++
+				}
 			}
 			return m, nil
+
 		case "k", "up":
-			// Scroll content up
-			if m.scrollOffset > 0 {
-				m.scrollOffset--
+			// Scroll up (only on HTTP and Logs tabs)
+			if m.currentTab == TabHTTP {
+				if m.httpScrollOffset > 0 {
+					m.httpScrollOffset--
+				}
+			} else if m.currentTab == TabLogs {
+				if m.logsScrollOffset > 0 {
+					m.logsScrollOffset--
+				}
 			}
 			return m, nil
+
 		case "g", "home":
-			m.scrollOffset = 0
-			return m, nil
-		case "G", "end":
-			maxScroll := m.contentHeight - m.viewportHeight
-			if maxScroll < 0 {
-				maxScroll = 0
+			// Go to top
+			if m.currentTab == TabHTTP {
+				m.httpScrollOffset = 0
+			} else if m.currentTab == TabLogs {
+				m.logsScrollOffset = 0
 			}
-			m.scrollOffset = maxScroll
 			return m, nil
+
+		case "G", "end":
+			// Go to bottom
+			if m.currentTab == TabHTTP {
+				m.httpScrollOffset = m.getHTTPMaxScroll()
+			} else if m.currentTab == TabLogs {
+				m.logsScrollOffset = m.getLogsMaxScroll()
+			}
+			return m, nil
+
 		case "pgdown", "ctrl+d":
 			// Page down
-			pageSize := m.viewportHeight / 2
+			pageSize := m.getViewportHeight() / 2
 			if pageSize < 1 {
 				pageSize = 1
 			}
-			maxScroll := m.contentHeight - m.viewportHeight
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			m.scrollOffset += pageSize
-			if m.scrollOffset > maxScroll {
-				m.scrollOffset = maxScroll
+			if m.currentTab == TabHTTP {
+				m.httpScrollOffset += pageSize
+				maxScroll := m.getHTTPMaxScroll()
+				if m.httpScrollOffset > maxScroll {
+					m.httpScrollOffset = maxScroll
+				}
+			} else if m.currentTab == TabLogs {
+				m.logsScrollOffset += pageSize
+				maxScroll := m.getLogsMaxScroll()
+				if m.logsScrollOffset > maxScroll {
+					m.logsScrollOffset = maxScroll
+				}
 			}
 			return m, nil
+
 		case "pgup", "ctrl+u":
 			// Page up
-			pageSize := m.viewportHeight / 2
+			pageSize := m.getViewportHeight() / 2
 			if pageSize < 1 {
 				pageSize = 1
 			}
-			m.scrollOffset -= pageSize
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
+			if m.currentTab == TabHTTP {
+				m.httpScrollOffset -= pageSize
+				if m.httpScrollOffset < 0 {
+					m.httpScrollOffset = 0
+				}
+			} else if m.currentTab == TabLogs {
+				m.logsScrollOffset -= pageSize
+				if m.logsScrollOffset < 0 {
+					m.logsScrollOffset = 0
+				}
 			}
 			return m, nil
 		}
+
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
 
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling
+		// Handle mouse wheel scrolling (only on HTTP and Logs tabs)
 		if msg.Button == tea.MouseButtonWheelUp {
-			if m.scrollOffset > 0 {
-				m.scrollOffset -= 3
-				if m.scrollOffset < 0 {
-					m.scrollOffset = 0
+			if m.currentTab == TabHTTP && m.httpScrollOffset > 0 {
+				m.httpScrollOffset -= 3
+				if m.httpScrollOffset < 0 {
+					m.httpScrollOffset = 0
+				}
+			} else if m.currentTab == TabLogs && m.logsScrollOffset > 0 {
+				m.logsScrollOffset -= 3
+				if m.logsScrollOffset < 0 {
+					m.logsScrollOffset = 0
 				}
 			}
 			return m, nil
 		} else if msg.Button == tea.MouseButtonWheelDown {
-			maxScroll := m.contentHeight - m.viewportHeight
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			m.scrollOffset += 3
-			if m.scrollOffset > maxScroll {
-				m.scrollOffset = maxScroll
+			if m.currentTab == TabHTTP {
+				maxScroll := m.getHTTPMaxScroll()
+				m.httpScrollOffset += 3
+				if m.httpScrollOffset > maxScroll {
+					m.httpScrollOffset = maxScroll
+				}
+			} else if m.currentTab == TabLogs {
+				maxScroll := m.getLogsMaxScroll()
+				m.logsScrollOffset += 3
+				if m.logsScrollOffset > maxScroll {
+					m.logsScrollOffset = maxScroll
+				}
 			}
 			return m, nil
 		}
 	}
 	return m, nil
+}
+
+// requestPodLogs returns a command to request pod logs
+func (m *DetailModel) requestPodLogs() tea.Cmd {
+	if m.snapshot == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return PodLogsRequestMsg{
+			Namespace: m.snapshot.Namespace,
+			PodName:   m.snapshot.PodName,
+			Context:   m.snapshot.Context,
+			TailLines: 100,
+		}
+	}
+}
+
+// getViewportHeight returns the available viewport height for tab content
+func (m *DetailModel) getViewportHeight() int {
+	// Use same box height calculation as View()
+	boxHeight := m.height - 6
+	if boxHeight < 15 {
+		boxHeight = 15
+	}
+	// Inner height minus: borders (2), padding (2), tab bar (2 lines), footer (1)
+	viewportHeight := boxHeight - 7
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	return viewportHeight
+}
+
+// getHTTPMaxScroll returns the maximum scroll offset for HTTP logs
+func (m *DetailModel) getHTTPMaxScroll() int {
+	contentLines := len(m.httpLogs)
+	viewportHeight := m.getViewportHeight()
+	maxScroll := contentLines - viewportHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
+}
+
+// getLogsMaxScroll returns the maximum scroll offset for pod logs
+func (m *DetailModel) getLogsMaxScroll() int {
+	contentLines := len(m.podLogs)
+	viewportHeight := m.getViewportHeight()
+	maxScroll := contentLines - viewportHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
 }
 
 // getConnectStrings returns all hostname:port combinations
@@ -341,15 +614,85 @@ func (m *DetailModel) View() string {
 		return ""
 	}
 
+	// Calculate dimensions with padding
+	contentWidth := m.width - 12
+	if contentWidth < 40 {
+		contentWidth = 40
+	}
+	// Fixed height: window height minus padding (6 lines total for top/bottom margins)
+	boxHeight := m.height - 6
+	if boxHeight < 15 {
+		boxHeight = 15
+	}
+
 	var b strings.Builder
 
-	// Title
-	title := fmt.Sprintf("Service: %s", m.snapshot.ServiceName)
-	if m.snapshot.Namespace != "" {
-		title += fmt.Sprintf(" (namespace: %s)", m.snapshot.Namespace)
-	}
-	b.WriteString(styles.DetailTitleStyle.Render(title))
+	// Render tab bar
+	b.WriteString(m.renderTabBar())
 	b.WriteString("\n\n")
+
+	// Render content based on current tab
+	var tabContent string
+	switch m.currentTab {
+	case TabInfo:
+		tabContent = m.renderInfoTab()
+	case TabHTTP:
+		tabContent = m.renderHTTPTab()
+	case TabLogs:
+		tabContent = m.renderLogsTab()
+	}
+	b.WriteString(tabContent)
+
+	// Footer with keybindings
+	footer := m.renderFooter()
+
+	// Calculate content height and pad to fill the box
+	// Box inner height = boxHeight - 2 (borders) - 2 (padding from DetailBorderStyle)
+	innerHeight := boxHeight - 4
+	currentLines := strings.Count(b.String(), "\n") + 1 + 1 // +1 for footer line
+	paddingNeeded := innerHeight - currentLines
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	}
+
+	// Add footer
+	b.WriteString(footer)
+
+	// Style the box with fixed dimensions
+	boxStyle := styles.DetailBorderStyle.
+		Width(contentWidth).
+		Height(boxHeight - 2) // -2 for top/bottom borders
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		boxStyle.Render(b.String()),
+	)
+}
+
+// renderTabBar renders the tab bar
+func (m *DetailModel) renderTabBar() string {
+	tabs := []string{"Info", fmt.Sprintf("HTTP (%d)", len(m.httpLogs)), "Logs"}
+
+	var parts []string
+	for i, tab := range tabs {
+		if i == m.currentTab {
+			// Active tab
+			parts = append(parts, styles.TabActiveStyle.Render("["+tab+"]"))
+		} else {
+			// Inactive tab
+			parts = append(parts, styles.TabInactiveStyle.Render("["+tab+"]"))
+		}
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// renderInfoTab renders the Info tab content
+func (m *DetailModel) renderInfoTab() string {
+	var b strings.Builder
 
 	// Status
 	b.WriteString(styles.DetailLabelStyle.Render("STATUS: "))
@@ -387,14 +730,6 @@ func (m *DetailModel) View() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-
-	// Local Endpoint
-	b.WriteString(styles.DetailSectionStyle.Render("LOCAL ENDPOINT"))
-	b.WriteString("\n")
-	endpoint := fmt.Sprintf("  %s:%s -> :%s",
-		m.snapshot.LocalIP, m.snapshot.LocalPort, m.snapshot.PodPort)
-	b.WriteString(styles.DetailValueStyle.Render(endpoint))
-	b.WriteString("\n\n")
 
 	// Pod Info
 	b.WriteString(styles.DetailSectionStyle.Render("POD"))
@@ -445,132 +780,33 @@ func (m *DetailModel) View() string {
 		sparkline := RenderSparkline(rateOutHistory, m.sparklineWidth)
 		b.WriteString(styles.SparklineOutStyle.Render(sparkline))
 	}
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
-	// HTTP Requests (if visible and has entries)
-	if m.httpVisible {
-		b.WriteString(styles.DetailSectionStyle.Render(fmt.Sprintf("HTTP REQUESTS (%d)", len(m.httpLogs))))
-		b.WriteString("\n")
-		if len(m.httpLogs) > 0 {
-			b.WriteString(m.renderHTTPLogs())
-		} else {
-			b.WriteString("  ")
-			b.WriteString(styles.DetailLabelStyle.Render("No HTTP requests captured"))
-			b.WriteString("\n")
-		}
-	}
-
-	// Build scrollable content
-	content := b.String()
-	lines := strings.Split(content, "\n")
-	m.contentHeight = len(lines)
-
-	// Calculate available space for box content
-	// Box adds: border (2) + padding (4) = 6 extra chars
-	// Leave margin on each side
-	contentWidth := m.width - 12
-	if contentWidth < 40 {
-		contentWidth = 40
-	}
-
-	// Calculate viewport height (content area inside box)
-	// Box has: top border (1) + content + footer (2 lines) + bottom border (1)
-	m.viewportHeight = m.height - 6
-	if m.viewportHeight < 5 {
-		m.viewportHeight = 5
-	}
-
-	// Clamp scroll offset
-	maxScroll := m.contentHeight - m.viewportHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.scrollOffset > maxScroll {
-		m.scrollOffset = maxScroll
-	}
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
-	}
-
-	// Apply scroll offset to get visible lines
-	visibleLines := lines
-	if m.scrollOffset > 0 && m.scrollOffset < len(lines) {
-		visibleLines = lines[m.scrollOffset:]
-	}
-	if len(visibleLines) > m.viewportHeight {
-		visibleLines = visibleLines[:m.viewportHeight]
-	}
-
-	// Build scroll indicator
-	scrollInfo := ""
-	if m.contentHeight > m.viewportHeight {
-		scrollInfo = fmt.Sprintf(" [%d/%d]", m.scrollOffset+1, maxScroll+1)
-		if m.scrollOffset > 0 {
-			scrollInfo = "↑" + scrollInfo
-		}
-		if m.scrollOffset < maxScroll {
-			scrollInfo = scrollInfo + "↓"
-		}
-	}
-
-	scrolledContent := strings.Join(visibleLines, "\n")
-
-	// Footer with keybindings and scroll info
-	footer := m.renderFooter()
-	if scrollInfo != "" {
-		footer = styles.DetailLabelStyle.Render(scrollInfo) + "  " + footer
-	}
-
-	// Build final content with footer
-	boxContent := scrolledContent + "\n\n" + footer
-
-	// Style the box
-	boxStyle := styles.DetailBorderStyle.
-		Width(contentWidth)
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		boxStyle.Render(boxContent),
-	)
+	return b.String()
 }
 
-// renderStatus renders the status with appropriate styling
-func (m DetailModel) renderStatus(status state.ForwardStatus) string {
-	switch status {
-	case state.StatusActive:
-		return styles.StatusActiveStyle.Render("Active")
-	case state.StatusConnecting:
-		return styles.StatusConnectingStyle.Render("Connecting")
-	case state.StatusError:
-		return styles.StatusErrorStyle.Render("Error")
-	case state.StatusStopping:
-		return styles.StatusStoppingStyle.Render("Stopping")
-	case state.StatusPending:
-		return styles.StatusPendingStyle.Render("Pending")
-	default:
-		return styles.DetailValueStyle.Render("Unknown")
-	}
-}
-
-// renderHTTPLogs renders the HTTP log entries
-func (m DetailModel) renderHTTPLogs() string {
+// renderHTTPTab renders the HTTP tab content
+func (m *DetailModel) renderHTTPTab() string {
 	var b strings.Builder
 
-	// Determine how many logs to show (based on available space)
-	maxVisible := 10 // Show up to 10 entries
-	start := m.httpScrollPos
-	end := start + maxVisible
+	if len(m.httpLogs) == 0 {
+		b.WriteString(styles.DetailLabelStyle.Render("No HTTP requests captured"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.DetailLabelStyle.Render("HTTP sniffing captures requests passing through the port forward."))
+		return b.String()
+	}
+
+	viewportHeight := m.getViewportHeight()
+
+	// Show logs in reverse order (newest first) with scrolling
+	start := m.httpScrollOffset
+	end := start + viewportHeight
 	if end > len(m.httpLogs) {
 		end = len(m.httpLogs)
 	}
 
-	// Show logs in reverse order (newest first)
 	for i := len(m.httpLogs) - 1 - start; i >= len(m.httpLogs)-end && i >= 0; i-- {
 		entry := m.httpLogs[i]
-		b.WriteString("  ")
 
 		// Timestamp
 		ts := entry.Timestamp.Format("15:04:05")
@@ -613,7 +849,113 @@ func (m DetailModel) renderHTTPLogs() string {
 		b.WriteString("\n")
 	}
 
+	// Scroll indicator
+	maxScroll := m.getHTTPMaxScroll()
+	if maxScroll > 0 {
+		b.WriteString("\n")
+		scrollInfo := fmt.Sprintf("[%d/%d]", m.httpScrollOffset+1, maxScroll+1)
+		if m.httpScrollOffset > 0 {
+			scrollInfo = "↑ " + scrollInfo
+		}
+		if m.httpScrollOffset < maxScroll {
+			scrollInfo = scrollInfo + " ↓"
+		}
+		b.WriteString(styles.DetailLabelStyle.Render(scrollInfo))
+	}
+
 	return b.String()
+}
+
+// renderLogsTab renders the Logs tab content
+func (m *DetailModel) renderLogsTab() string {
+	var b strings.Builder
+
+	// Show error if present
+	if m.logsError != "" {
+		b.WriteString(styles.StatusErrorStyle.Render("Error: " + m.logsError))
+		b.WriteString("\n\n")
+		b.WriteString(styles.DetailLabelStyle.Render("Press 'r' to retry"))
+		return b.String()
+	}
+
+	if m.logsLoading && len(m.podLogs) == 0 {
+		b.WriteString(styles.DetailLabelStyle.Render("Loading pod logs..."))
+		return b.String()
+	}
+
+	if len(m.podLogs) == 0 {
+		b.WriteString(styles.DetailLabelStyle.Render("No pod logs available"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.DetailLabelStyle.Render("Press 'r' to refresh"))
+		return b.String()
+	}
+
+	// Streaming indicator
+	if m.logsStreaming {
+		b.WriteString(styles.StatusActiveStyle.Render("● Streaming"))
+		b.WriteString(styles.DetailLabelStyle.Render(fmt.Sprintf(" (%d lines)", len(m.podLogs))))
+		b.WriteString("\n\n")
+	}
+
+	viewportHeight := m.getViewportHeight()
+	if m.logsStreaming {
+		viewportHeight -= 2 // Account for streaming indicator
+	}
+
+	// Apply scrolling
+	start := m.logsScrollOffset
+	end := start + viewportHeight
+	if end > len(m.podLogs) {
+		end = len(m.podLogs)
+	}
+
+	for i := start; i < end; i++ {
+		line := m.podLogs[i]
+		// Truncate long lines
+		maxLen := m.width - 20
+		if maxLen < 40 {
+			maxLen = 40
+		}
+		if len(line) > maxLen {
+			line = line[:maxLen-3] + "..."
+		}
+		b.WriteString(styles.DetailValueStyle.Render(line))
+		b.WriteString("\n")
+	}
+
+	// Scroll indicator
+	maxScroll := m.getLogsMaxScroll()
+	if maxScroll > 0 {
+		b.WriteString("\n")
+		scrollInfo := fmt.Sprintf("[%d/%d]", m.logsScrollOffset+1, maxScroll+1)
+		if m.logsScrollOffset > 0 {
+			scrollInfo = "↑ " + scrollInfo
+		}
+		if m.logsScrollOffset < maxScroll {
+			scrollInfo = scrollInfo + " ↓"
+		}
+		b.WriteString(styles.DetailLabelStyle.Render(scrollInfo))
+	}
+
+	return b.String()
+}
+
+// renderStatus renders the status with appropriate styling
+func (m DetailModel) renderStatus(status state.ForwardStatus) string {
+	switch status {
+	case state.StatusActive:
+		return styles.StatusActiveStyle.Render("Active")
+	case state.StatusConnecting:
+		return styles.StatusConnectingStyle.Render("Connecting")
+	case state.StatusError:
+		return styles.StatusErrorStyle.Render("Error")
+	case state.StatusStopping:
+		return styles.StatusStoppingStyle.Render("Stopping")
+	case state.StatusPending:
+		return styles.StatusPendingStyle.Render("Pending")
+	default:
+		return styles.DetailValueStyle.Render("Unknown")
+	}
 }
 
 // renderMethod renders an HTTP method with appropriate color
@@ -649,14 +991,22 @@ func (m DetailModel) renderStatusCode(code int) string {
 	return styles.DetailValueStyle.Render(codeStr)
 }
 
-// renderFooter renders the footer with keybindings
+// renderFooter renders the footer with keybindings based on current tab
 func (m DetailModel) renderFooter() string {
 	var parts []string
 
 	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Esc]")+" Back")
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[1-9]")+" Copy")
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[j/k]")+" Scroll")
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[h]")+" HTTP")
+	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Tab]")+" Switch")
+
+	switch m.currentTab {
+	case TabInfo:
+		parts = append(parts, styles.DetailFooterKeyStyle.Render("[1-9]")+" Copy")
+	case TabHTTP:
+		parts = append(parts, styles.DetailFooterKeyStyle.Render("[j/k]")+" Scroll")
+	case TabLogs:
+		parts = append(parts, styles.DetailFooterKeyStyle.Render("[j/k]")+" Scroll")
+		parts = append(parts, styles.DetailFooterKeyStyle.Render("[r]")+" Refresh")
+	}
 
 	return styles.DetailFooterStyle.Render(strings.Join(parts, "  "))
 }
