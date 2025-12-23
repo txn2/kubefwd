@@ -53,6 +53,7 @@ type DetailModel struct {
 	logsScrollOffset int
 	logsLoading      bool
 	logsStreaming    bool
+	logsAutoFollow   bool // auto-scroll to bottom on new logs
 	logsError        string
 	maxPodLogs       int
 
@@ -86,6 +87,7 @@ func (m *DetailModel) Show(forwardKey string) {
 	m.podLogs = nil
 	m.logsLoading = false
 	m.logsStreaming = false
+	m.logsAutoFollow = true // auto-follow by default
 	m.logsError = ""
 	m.copiedIndex = -1
 	m.copiedVisible = false
@@ -174,13 +176,18 @@ func (m *DetailModel) AppendLogLine(line string) {
 	// Trim if exceeding max
 	if len(m.podLogs) > m.maxPodLogs {
 		m.podLogs = m.podLogs[len(m.podLogs)-m.maxPodLogs:]
-		// Adjust scroll offset if we trimmed lines
-		if m.logsScrollOffset > 0 {
+		// Adjust scroll offset if we trimmed lines and not auto-following
+		if m.logsScrollOffset > 0 && !m.logsAutoFollow {
 			m.logsScrollOffset--
 			if m.logsScrollOffset < 0 {
 				m.logsScrollOffset = 0
 			}
 		}
+	}
+	// Auto-scroll to bottom if following
+	if m.logsAutoFollow {
+		maxScroll := m.getLogsMaxScroll()
+		m.logsScrollOffset = maxScroll
 	}
 }
 
@@ -342,27 +349,6 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			}
 			return m, nil
 
-		case "r":
-			// Refresh/restart logs (only on Logs tab)
-			if m.currentTab == TabLogs {
-				var cmds []tea.Cmd
-
-				// Stop current stream if active
-				if m.logsStreaming {
-					m.logsStreaming = false
-					cmds = append(cmds, func() tea.Msg { return PodLogsStopMsg{} })
-				}
-
-				// Clear and restart
-				m.logsError = ""
-				m.podLogs = nil
-				m.logsScrollOffset = 0
-				m.logsLoading = true
-				cmds = append(cmds, m.requestPodLogs())
-				return m, tea.Batch(cmds...)
-			}
-			return m, nil
-
 		case "j", "down":
 			// Scroll down (only on HTTP and Logs tabs)
 			if m.currentTab == TabHTTP {
@@ -375,6 +361,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.logsScrollOffset < maxScroll {
 					m.logsScrollOffset++
 				}
+				// Re-enable auto-follow if at bottom
+				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
 			}
 			return m, nil
 
@@ -387,6 +375,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			} else if m.currentTab == TabLogs {
 				if m.logsScrollOffset > 0 {
 					m.logsScrollOffset--
+					m.logsAutoFollow = false // Stop auto-follow when scrolling up
 				}
 			}
 			return m, nil
@@ -397,6 +386,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				m.httpScrollOffset = 0
 			} else if m.currentTab == TabLogs {
 				m.logsScrollOffset = 0
+				m.logsAutoFollow = false
 			}
 			return m, nil
 
@@ -406,6 +396,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				m.httpScrollOffset = m.getHTTPMaxScroll()
 			} else if m.currentTab == TabLogs {
 				m.logsScrollOffset = m.getLogsMaxScroll()
+				m.logsAutoFollow = true // Re-enable at bottom
 			}
 			return m, nil
 
@@ -427,6 +418,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.logsScrollOffset > maxScroll {
 					m.logsScrollOffset = maxScroll
 				}
+				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
 			}
 			return m, nil
 
@@ -446,6 +438,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.logsScrollOffset < 0 {
 					m.logsScrollOffset = 0
 				}
+				m.logsAutoFollow = false
 			}
 			return m, nil
 		}
@@ -466,6 +459,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.logsScrollOffset < 0 {
 					m.logsScrollOffset = 0
 				}
+				m.logsAutoFollow = false
 			}
 			return m, nil
 		} else if msg.Button == tea.MouseButtonWheelDown {
@@ -481,6 +475,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.logsScrollOffset > maxScroll {
 					m.logsScrollOffset = maxScroll
 				}
+				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
 			}
 			return m, nil
 		}
@@ -533,6 +528,13 @@ func (m *DetailModel) getHTTPMaxScroll() int {
 func (m *DetailModel) getLogsMaxScroll() int {
 	contentLines := len(m.podLogs)
 	viewportHeight := m.getViewportHeight()
+	// Account for streaming status line
+	if m.logsStreaming {
+		viewportHeight -= 2
+	}
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
 	maxScroll := contentLines - viewportHeight
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -873,8 +875,6 @@ func (m *DetailModel) renderLogsTab() string {
 	// Show error if present
 	if m.logsError != "" {
 		b.WriteString(styles.StatusErrorStyle.Render("Error: " + m.logsError))
-		b.WriteString("\n\n")
-		b.WriteString(styles.DetailLabelStyle.Render("Press 'r' to retry"))
 		return b.String()
 	}
 
@@ -885,21 +885,27 @@ func (m *DetailModel) renderLogsTab() string {
 
 	if len(m.podLogs) == 0 {
 		b.WriteString(styles.DetailLabelStyle.Render("No pod logs available"))
-		b.WriteString("\n\n")
-		b.WriteString(styles.DetailLabelStyle.Render("Press 'r' to refresh"))
 		return b.String()
 	}
 
-	// Streaming indicator
+	// Status line: streaming state and follow indicator
 	if m.logsStreaming {
-		b.WriteString(styles.StatusActiveStyle.Render("● Streaming"))
-		b.WriteString(styles.DetailLabelStyle.Render(fmt.Sprintf(" (%d lines)", len(m.podLogs))))
+		if m.logsAutoFollow {
+			b.WriteString(styles.StatusActiveStyle.Render("● Following"))
+		} else {
+			b.WriteString(styles.StatusConnectingStyle.Render("● Paused"))
+			b.WriteString(styles.DetailLabelStyle.Render(" (scroll to bottom to resume)"))
+		}
+		b.WriteString(styles.DetailLabelStyle.Render(fmt.Sprintf(" - %d lines", len(m.podLogs))))
 		b.WriteString("\n\n")
 	}
 
 	viewportHeight := m.getViewportHeight()
 	if m.logsStreaming {
-		viewportHeight -= 2 // Account for streaming indicator
+		viewportHeight -= 2 // Account for status line
+	}
+	if viewportHeight < 1 {
+		viewportHeight = 1
 	}
 
 	// Apply scrolling
@@ -907,6 +913,9 @@ func (m *DetailModel) renderLogsTab() string {
 	end := start + viewportHeight
 	if end > len(m.podLogs) {
 		end = len(m.podLogs)
+	}
+	if start > len(m.podLogs) {
+		start = len(m.podLogs)
 	}
 
 	for i := start; i < end; i++ {
@@ -923,10 +932,9 @@ func (m *DetailModel) renderLogsTab() string {
 		b.WriteString("\n")
 	}
 
-	// Scroll indicator
+	// Scroll indicator (only when not following or there's scrollable content)
 	maxScroll := m.getLogsMaxScroll()
-	if maxScroll > 0 {
-		b.WriteString("\n")
+	if maxScroll > 0 && !m.logsAutoFollow {
 		scrollInfo := fmt.Sprintf("[%d/%d]", m.logsScrollOffset+1, maxScroll+1)
 		if m.logsScrollOffset > 0 {
 			scrollInfo = "↑ " + scrollInfo
@@ -1001,11 +1009,8 @@ func (m DetailModel) renderFooter() string {
 	switch m.currentTab {
 	case TabInfo:
 		parts = append(parts, styles.DetailFooterKeyStyle.Render("[1-9]")+" Copy")
-	case TabHTTP:
+	case TabHTTP, TabLogs:
 		parts = append(parts, styles.DetailFooterKeyStyle.Render("[j/k]")+" Scroll")
-	case TabLogs:
-		parts = append(parts, styles.DetailFooterKeyStyle.Render("[j/k]")+" Scroll")
-		parts = append(parts, styles.DetailFooterKeyStyle.Render("[r]")+" Refresh")
 	}
 
 	return styles.DetailFooterStyle.Render(strings.Join(parts, "  "))
