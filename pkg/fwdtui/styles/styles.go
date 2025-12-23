@@ -139,3 +139,87 @@ var (
 	FocusAccentStyle = lipgloss.NewStyle().
 				Foreground(ColorCyan)
 )
+
+// Detail view styles
+var (
+	DetailBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorFocused).
+				Padding(1, 2)
+
+	DetailTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorYellow)
+
+	DetailLabelStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+
+	DetailValueStyle = lipgloss.NewStyle().
+				Foreground(ColorWhite)
+
+	DetailHostnameStyle = lipgloss.NewStyle().
+				Foreground(ColorCyan)
+
+	DetailSectionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorBlue).
+				MarginTop(1)
+)
+
+// Sparkline styles
+var (
+	SparklineInStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen)
+
+	SparklineOutStyle = lipgloss.NewStyle().
+				Foreground(ColorBlue)
+)
+
+// HTTP log styles
+var (
+	HTTPMethodGetStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen)
+
+	HTTPMethodPostStyle = lipgloss.NewStyle().
+				Foreground(ColorBlue)
+
+	HTTPMethodPutStyle = lipgloss.NewStyle().
+				Foreground(ColorOrange)
+
+	HTTPMethodDeleteStyle = lipgloss.NewStyle().
+				Foreground(ColorRed)
+
+	HTTPMethodOtherStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+
+	HTTPStatus2xxStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen)
+
+	HTTPStatus3xxStyle = lipgloss.NewStyle().
+				Foreground(ColorYellow)
+
+	HTTPStatus4xxStyle = lipgloss.NewStyle().
+				Foreground(ColorOrange)
+
+	HTTPStatus5xxStyle = lipgloss.NewStyle().
+				Foreground(ColorRed)
+
+	HTTPPathStyle = lipgloss.NewStyle().
+			Foreground(ColorWhite)
+
+	HTTPTimestampStyle = lipgloss.NewStyle().
+				Foreground(ColorGray)
+
+	HTTPDurationStyle = lipgloss.NewStyle().
+				Foreground(ColorCyan)
+)
+
+// Detail view footer/help styles
+var (
+	DetailFooterStyle = lipgloss.NewStyle().
+				Foreground(ColorGray).
+				MarginTop(1)
+
+	DetailFooterKeyStyle = lipgloss.NewStyle().
+				Foreground(ColorBlue)
+)

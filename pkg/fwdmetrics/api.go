@@ -21,7 +21,8 @@ type PortForwardSnapshot struct {
 	AvgRateOut     float64 // bytes/sec 10-second average
 	ConnectedAt    time.Time
 	LastActivityAt time.Time
-	History        []RateSample // for graphing
+	History        []RateSample   // for graphing
+	HTTPLogs       []HTTPLogEntry // recent HTTP request/response logs
 }
 
 // ServiceSnapshot aggregates all port forwards for a service
@@ -41,7 +42,7 @@ func (pf *PortForwardMetrics) GetSnapshot() PortForwardSnapshot {
 	rateIn, rateOut := pf.GetInstantRate()
 	avgRateIn, avgRateOut := pf.GetAverageRate(10)
 
-	return PortForwardSnapshot{
+	snapshot := PortForwardSnapshot{
 		ServiceName:    pf.ServiceName,
 		Namespace:      pf.Namespace,
 		Context:        pf.Context,
@@ -59,6 +60,13 @@ func (pf *PortForwardMetrics) GetSnapshot() PortForwardSnapshot {
 		LastActivityAt: pf.GetLastActivity(),
 		History:        pf.GetHistory(30),
 	}
+
+	// Include HTTP logs if sniffing is enabled
+	if pf.httpSniffer != nil {
+		snapshot.HTTPLogs = pf.httpSniffer.GetAllLogs()
+	}
+
+	return snapshot
 }
 
 // GetSnapshot creates an immutable snapshot of service metrics

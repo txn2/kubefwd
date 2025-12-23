@@ -25,6 +25,9 @@ type PortForwardMetrics struct {
 
 	// Rate calculation (protected by RateCalculator's mutex)
 	rateCalc *RateCalculator
+
+	// HTTP sniffing (optional)
+	httpSniffer *HTTPSniffer
 }
 
 // NewPortForwardMetrics creates a new metrics tracker for a port forward
@@ -97,6 +100,24 @@ func (m *PortForwardMetrics) GetAverageRate(windowSeconds int) (rateIn, rateOut 
 // GetHistory returns recent samples for graphing
 func (m *PortForwardMetrics) GetHistory(count int) []RateSample {
 	return m.rateCalc.GetHistory(count)
+}
+
+// EnableHTTPSniffing enables HTTP request/response logging
+func (m *PortForwardMetrics) EnableHTTPSniffing(maxLogs int) {
+	m.httpSniffer = NewHTTPSniffer(maxLogs)
+}
+
+// GetHTTPSniffer returns the HTTP sniffer (may be nil)
+func (m *PortForwardMetrics) GetHTTPSniffer() *HTTPSniffer {
+	return m.httpSniffer
+}
+
+// GetHTTPLogs returns HTTP log entries (or nil if sniffing not enabled)
+func (m *PortForwardMetrics) GetHTTPLogs(count int) []HTTPLogEntry {
+	if m.httpSniffer == nil {
+		return nil
+	}
+	return m.httpSniffer.GetLogs(count)
 }
 
 // RateSample represents a point-in-time measurement

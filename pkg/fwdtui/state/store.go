@@ -341,3 +341,37 @@ func (s *Store) ServiceCount() int {
 	defer s.mu.RUnlock()
 	return len(s.services)
 }
+
+// GetForward returns a forward by key, or nil if not found
+func (s *Store) GetForward(key string) *ForwardSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if fwd, ok := s.forwards[key]; ok {
+		// Return a copy to prevent concurrent modification
+		snapshot := *fwd
+		return &snapshot
+	}
+	return nil
+}
+
+// GetService returns a service by key, or nil if not found
+func (s *Store) GetService(key string) *ServiceSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if svc, ok := s.services[key]; ok {
+		// Return a copy to prevent concurrent modification
+		snapshot := *svc
+		return &snapshot
+	}
+	return nil
+}
+
+// UpdateHostnames updates the hostnames for a forward
+// Called when PodStatusChanged "active" event arrives with populated hostnames
+func (s *Store) UpdateHostnames(key string, hostnames []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if fwd, ok := s.forwards[key]; ok {
+		fwd.Hostnames = hostnames
+	}
+}

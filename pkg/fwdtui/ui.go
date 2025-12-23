@@ -30,6 +30,7 @@ type Focus int
 const (
 	FocusServices Focus = iota
 	FocusLogs
+	FocusDetail
 )
 
 // Manager manages the TUI lifecycle
@@ -55,19 +56,20 @@ type RootModel struct {
 	logs      components.LogsModel
 	statusBar components.StatusBarModel
 	help      components.HelpModel
+	detail    components.DetailModel
 
 	// State
-	store    *state.Store
-	eventBus *events.Bus
-	focus    Focus
-	quitting bool
+	store       *state.Store
+	eventBus    *events.Bus
+	rateHistory *state.RateHistory
+	focus       Focus
+	quitting    bool
 
 	// Dimensions
 	width          int
 	height         int
 	servicesHeight int
 	logsHeight     int
-	logsStartY     int // Y position where logs section starts (for mouse click detection)
 
 	// Channels for async updates
 	eventCh   <-chan events.Event
@@ -140,6 +142,9 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 		metricsCh, cancel := fwdmetrics.GetRegistry().Subscribe(500 * time.Millisecond)
 		tuiManager.metricsCancel = cancel
 
+		// Create rate history for sparklines
+		rateHistory := state.NewRateHistory(60)
+
 		// Create the model
 		tuiManager.model = &RootModel{
 			header:          components.NewHeaderModel(Version),
@@ -147,8 +152,10 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			logs:            components.NewLogsModel(),
 			statusBar:       components.NewStatusBarModel(),
 			help:            components.NewHelpModel(),
+			detail:          components.NewDetailModel(store, rateHistory),
 			store:           store,
 			eventBus:        eventBus,
+			rateHistory:     rateHistory,
 			focus:           FocusServices,
 			eventCh:         eventCh,
 			metricsCh:       metricsCh,
@@ -175,7 +182,8 @@ func (m *Manager) Run() error {
 		os.Setenv("TERM", "xterm-256color")
 	}
 
-	// Create the program
+	// Create the program with mouse support for scrolling
+	// Hold Shift to select text (standard terminal behavior with mouse capture)
 	m.program = tea.NewProgram(
 		m.model,
 		tea.WithAltScreen(),
@@ -250,6 +258,8 @@ func (m RootModel) Init() tea.Cmd {
 		ListenShutdown(m.stopCh),
 		SendLog(log.InfoLevel, "kubefwd TUI started. Press ? for help, q to quit."),
 		SendLog(log.InfoLevel, "Waiting for services to be discovered..."),
+		// No mouse capture - allows text selection everywhere
+		// Use keyboard: j/k to navigate, Enter to open detail, Tab to switch focus
 	)
 }
 
@@ -275,6 +285,16 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Detail view captures all input when visible
+		if m.detail.IsVisible() {
+			m.detail, _ = m.detail.Update(msg)
+			// If detail closed, return focus to services
+			if !m.detail.IsVisible() {
+				m.focus = FocusServices
+			}
+			return m, nil
+		}
+
 		// Global keys
 		switch msg.String() {
 		case "ctrl+c":
@@ -297,6 +317,16 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		switch m.focus {
 		case FocusServices:
+			// Handle Enter to open detail view (but not when filtering)
+			if msg.String() == "enter" && m.services.HasSelection() && !m.services.IsFiltering() {
+				key := m.services.GetSelectedKey()
+				if key != "" {
+					m.detail.Show(key)
+					m.detail.SetSize(m.width, m.height)
+					m.focus = FocusDetail
+					return m, nil
+				}
+			}
 			m.services, cmd = m.services.Update(msg)
 			cmds = append(cmds, cmd)
 		case FocusLogs:
@@ -305,35 +335,26 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		// Handle click to change focus
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			if msg.Y >= m.logsStartY {
-				// Clicked in logs section
-				if m.focus != FocusLogs {
-					m.focus = FocusLogs
-					m.services.SetFocus(false)
-					m.logs.SetFocus(true)
-				}
+		// Handle mouse wheel scrolling only - clicks are ignored for text selection
+		// Hold Shift to select text (standard terminal behavior)
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			var cmd tea.Cmd
+			// Detail view gets priority if visible
+			if m.detail.IsVisible() {
+				m.detail, cmd = m.detail.Update(msg)
+				cmds = append(cmds, cmd)
 			} else {
-				// Clicked in services section (or header area)
-				if m.focus != FocusServices {
-					m.focus = FocusServices
-					m.services.SetFocus(true)
-					m.logs.SetFocus(false)
+				switch m.focus {
+				case FocusServices:
+					m.services, cmd = m.services.Update(msg)
+					cmds = append(cmds, cmd)
+				case FocusLogs:
+					m.logs, cmd = m.logs.Update(msg)
+					cmds = append(cmds, cmd)
 				}
 			}
 		}
-
-		// Route mouse events to focused component for scrolling
-		var cmd tea.Cmd
-		switch m.focus {
-		case FocusServices:
-			m.services, cmd = m.services.Update(msg)
-			cmds = append(cmds, cmd)
-		case FocusLogs:
-			m.logs, cmd = m.logs.Update(msg)
-			cmds = append(cmds, cmd)
-		}
+		// Click events are intentionally not handled to minimize interference
 
 	case MetricsUpdateMsg:
 		m.handleMetricsUpdate(msg)
@@ -358,6 +379,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
+	case components.OpenDetailMsg:
+		// Open detail view (from double-click when mouse is enabled)
+		if msg.Key != "" {
+			m.detail.Show(msg.Key)
+			m.detail.SetSize(m.width, m.height)
+			m.focus = FocusDetail
+		}
+
 	case RefreshMsg:
 		m.services.Refresh()
 		m.statusBar.UpdateStats(m.store.GetSummary())
@@ -375,6 +404,11 @@ func (m RootModel) View() string {
 	// Overlay help if visible
 	if m.help.IsVisible() {
 		return m.help.View()
+	}
+
+	// Overlay detail view if visible
+	if m.detail.IsVisible() {
+		return m.detail.View()
 	}
 
 	// Render header
@@ -461,14 +495,11 @@ func (m *RootModel) updateSizes() {
 	m.servicesHeight = servicesHeight
 	m.logsHeight = logsHeight
 
-	// Calculate Y position where logs section starts (for mouse click detection)
-	// Layout: header + blank + "Services" title + servicesContent + blank + "Logs" title
-	m.logsStartY = headerHeight + 1 + 1 + servicesHeight + 1
-
 	// Set component sizes - they handle their own rendering
 	m.services.SetSize(contentWidth, servicesHeight)
 	m.logs.SetSize(contentWidth, logsHeight)
 	m.statusBar.SetWidth(m.width)
+	m.detail.SetSize(m.width, m.height)
 }
 
 // cycleFocus switches focus between components
@@ -516,11 +547,45 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 					avgRateOut: pf.AvgRateOut,
 				}
 			}
+
+			// Store rate history for sparklines
+			if m.rateHistory != nil {
+				m.rateHistory.AddSample(key, pf.RateIn, pf.RateOut)
+			}
 		}
 	}
 
 	for key, pm := range podTotals {
 		m.store.UpdateMetrics(key, pm.bytesIn, pm.bytesOut, pm.rateIn, pm.rateOut, pm.avgRateIn, pm.avgRateOut)
+	}
+
+	// Update detail view if visible
+	if m.detail.IsVisible() {
+		m.detail.UpdateSnapshot()
+
+		// Find matching port forward and update HTTP logs
+		detailKey := m.detail.GetForwardKey()
+		for _, svc := range msg.Snapshots {
+			for _, pf := range svc.PortForwards {
+				key := svc.ServiceName + "." + svc.Namespace + "." + svc.Context + "." + pf.PodName
+				if key == detailKey && len(pf.HTTPLogs) > 0 {
+					// Convert metrics HTTP logs to detail HTTP logs
+					logs := make([]components.HTTPLogEntry, len(pf.HTTPLogs))
+					for i, log := range pf.HTTPLogs {
+						logs[i] = components.HTTPLogEntry{
+							Timestamp:  log.Timestamp,
+							Method:     log.Method,
+							Path:       log.Path,
+							StatusCode: log.StatusCode,
+							Duration:   log.Duration,
+							Size:       log.Size,
+						}
+					}
+					m.detail.SetHTTPLogs(logs)
+					break
+				}
+			}
+		}
 	}
 }
 
@@ -568,6 +633,12 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 			errorMsg = e.Error.Error()
 		}
 		m.store.UpdateStatus(key, status, errorMsg)
+
+		// Update hostnames when "active" status arrives with populated hostnames
+		// (hostnames are only available after AddHosts() runs in PortForward)
+		if e.Status == "active" && len(e.Hostnames) > 0 {
+			m.store.UpdateHostnames(key, e.Hostnames)
+		}
 
 	case events.ServiceRemoved:
 		forwards := m.store.GetFiltered()

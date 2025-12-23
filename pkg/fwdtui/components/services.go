@@ -10,8 +10,14 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
 
+// OpenDetailMsg is sent when detail view should open (kept for compatibility)
+type OpenDetailMsg struct {
+	Key string
+}
+
 // Column keys
 const (
+	colKeyKey       = "_key" // Hidden key column for row identification
 	colKeyHostname  = "hostname"
 	colKeyLocalAddr = "localaddr"
 	colKeyPod       = "pod"
@@ -115,7 +121,7 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 		m.table = m.table.WithTargetWidth(m.width - 2) // Account for borders
 
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling (3 rows at a time)
+		// Handle mouse wheel scrolling
 		if msg.Button == tea.MouseButtonWheelUp {
 			for i := 0; i < 3; i++ {
 				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() - 1)
@@ -125,6 +131,7 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
 			}
 		}
+		// Click events are not handled - use keyboard for selection
 
 	case tea.KeyMsg:
 		if m.filtering {
@@ -220,6 +227,7 @@ func (m *ServicesModel) Refresh() {
 	rows := make([]table.Row, 0, len(forwards))
 	for _, fwd := range forwards {
 		rowData := table.RowData{
+			colKeyKey:       fwd.Key, // Store the forward key for detail view
 			colKeyHostname:  fwd.PrimaryHostname(),
 			colKeyLocalAddr: fwd.LocalAddress(),
 			colKeyPod:       fwd.PodName,
@@ -342,4 +350,23 @@ func formatPort(localPort, podPort string) string {
 		return localPort
 	}
 	return fmt.Sprintf("%s→%s", localPort, podPort)
+}
+
+// GetSelectedKey returns the key of the currently highlighted row, or empty string if none
+func (m ServicesModel) GetSelectedKey() string {
+	row := m.table.HighlightedRow()
+	if row.Data == nil {
+		return ""
+	}
+	if key, ok := row.Data[colKeyKey]; ok {
+		if keyStr, ok := key.(string); ok {
+			return keyStr
+		}
+	}
+	return ""
+}
+
+// HasSelection returns true if a row is selected
+func (m ServicesModel) HasSelection() bool {
+	return m.GetSelectedKey() != ""
 }

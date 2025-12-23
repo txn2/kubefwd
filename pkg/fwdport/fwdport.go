@@ -397,6 +397,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 			pfo.LocalPort,
 			pfo.PodPort,
 		)
+		// Enable HTTP sniffing for request/response logging
+		pfMetrics.EnableHTTPSniffing(50)
+
 		finalDialer = fwdmetrics.NewMetricsDialer(dialerWithPing, pfMetrics)
 
 		// Register with metrics registry
@@ -442,6 +445,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 			pfo.PodName,
 		)
 		event.Status = "active"
+		event.Hostnames = pfo.Hosts // Include hostnames now that AddHosts() has run
 		fwdtui.Emit(event)
 	}
 

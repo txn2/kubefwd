@@ -33,6 +33,10 @@ func (ms *MetricsStream) Read(p []byte) (n int, err error) {
 	n, err = ms.stream.Read(p)
 	if n > 0 && ms.metrics != nil {
 		ms.metrics.AddBytesIn(uint64(n))
+		// Sniff for HTTP responses (data from pod)
+		if sniffer := ms.metrics.GetHTTPSniffer(); sniffer != nil {
+			sniffer.SniffResponse(p[:n])
+		}
 	}
 	return n, err
 }
@@ -42,6 +46,10 @@ func (ms *MetricsStream) Write(p []byte) (n int, err error) {
 	n, err = ms.stream.Write(p)
 	if n > 0 && ms.metrics != nil {
 		ms.metrics.AddBytesOut(uint64(n))
+		// Sniff for HTTP requests (data to pod)
+		if sniffer := ms.metrics.GetHTTPSniffer(); sniffer != nil {
+			sniffer.SniffRequest(p[:n])
+		}
 	}
 	return n, err
 }
