@@ -99,10 +99,10 @@ func TestGetPodsForService_FiltersByPhase(t *testing.T) {
 	succeededPod := createTestPod("succeeded-pod", namespace, v1.PodSucceeded, labels)
 	failedPod := createTestPod("failed-pod", namespace, v1.PodFailed, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod, pendingPod, succeededPod, failedPod)
+	clientset := fake.NewClientset(runningPod, pendingPod, succeededPod, failedPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -145,10 +145,10 @@ func TestGetPodsForService_FiltersByPhase(t *testing.T) {
 // TestGetPodsForService_NoPodsFound tests handling when no pods match the selector
 func TestGetPodsForService_NoPodsFound(t *testing.T) {
 	namespace := "default"
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -176,10 +176,10 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -205,10 +205,10 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	// Create hosts file mock
@@ -274,10 +274,10 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, true) // Headless service
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -326,10 +326,10 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -378,10 +378,10 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -426,10 +426,10 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -474,10 +474,10 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 
 	// Start with one running pod
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
