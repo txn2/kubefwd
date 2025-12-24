@@ -60,17 +60,6 @@ func init() {
 	}
 }
 
-func GetAllocatedIPs() []string {
-	ipRegistry.mutex.Lock()
-	defer ipRegistry.mutex.Unlock()
-
-	ips := make([]string, 0, len(ipRegistry.allocated))
-	for ip := range ipRegistry.allocated {
-		ips = append(ips, ip)
-	}
-	return ips
-}
-
 func RegisterHostname(hostname string) {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()

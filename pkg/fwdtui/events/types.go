@@ -122,28 +122,3 @@ func NewPodEvent(eventType EventType, service, namespace, context, podName strin
 		PodName:    podName,
 	}
 }
-
-// NewLogEvent creates a new log message event
-func NewLogEvent(level logrus.Level, message string, fields map[string]interface{}) Event {
-	return Event{
-		Type:       LogMessage,
-		Timestamp:  time.Now(),
-		LogLevel:   level,
-		LogMessage: message,
-		LogFields:  fields,
-	}
-}
-
-// NewBandwidthEvent creates a new bandwidth update event
-func NewBandwidthEvent(serviceKey, podKey string, bytesIn, bytesOut uint64, rateIn, rateOut float64) Event {
-	return Event{
-		Type:       BandwidthUpdate,
-		Timestamp:  time.Now(),
-		ServiceKey: serviceKey,
-		PodKey:     podKey,
-		BytesIn:    bytesIn,
-		BytesOut:   bytesOut,
-		RateIn:     rateIn,
-		RateOut:    rateOut,
-	}
-}

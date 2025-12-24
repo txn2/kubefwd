@@ -76,17 +76,6 @@ var (
 				Foreground(ColorGray)
 )
 
-// Border styles for focused/unfocused components
-var (
-	FocusedBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorFocused)
-
-	UnfocusedBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorGray)
-)
-
 // Table styles
 var (
 	TableHeaderStyle = lipgloss.NewStyle().
@@ -146,10 +135,6 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(ColorFocused).
 				Padding(1, 2)
-
-	DetailTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(ColorYellow)
 
 	DetailLabelStyle = lipgloss.NewStyle().
 				Foreground(ColorGray)

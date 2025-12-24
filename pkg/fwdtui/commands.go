@@ -50,13 +50,6 @@ func ListenShutdown(stopCh <-chan struct{}) tea.Cmd {
 	}
 }
 
-// TickRefresh creates a command that triggers periodic UI refresh
-func TickRefresh(interval time.Duration) tea.Cmd {
-	return tea.Tick(interval, func(t time.Time) tea.Msg {
-		return RefreshMsg{}
-	})
-}
-
 // SendLog creates a log entry message
 func SendLog(level logrus.Level, message string) tea.Cmd {
 	return func() tea.Msg {
