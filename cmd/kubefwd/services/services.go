@@ -339,18 +339,28 @@ Try:
 
 			forwards := store.GetFiltered()
 
-			// Collect unique service keys with errors
+			// Collect unique registry keys with errors
+			// Use RegistryKey (not ServiceKey) for proper registry lookup
+			// ServiceKey may include pod name for headless services, but registry uses service.namespace.context
 			erroredServices := make(map[string]bool)
 			for _, fwd := range forwards {
 				if fwd.Status == state.StatusError {
-					erroredServices[fwd.ServiceKey] = true
+					// Prefer RegistryKey if available, fall back to ServiceKey for backwards compatibility
+					key := fwd.RegistryKey
+					if key == "" {
+						key = fwd.ServiceKey
+					}
+					erroredServices[key] = true
 				}
 			}
 
 			// Trigger reconnection for each errored service
 			count := 0
-			for serviceKey := range erroredServices {
-				if svcfwd := fwdsvcregistry.Get(serviceKey); svcfwd != nil {
+			for registryKey := range erroredServices {
+				if svcfwd := fwdsvcregistry.Get(registryKey); svcfwd != nil {
+					// Close idle HTTP connections to force fresh TCP connections
+					// This helps when previous connections timed out or are stale
+					svcfwd.CloseIdleHTTPConnections()
 					go svcfwd.SyncPodForwards(true) // force=true bypasses debouncing
 					count++
 				}

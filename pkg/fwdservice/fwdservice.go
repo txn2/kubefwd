@@ -184,6 +184,24 @@ func (svcFwd *ServiceFWD) resetReconnectBackoff() {
 	}
 }
 
+// CloseIdleHTTPConnections attempts to close idle HTTP connections in the k8s client transport.
+// This helps when reconnecting after connection errors by forcing fresh TCP connections.
+// It's a best-effort operation - if the transport doesn't support CloseIdleConnections, it's a no-op.
+func (svcFwd *ServiceFWD) CloseIdleHTTPConnections() {
+	// Try to get the HTTP transport from the ClientConfig
+	// The WrapTransport field contains the transport wrapper if set
+	if svcFwd.ClientConfig.Transport != nil {
+		// If the transport implements CloseIdleConnections, call it
+		type idleCloser interface {
+			CloseIdleConnections()
+		}
+		if closer, ok := svcFwd.ClientConfig.Transport.(idleCloser); ok {
+			closer.CloseIdleConnections()
+			log.Debugf("Closed idle HTTP connections for service %s", svcFwd)
+		}
+	}
+}
+
 // GetPodsForService queries k8s and returns all pods backing this service
 // which are eligible for port-forwarding; exclude some pods which are in final/failure state.
 func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
@@ -217,7 +235,9 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	doSync := func() {
+		log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
 		k8sPods := svcFwd.GetPodsForService()
+		log.Infof("SyncPodForwards: Found %d eligible pods for service %s", len(k8sPods), svcFwd)
 
 		// If no pods are found currently, schedule a retry if configured.
 		if len(k8sPods) == 0 {
@@ -333,19 +353,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 	defer svcFwd.NamespaceServiceLock.Unlock()
 
 	for _, pod := range pods {
-		// If pod is already configured to be forwarded, skip it
-		// Note: PortForwards map uses key format "service.podname.port", so we check by PodName
-		hasForward := false
-		for _, pfo := range svcFwd.PortForwards {
-			if pfo.PodName == pod.Name {
-				hasForward = true
-				break
-			}
-		}
-		if hasForward {
-			continue
-		}
-
 		podPort := ""
 
 		serviceHostName := svcFwd.Svc.Name
@@ -404,6 +411,14 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				log.Fatal(err)
 			}
 			port.Port = int32(p)
+
+			// Check if this specific pod+port combination is already being forwarded
+			// Key format: "service.podname.localport"
+			forwardKey := svcName + "." + pod.Name + "." + localPort
+			if _, exists := svcFwd.PortForwards[forwardKey]; exists {
+				log.Debugf("LoopPodsToForward: Forward already exists for %s, skipping", forwardKey)
+				continue
+			}
 
 			// Determine which container owns this port (for log streaming)
 			var containerName string
@@ -511,6 +526,7 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 
 	// Emit event for TUI if this is a new pod
 	// Use pfo values to match metrics key construction exactly
+	// Pass svcFwd.String() as registryKey for proper registry lookup
 	if isNew && fwdtui.IsEnabled() {
 		event := events.NewPodEvent(
 			events.PodAdded,
@@ -518,6 +534,7 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 			pfo.Namespace,
 			pfo.Context,
 			pfo.PodName,
+			svcFwd.String(), // registryKey for reconnection lookup
 		)
 		event.LocalIP = pfo.LocalIp.String()
 		event.LocalPort = pfo.LocalPort
@@ -557,6 +574,7 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 
 		// Emit event for TUI
 		// Use pod (PortForwardOpts) values to match metrics key construction exactly
+		// Pass svcFwd.String() as registryKey for proper registry lookup
 		if fwdtui.IsEnabled() {
 			fwdtui.Emit(events.NewPodEvent(
 				events.PodRemoved,
@@ -564,6 +582,7 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 				pod.Namespace,
 				pod.Context,
 				pod.PodName,
+				svcFwd.String(), // registryKey for reconnection lookup
 			))
 		}
 	}

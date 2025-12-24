@@ -788,6 +788,7 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 		snapshot := state.ForwardSnapshot{
 			Key:           e.ServiceKey + "." + e.PodName + "." + e.LocalPort,
 			ServiceKey:    e.ServiceKey,
+			RegistryKey:   e.RegistryKey, // for reconnection lookup
 			ServiceName:   e.Service,
 			Namespace:     e.Namespace,
 			Context:       e.Context,

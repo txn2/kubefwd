@@ -60,10 +60,11 @@ type Event struct {
 	Timestamp time.Time
 
 	// Service identification
-	ServiceKey string // "service.namespace.context"
-	Service    string
-	Namespace  string
-	Context    string
+	ServiceKey  string // "service.namespace.context" (display name for TUI)
+	RegistryKey string // "realservice.namespace.context" (for registry lookup)
+	Service     string
+	Namespace   string
+	Context     string
 
 	// Pod identification
 	PodKey        string // "podname"
@@ -105,15 +106,18 @@ func NewServiceEvent(eventType EventType, service, namespace, context string) Ev
 }
 
 // NewPodEvent creates a new pod-related event
-func NewPodEvent(eventType EventType, service, namespace, context, podName string) Event {
+// registryKey is the actual service key used in the registry (service.namespace.context)
+// which may differ from the ServiceKey for headless services where service includes pod name
+func NewPodEvent(eventType EventType, service, namespace, context, podName, registryKey string) Event {
 	return Event{
-		Type:       eventType,
-		Timestamp:  time.Now(),
-		ServiceKey: service + "." + namespace + "." + context,
-		Service:    service,
-		Namespace:  namespace,
-		Context:    context,
-		PodKey:     podName,
-		PodName:    podName,
+		Type:        eventType,
+		Timestamp:   time.Now(),
+		ServiceKey:  service + "." + namespace + "." + context,
+		RegistryKey: registryKey,
+		Service:     service,
+		Namespace:   namespace,
+		Context:     context,
+		PodKey:      podName,
+		PodName:     podName,
 	}
 }

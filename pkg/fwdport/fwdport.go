@@ -82,7 +82,7 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 
 	podInformer := gpi.informers[namespace].Core().V1().Pods()
 
-	podInformer.Informer().AddEventHandler(
+	_, err := podInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				oldPod, oldPodOk := oldObj.(*v1.Pod)
@@ -126,6 +126,9 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 			},
 		},
 	)
+	if err != nil {
+		log.Warnf("Failed to add event handler for namespace %s: %v", namespace, err)
+	}
 
 	go gpi.informers[namespace].Start(gpi.stopChannel)
 
@@ -425,6 +428,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 				pfo.Namespace,
 				pfo.Context,
 				pfo.PodName,
+				pfo.ServiceFwd.String(), // registryKey for reconnection lookup
 			)
 			event.LocalPort = pfo.LocalPort
 			event.Status = "error"
@@ -445,6 +449,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 			pfo.Namespace,
 			pfo.Context,
 			pfo.PodName,
+			pfo.ServiceFwd.String(), // registryKey for reconnection lookup
 		)
 		event.LocalPort = pfo.LocalPort
 		event.Status = "active"
@@ -464,6 +469,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 				pfo.Namespace,
 				pfo.Context,
 				pfo.PodName,
+				pfo.ServiceFwd.String(), // registryKey for reconnection lookup
 			)
 			event.LocalPort = pfo.LocalPort
 			event.Status = "error"
