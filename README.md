@@ -25,7 +25,7 @@ When working on our local workstation, my team and I often build applications th
 
 <div align="center">
   <img width="654" height="684" src="https://mk.imti.co/images/content/kubefwd-net.png" alt="kubefwd - Kubernetes Port Forward Diagram">
-</div>no
+</div>
 
 ## Quick Start
 
