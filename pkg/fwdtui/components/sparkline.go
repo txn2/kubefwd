@@ -22,8 +22,8 @@ func RenderSparkline(values []float64, width int) string {
 	}
 
 	// Find max for normalization
-	max := findMax(values)
-	if max == 0 {
+	maxVal := findMax(values)
+	if maxVal == 0 {
 		return strings.Repeat(string(SparklineChars[0]), width)
 	}
 
@@ -37,7 +37,7 @@ func RenderSparkline(values []float64, width int) string {
 		}
 
 		// Normalize value to 0-7 range
-		level := int(math.Round((values[idx] / max) * 7))
+		level := int(math.Round((values[idx] / maxVal) * 7))
 		if level < 0 {
 			level = 0
 		}
@@ -55,11 +55,11 @@ func findMax(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
 	}
-	max := values[0]
+	maxVal := values[0]
 	for _, v := range values[1:] {
-		if v > max {
-			max = v
+		if v > maxVal {
+			maxVal = v
 		}
 	}
-	return max
+	return maxVal
 }

@@ -219,7 +219,7 @@ func (m *Manager) SetErroredServicesReconnector(reconnector func() int) {
 func (m *Manager) Run() error {
 	// Ensure TERM is set
 	if os.Getenv("TERM") == "" {
-		os.Setenv("TERM", "xterm-256color")
+		_ = os.Setenv("TERM", "xterm-256color")
 	}
 
 	// Create the program with mouse support for scrolling
@@ -378,6 +378,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case FocusLogs:
 			m.logs, cmd = m.logs.Update(msg)
 			cmds = append(cmds, cmd)
+		default:
+			// FocusDetail handled separately
 		}
 
 	case tea.MouseMsg:
@@ -397,6 +399,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case FocusLogs:
 					m.logs, cmd = m.logs.Update(msg)
 					cmds = append(cmds, cmd)
+				default:
+					// FocusDetail handled above
 				}
 			}
 		}
@@ -498,7 +502,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return
 					}
 				}
-				defer stream.Close()
+				defer func() { _ = stream.Close() }()
 
 				scanner := bufio.NewScanner(stream)
 				for scanner.Scan() {
@@ -699,6 +703,8 @@ func (m *RootModel) cycleFocus() {
 		m.focus = FocusServices
 		m.services.SetFocus(true)
 		m.logs.SetFocus(false)
+	default:
+		// FocusDetail doesn't cycle
 	}
 }
 
@@ -757,14 +763,14 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 				if key == detailKey && len(pf.HTTPLogs) > 0 {
 					// Convert metrics HTTP logs to detail HTTP logs
 					logs := make([]components.HTTPLogEntry, len(pf.HTTPLogs))
-					for i, log := range pf.HTTPLogs {
+					for i, httpLog := range pf.HTTPLogs {
 						logs[i] = components.HTTPLogEntry{
-							Timestamp:  log.Timestamp,
-							Method:     log.Method,
-							Path:       log.Path,
-							StatusCode: log.StatusCode,
-							Duration:   log.Duration,
-							Size:       log.Size,
+							Timestamp:  httpLog.Timestamp,
+							Method:     httpLog.Method,
+							Path:       httpLog.Path,
+							StatusCode: httpLog.StatusCode,
+							Duration:   httpLog.Duration,
+							Size:       httpLog.Size,
 						}
 					}
 					m.detail.SetHTTPLogs(logs)
@@ -834,6 +840,9 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 				m.store.RemoveForward(fwd.Key)
 			}
 		}
+	default:
+		// Other event types (ServiceAdded, ServiceUpdated, BandwidthUpdate, LogMessage, etc.)
+		// are handled elsewhere or not needed for TUI state
 	}
 }
 
