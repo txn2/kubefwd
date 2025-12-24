@@ -76,6 +76,8 @@ type RootModel struct {
 	height         int
 	servicesHeight int
 	logsHeight     int
+	servicesStartY int // Y where services content begins (for click detection)
+	logsStartY     int // Y where logs content begins (for click detection)
 
 	// Channels for async updates
 	eventCh   <-chan events.Event
@@ -354,7 +356,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling only - clicks are ignored for text selection
+		// Handle mouse wheel scrolling
 		// Hold Shift to select text (standard terminal behavior)
 		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
 			var cmd tea.Cmd
@@ -373,7 +375,31 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		// Click events are intentionally not handled to minimize interference
+
+		// Handle click for focus switching (and row selection in Services)
+		if msg.Button == tea.MouseButtonLeft {
+			y := msg.Y
+
+			// Check if click is in Services area
+			if y >= m.servicesStartY && y < m.servicesStartY+m.servicesHeight {
+				m.focus = FocusServices
+				m.services.SetFocus(true)
+				m.logs.SetFocus(false)
+
+				// Calculate relative Y within services panel and select row
+				relativeY := y - m.servicesStartY
+				m.services.SelectByY(relativeY)
+				return m, nil
+			}
+
+			// Check if click is in Logs area
+			if y >= m.logsStartY && y < m.logsStartY+m.logsHeight {
+				m.focus = FocusLogs
+				m.services.SetFocus(false)
+				m.logs.SetFocus(true)
+				return m, nil
+			}
+		}
 
 	case MetricsUpdateMsg:
 		m.handleMetricsUpdate(msg)
@@ -615,6 +641,11 @@ func (m *RootModel) updateSizes() {
 	// Store heights
 	m.servicesHeight = servicesHeight
 	m.logsHeight = logsHeight
+
+	// Calculate Y positions for click detection
+	// Layout: header, blank, "Services" title, services content, blank, "Logs" title, logs content, blank, status
+	m.servicesStartY = headerHeight + 2                    // after header + blank + title
+	m.logsStartY = m.servicesStartY + m.servicesHeight + 2 // after services + blank + title
 
 	// Set component sizes - they handle their own rendering
 	m.services.SetSize(contentWidth, servicesHeight)

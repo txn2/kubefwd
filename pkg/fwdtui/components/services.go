@@ -37,6 +37,7 @@ type ServicesModel struct {
 	store         *state.Store
 	width         int
 	height        int
+	pageSize      int // Current page size for click-to-row calculation
 	focused       bool
 	showNS        bool // Show namespace column
 	showCtx       bool // Show context column
@@ -289,6 +290,7 @@ func (m *ServicesModel) SetSize(width, height int) {
 	if pageSize < 1 {
 		pageSize = 1
 	}
+	m.pageSize = pageSize
 	m.table = m.table.WithPageSize(pageSize)
 }
 
@@ -369,4 +371,37 @@ func (m ServicesModel) GetSelectedKey() string {
 // HasSelection returns true if a row is selected
 func (m ServicesModel) HasSelection() bool {
 	return m.GetSelectedKey() != ""
+}
+
+// SelectByY selects a row based on the Y position within the services panel
+func (m *ServicesModel) SelectByY(y int) {
+	// Account for table chrome:
+	// - Filter line (if visible): 1 line
+	// - Top border: 1 line
+	// - Header row: 1 line
+	// - Header separator: 1 line
+	// Total offset: 3 lines (or 4 if filtering)
+
+	offset := 3
+	if m.filtering || m.filterText != "" {
+		offset = 4
+	}
+
+	relativeRow := y - offset
+	if relativeRow < 0 || relativeRow >= m.pageSize {
+		return
+	}
+
+	// Calculate absolute row index based on current page
+	// Current page is determined by the currently highlighted row
+	currentHighlighted := m.table.GetHighlightedRowIndex()
+	currentPage := 0
+	if m.pageSize > 0 {
+		currentPage = currentHighlighted / m.pageSize
+	}
+
+	absoluteRowIndex := (currentPage * m.pageSize) + relativeRow
+
+	// Use bubble-table's WithHighlightedRow API
+	m.table = m.table.WithHighlightedRow(absoluteRowIndex)
 }
