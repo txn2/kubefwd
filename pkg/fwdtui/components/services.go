@@ -48,13 +48,13 @@ type ServicesModel struct {
 
 // NewServicesModel creates a new services model
 func NewServicesModel(store *state.Store) ServicesModel {
-	columns := buildColumns(false, false, true, false)
+	columns := buildColumns(false, false, true, true) // Default to compact view
 
 	m := ServicesModel{
 		store:         store,
 		focused:       true,
 		showBandwidth: true,
-		compactView:   false,
+		compactView:   true, // Default to compact view - more useful for developers
 	}
 
 	m.table = table.New(columns).

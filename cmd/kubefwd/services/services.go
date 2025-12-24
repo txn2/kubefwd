@@ -322,7 +322,7 @@ Try:
 		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
 
 		// Set up pod logs streamer
-		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
 			clientSetsMu.RLock()
 			clientSet, ok := clientSets[k8sContext]
 			clientSetsMu.RUnlock()
@@ -334,6 +334,10 @@ Try:
 			opts := &v1.PodLogOptions{
 				Follow:    true,
 				TailLines: &tailLines,
+			}
+			// Set container name if specified (required for multi-container pods)
+			if containerName != "" {
+				opts.Container = containerName
 			}
 
 			return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)

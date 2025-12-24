@@ -71,8 +71,9 @@ type Event struct {
 	Context    string
 
 	// Pod identification
-	PodKey  string // "podname"
-	PodName string
+	PodKey        string // "podname"
+	PodName       string
+	ContainerName string // container that owns the forwarded port
 
 	// Network info
 	LocalIP   string

@@ -755,27 +755,76 @@ func TestPortSearch(t *testing.T) {
 	}
 
 	// Test finding existing port
-	port, found := portSearch("http", containers)
+	port, containerName, found := portSearch("http", containers)
 	if !found {
 		t.Error("Expected to find 'http' port")
 	}
 	if port != "8080" {
 		t.Errorf("Expected port 8080, got %s", port)
 	}
+	if containerName != "container1" {
+		t.Errorf("Expected container container1, got %s", containerName)
+	}
 
 	// Test finding port in second container
-	port, found = portSearch("grpc", containers)
+	port, containerName, found = portSearch("grpc", containers)
 	if !found {
 		t.Error("Expected to find 'grpc' port")
 	}
 	if port != "50051" {
 		t.Errorf("Expected port 50051, got %s", port)
 	}
+	if containerName != "container2" {
+		t.Errorf("Expected container container2, got %s", containerName)
+	}
 
 	// Test non-existent port
-	_, found = portSearch("nonexistent", containers)
+	_, _, found = portSearch("nonexistent", containers)
 	if found {
 		t.Error("Should not find 'nonexistent' port")
+	}
+}
+
+// TestFindContainerForPort tests finding container by numeric port
+func TestFindContainerForPort(t *testing.T) {
+	containers := []v1.Container{
+		{
+			Name: "web",
+			Ports: []v1.ContainerPort{
+				{ContainerPort: 8080},
+				{ContainerPort: 8443},
+			},
+		},
+		{
+			Name: "sidecar",
+			Ports: []v1.ContainerPort{
+				{ContainerPort: 9090},
+			},
+		},
+	}
+
+	// Test finding port in first container
+	containerName := findContainerForPort(8080, containers)
+	if containerName != "web" {
+		t.Errorf("Expected container 'web', got '%s'", containerName)
+	}
+
+	// Test finding port in second container
+	containerName = findContainerForPort(9090, containers)
+	if containerName != "sidecar" {
+		t.Errorf("Expected container 'sidecar', got '%s'", containerName)
+	}
+
+	// Test non-existent port - should return first container
+	containerName = findContainerForPort(12345, containers)
+	if containerName != "web" {
+		t.Errorf("Expected first container 'web' for non-existent port, got '%s'", containerName)
+	}
+
+	// Test empty container list
+	containerName = findContainerForPort(8080, []v1.Container{})
+	if containerName != "" {
+		t.Errorf("Expected empty string for empty container list, got '%s'", containerName)
 	}
 }
 

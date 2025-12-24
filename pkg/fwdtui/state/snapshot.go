@@ -46,7 +46,8 @@ type ForwardSnapshot struct {
 	Headless    bool
 
 	// Pod info
-	PodName string
+	PodName       string
+	ContainerName string // container that owns the forwarded port
 
 	// Network info
 	LocalIP   string

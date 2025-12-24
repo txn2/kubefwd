@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
@@ -49,13 +50,14 @@ type DetailModel struct {
 	maxHTTPLogs      int
 
 	// Logs tab state
-	podLogs          []string
-	logsScrollOffset int
-	logsLoading      bool
-	logsStreaming    bool
-	logsAutoFollow   bool // auto-scroll to bottom on new logs
-	logsError        string
-	maxPodLogs       int
+	podLogs           []string
+	logsViewport      viewport.Model
+	logsViewportReady bool
+	logsLoading       bool
+	logsStreaming     bool
+	logsAutoFollow    bool // auto-scroll to bottom on new logs
+	logsError         string
+	maxPodLogs        int
 
 	// Sparkline width
 	sparklineWidth int
@@ -83,8 +85,8 @@ func (m *DetailModel) Show(forwardKey string) {
 	m.forwardKey = forwardKey
 	m.currentTab = TabInfo
 	m.httpScrollOffset = 0
-	m.logsScrollOffset = 0
 	m.podLogs = nil
+	m.logsViewportReady = false // Reset viewport, will init on first render
 	m.logsLoading = false
 	m.logsStreaming = false
 	m.logsAutoFollow = true // auto-follow by default
@@ -136,6 +138,36 @@ func (m *DetailModel) SetSize(width, height int) {
 	if m.sparklineWidth < 15 {
 		m.sparklineWidth = 15
 	}
+
+	// Resize logs viewport if ready
+	if m.logsViewportReady {
+		m.logsViewport.Width = m.getLogsViewportWidth()
+		m.logsViewport.Height = m.getLogsViewportHeight()
+		m.updateLogsViewportContent()
+	}
+}
+
+// getLogsViewportWidth returns the width for the logs viewport
+func (m *DetailModel) getLogsViewportWidth() int {
+	// Account for box padding/borders
+	w := m.width - 20
+	if w < 40 {
+		w = 40
+	}
+	return w
+}
+
+// getLogsViewportHeight returns the height for the logs viewport
+func (m *DetailModel) getLogsViewportHeight() int {
+	viewportHeight := m.getViewportHeight()
+	// Account for status line when streaming
+	if m.logsStreaming {
+		viewportHeight -= 2
+	}
+	if viewportHeight < 3 {
+		viewportHeight = 3
+	}
+	return viewportHeight
 }
 
 // UpdateSnapshot refreshes the snapshot data
@@ -168,6 +200,9 @@ func (m *DetailModel) SetHTTPLogs(logs []HTTPLogEntry) {
 func (m *DetailModel) SetPodLogs(logs []string) {
 	m.podLogs = logs
 	m.logsLoading = false
+	// Initialize viewport if needed (must happen in Update, not View)
+	m.initLogsViewport()
+	m.updateLogsViewportContent()
 }
 
 // AppendLogLine appends a single log line
@@ -176,18 +211,47 @@ func (m *DetailModel) AppendLogLine(line string) {
 	// Trim if exceeding max
 	if len(m.podLogs) > m.maxPodLogs {
 		m.podLogs = m.podLogs[len(m.podLogs)-m.maxPodLogs:]
-		// Adjust scroll offset if we trimmed lines and not auto-following
-		if m.logsScrollOffset > 0 && !m.logsAutoFollow {
-			m.logsScrollOffset--
-			if m.logsScrollOffset < 0 {
-				m.logsScrollOffset = 0
-			}
-		}
 	}
+
+	// Initialize viewport if needed (must happen in Update, not View)
+	m.initLogsViewport()
+
+	// Update viewport content
+	m.updateLogsViewportContent()
+
 	// Auto-scroll to bottom if following
+	if m.logsAutoFollow && m.logsViewportReady {
+		m.logsViewport.GotoBottom()
+	}
+}
+
+// updateLogsViewportContent rebuilds the viewport content from pod logs
+func (m *DetailModel) updateLogsViewportContent() {
+	if !m.logsViewportReady {
+		return
+	}
+
+	viewportWidth := m.getLogsViewportWidth()
+	var sb strings.Builder
+	for _, line := range m.podLogs {
+		wrapped := wrapLogText(line, viewportWidth)
+		sb.WriteString(wrapped)
+		sb.WriteString("\n")
+	}
+	m.logsViewport.SetContent(sb.String())
+}
+
+// initLogsViewport initializes the logs viewport if not already ready
+func (m *DetailModel) initLogsViewport() {
+	if m.logsViewportReady {
+		return
+	}
+	m.logsViewport = viewport.New(m.getLogsViewportWidth(), m.getLogsViewportHeight())
+	m.logsViewport.MouseWheelEnabled = true
+	m.logsViewportReady = true
+	m.updateLogsViewportContent()
 	if m.logsAutoFollow {
-		maxScroll := m.getLogsMaxScroll()
-		m.logsScrollOffset = maxScroll
+		m.logsViewport.GotoBottom()
 	}
 }
 
@@ -227,10 +291,11 @@ type ClearCopiedMsg struct{}
 
 // PodLogsRequestMsg is sent to request pod logs streaming
 type PodLogsRequestMsg struct {
-	Namespace string
-	PodName   string
-	Context   string
-	TailLines int64
+	Namespace     string
+	PodName       string
+	ContainerName string
+	Context       string
+	TailLines     int64
 }
 
 // PodLogsStopMsg is sent to stop pod logs streaming
@@ -307,8 +372,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			// Start streaming if entering Logs tab
 			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
 				m.logsLoading = true
-				m.podLogs = nil // Clear old logs
-				m.logsScrollOffset = 0
+				m.podLogs = nil             // Clear old logs
+				m.logsViewportReady = false // Reset viewport
 				cmds = append(cmds, m.requestPodLogs())
 			}
 
@@ -331,7 +396,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
 				m.logsLoading = true
 				m.podLogs = nil
-				m.logsScrollOffset = 0
+				m.logsViewportReady = false // Reset viewport
 				return m, m.requestPodLogs()
 			}
 			return m, nil
@@ -350,118 +415,88 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			return m, nil
 
 		case "j", "down":
-			// Scroll down (only on HTTP and Logs tabs)
 			if m.currentTab == TabHTTP {
 				maxScroll := m.getHTTPMaxScroll()
 				if m.httpScrollOffset < maxScroll {
 					m.httpScrollOffset++
 				}
-			} else if m.currentTab == TabLogs {
-				maxScroll := m.getLogsMaxScroll()
-				if m.logsScrollOffset < maxScroll {
-					m.logsScrollOffset++
-				}
-				// Re-enable auto-follow if at bottom
-				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.LineDown(1)
 			}
-			return m, nil
 
 		case "k", "up":
-			// Scroll up (only on HTTP and Logs tabs)
 			if m.currentTab == TabHTTP {
 				if m.httpScrollOffset > 0 {
 					m.httpScrollOffset--
 				}
-			} else if m.currentTab == TabLogs {
-				if m.logsScrollOffset > 0 {
-					m.logsScrollOffset--
-					m.logsAutoFollow = false // Stop auto-follow when scrolling up
-				}
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.LineUp(1)
 			}
-			return m, nil
 
 		case "g", "home":
-			// Go to top
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = 0
-			} else if m.currentTab == TabLogs {
-				m.logsScrollOffset = 0
-				m.logsAutoFollow = false
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.GotoTop()
 			}
-			return m, nil
 
 		case "G", "end":
-			// Go to bottom
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = m.getHTTPMaxScroll()
-			} else if m.currentTab == TabLogs {
-				m.logsScrollOffset = m.getLogsMaxScroll()
-				m.logsAutoFollow = true // Re-enable at bottom
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.GotoBottom()
 			}
-			return m, nil
 
 		case "pgdown", "ctrl+d":
-			// Page down
-			pageSize := m.getViewportHeight() / 2
-			if pageSize < 1 {
-				pageSize = 1
-			}
 			if m.currentTab == TabHTTP {
+				pageSize := m.getViewportHeight() / 2
+				if pageSize < 1 {
+					pageSize = 1
+				}
 				m.httpScrollOffset += pageSize
 				maxScroll := m.getHTTPMaxScroll()
 				if m.httpScrollOffset > maxScroll {
 					m.httpScrollOffset = maxScroll
 				}
-			} else if m.currentTab == TabLogs {
-				m.logsScrollOffset += pageSize
-				maxScroll := m.getLogsMaxScroll()
-				if m.logsScrollOffset > maxScroll {
-					m.logsScrollOffset = maxScroll
-				}
-				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.HalfViewDown()
 			}
-			return m, nil
 
 		case "pgup", "ctrl+u":
-			// Page up
-			pageSize := m.getViewportHeight() / 2
-			if pageSize < 1 {
-				pageSize = 1
-			}
 			if m.currentTab == TabHTTP {
+				pageSize := m.getViewportHeight() / 2
+				if pageSize < 1 {
+					pageSize = 1
+				}
 				m.httpScrollOffset -= pageSize
 				if m.httpScrollOffset < 0 {
 					m.httpScrollOffset = 0
 				}
-			} else if m.currentTab == TabLogs {
-				m.logsScrollOffset -= pageSize
-				if m.logsScrollOffset < 0 {
-					m.logsScrollOffset = 0
-				}
-				m.logsAutoFollow = false
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.HalfViewUp()
 			}
-			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
 
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling (only on HTTP and Logs tabs)
 		if msg.Button == tea.MouseButtonWheelUp {
 			if m.currentTab == TabHTTP && m.httpScrollOffset > 0 {
 				m.httpScrollOffset -= 3
 				if m.httpScrollOffset < 0 {
 					m.httpScrollOffset = 0
 				}
-			} else if m.currentTab == TabLogs && m.logsScrollOffset > 0 {
-				m.logsScrollOffset -= 3
-				if m.logsScrollOffset < 0 {
-					m.logsScrollOffset = 0
-				}
-				m.logsAutoFollow = false
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.LineUp(3)
 			}
-			return m, nil
 		} else if msg.Button == tea.MouseButtonWheelDown {
 			if m.currentTab == TabHTTP {
 				maxScroll := m.getHTTPMaxScroll()
@@ -469,18 +504,21 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.httpScrollOffset > maxScroll {
 					m.httpScrollOffset = maxScroll
 				}
-			} else if m.currentTab == TabLogs {
-				maxScroll := m.getLogsMaxScroll()
-				m.logsScrollOffset += 3
-				if m.logsScrollOffset > maxScroll {
-					m.logsScrollOffset = maxScroll
-				}
-				m.logsAutoFollow = (m.logsScrollOffset >= maxScroll)
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsViewport.LineDown(3)
 			}
-			return m, nil
 		}
 	}
-	return m, nil
+
+	// Let viewport handle its own updates (required for scrolling to work)
+	var cmd tea.Cmd
+	if m.logsViewportReady && m.currentTab == TabLogs {
+		m.logsViewport, cmd = m.logsViewport.Update(msg)
+		// Update auto-follow state based on scroll position
+		m.logsAutoFollow = m.logsViewport.AtBottom()
+	}
+	return m, cmd
 }
 
 // requestPodLogs returns a command to request pod logs
@@ -490,10 +528,11 @@ func (m *DetailModel) requestPodLogs() tea.Cmd {
 	}
 	return func() tea.Msg {
 		return PodLogsRequestMsg{
-			Namespace: m.snapshot.Namespace,
-			PodName:   m.snapshot.PodName,
-			Context:   m.snapshot.Context,
-			TailLines: 100,
+			Namespace:     m.snapshot.Namespace,
+			PodName:       m.snapshot.PodName,
+			ContainerName: m.snapshot.ContainerName,
+			Context:       m.snapshot.Context,
+			TailLines:     100,
 		}
 	}
 }
@@ -878,7 +917,8 @@ func (m *DetailModel) renderLogsTab() string {
 		return b.String()
 	}
 
-	if m.logsLoading && len(m.podLogs) == 0 {
+	// Show loading state when waiting for logs (either loading or streaming started but no logs yet)
+	if len(m.podLogs) == 0 && (m.logsLoading || m.logsStreaming) {
 		b.WriteString(styles.DetailLabelStyle.Render("Loading pod logs..."))
 		return b.String()
 	}
@@ -888,7 +928,13 @@ func (m *DetailModel) renderLogsTab() string {
 		return b.String()
 	}
 
-	// Status line: streaming state and follow indicator
+	// Viewport should already be initialized in Update() via AppendLogLine/SetPodLogs
+	if !m.logsViewportReady {
+		b.WriteString(styles.DetailLabelStyle.Render("Initializing logs viewport..."))
+		return b.String()
+	}
+
+	// Status line: streaming state, container name, and follow indicator
 	if m.logsStreaming {
 		if m.logsAutoFollow {
 			b.WriteString(styles.StatusActiveStyle.Render("● Following"))
@@ -896,54 +942,16 @@ func (m *DetailModel) renderLogsTab() string {
 			b.WriteString(styles.StatusConnectingStyle.Render("● Paused"))
 			b.WriteString(styles.DetailLabelStyle.Render(" (scroll to bottom to resume)"))
 		}
+		// Show container name if available
+		if m.snapshot != nil && m.snapshot.ContainerName != "" {
+			b.WriteString(styles.DetailLabelStyle.Render(fmt.Sprintf(" (%s)", m.snapshot.ContainerName)))
+		}
 		b.WriteString(styles.DetailLabelStyle.Render(fmt.Sprintf(" - %d lines", len(m.podLogs))))
 		b.WriteString("\n\n")
 	}
 
-	viewportHeight := m.getViewportHeight()
-	if m.logsStreaming {
-		viewportHeight -= 2 // Account for status line
-	}
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
-
-	// Apply scrolling
-	start := m.logsScrollOffset
-	end := start + viewportHeight
-	if end > len(m.podLogs) {
-		end = len(m.podLogs)
-	}
-	if start > len(m.podLogs) {
-		start = len(m.podLogs)
-	}
-
-	for i := start; i < end; i++ {
-		line := m.podLogs[i]
-		// Truncate long lines
-		maxLen := m.width - 20
-		if maxLen < 40 {
-			maxLen = 40
-		}
-		if len(line) > maxLen {
-			line = line[:maxLen-3] + "..."
-		}
-		b.WriteString(styles.DetailValueStyle.Render(line))
-		b.WriteString("\n")
-	}
-
-	// Scroll indicator (only when not following or there's scrollable content)
-	maxScroll := m.getLogsMaxScroll()
-	if maxScroll > 0 && !m.logsAutoFollow {
-		scrollInfo := fmt.Sprintf("[%d/%d]", m.logsScrollOffset+1, maxScroll+1)
-		if m.logsScrollOffset > 0 {
-			scrollInfo = "↑ " + scrollInfo
-		}
-		if m.logsScrollOffset < maxScroll {
-			scrollInfo = scrollInfo + " ↓"
-		}
-		b.WriteString(styles.DetailLabelStyle.Render(scrollInfo))
-	}
+	// Render viewport (handles scrolling + clipping)
+	b.WriteString(m.logsViewport.View())
 
 	return b.String()
 }
@@ -1026,4 +1034,39 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm ago", int(d.Hours()), int(d.Minutes())%60)
 	}
 	return fmt.Sprintf("%dd %dh ago", int(d.Hours()/24), int(d.Hours())%24)
+}
+
+// wrapLogText wraps text to fit within the given width
+func wrapLogText(text string, width int) string {
+	if width <= 0 || len(text) <= width {
+		return text
+	}
+
+	var result strings.Builder
+	remaining := text
+
+	for len(remaining) > 0 {
+		if result.Len() > 0 {
+			result.WriteString("\n")
+		}
+
+		if len(remaining) <= width {
+			result.WriteString(remaining)
+			break
+		}
+
+		// Find a good break point (space)
+		breakPoint := width
+		for i := width; i > width/2; i-- {
+			if remaining[i] == ' ' {
+				breakPoint = i
+				break
+			}
+		}
+
+		result.WriteString(remaining[:breakPoint])
+		remaining = strings.TrimLeft(remaining[breakPoint:], " ")
+	}
+
+	return result.String()
 }

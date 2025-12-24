@@ -52,7 +52,7 @@ type Manager struct {
 
 // PodLogsStreamer is a function that streams pod logs from Kubernetes
 // It returns an io.ReadCloser that streams log lines
-type PodLogsStreamer func(ctx context.Context, namespace, podName, k8sContext string, tailLines int64) (io.ReadCloser, error)
+type PodLogsStreamer func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error)
 
 // RootModel is the main bubbletea model
 type RootModel struct {
@@ -427,6 +427,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			namespace := msg.Namespace
 			podName := msg.PodName
+			containerName := msg.ContainerName
 			k8sContext := msg.Context
 			tailLines := msg.TailLines
 			logCh := m.logStreamCh
@@ -435,7 +436,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go func() {
 				defer close(logCh)
 
-				stream, err := m.streamPodLogs(ctx, namespace, podName, k8sContext, tailLines)
+				stream, err := m.streamPodLogs(ctx, namespace, podName, containerName, k8sContext, tailLines)
 				if err != nil {
 					select {
 					case <-ctx.Done():
@@ -714,18 +715,19 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 	switch e.Type {
 	case events.PodAdded:
 		snapshot := state.ForwardSnapshot{
-			Key:         e.ServiceKey + "." + e.PodName + "." + e.LocalPort,
-			ServiceKey:  e.ServiceKey,
-			ServiceName: e.Service,
-			Namespace:   e.Namespace,
-			Context:     e.Context,
-			PodName:     e.PodName,
-			LocalIP:     e.LocalIP,
-			LocalPort:   e.LocalPort,
-			PodPort:     e.PodPort,
-			Hostnames:   e.Hostnames,
-			Status:      state.StatusConnecting,
-			StartedAt:   e.Timestamp,
+			Key:           e.ServiceKey + "." + e.PodName + "." + e.LocalPort,
+			ServiceKey:    e.ServiceKey,
+			ServiceName:   e.Service,
+			Namespace:     e.Namespace,
+			Context:       e.Context,
+			PodName:       e.PodName,
+			ContainerName: e.ContainerName,
+			LocalIP:       e.LocalIP,
+			LocalPort:     e.LocalPort,
+			PodPort:       e.PodPort,
+			Hostnames:     e.Hostnames,
+			Status:        state.StatusConnecting,
+			StartedAt:     e.Timestamp,
 		}
 		m.store.AddForward(snapshot)
 

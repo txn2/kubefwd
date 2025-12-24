@@ -220,13 +220,14 @@ type PortForwardOpts struct {
 	ClientSet  kubernetes.Interface
 	RESTClient restclient.RESTClient
 
-	Service    string
-	ServiceFwd ServiceFWD
-	PodName    string
-	PodUID     types.UID
-	PodPort    string
-	LocalIp    net.IP
-	LocalPort  string
+	Service       string
+	ServiceFwd    ServiceFWD
+	PodName       string
+	PodUID        types.UID
+	PodPort       string
+	ContainerName string
+	LocalIp       net.IP
+	LocalPort     string
 	// Timeout for the port-forwarding process
 	Timeout  int
 	HostFile *HostFileWithLock

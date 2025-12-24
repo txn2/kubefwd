@@ -307,11 +307,19 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				log.Fatal(err)
 			}
 			port.Port = int32(p)
+
+			// Determine which container owns this port (for log streaming)
+			var containerName string
 			if _, err := strconv.Atoi(podPort); err != nil {
-				// search a pods containers for the named port
-				if namedPodPort, ok := portSearch(podPort, pod.Spec.Containers); ok {
+				// Named port - search for container that has this named port
+				if namedPodPort, container, ok := portSearch(podPort, pod.Spec.Containers); ok {
 					podPort = namedPodPort
+					containerName = container
 				}
+			} else {
+				// Numeric port - find container that has this port
+				podPortNum, _ := strconv.ParseInt(podPort, 10, 32)
+				containerName = findContainerForPort(int32(podPortNum), pod.Spec.Containers)
 			}
 
 			log.Debugf("Resolving: %s to %s (%s)\n",
@@ -329,22 +337,23 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			)
 
 			pfo := &fwdport.PortForwardOpts{
-				Out:        publisher,
-				Config:     svcFwd.ClientConfig,
-				ClientSet:  svcFwd.ClientSet,
-				RESTClient: svcFwd.RESTClient,
-				Context:    svcFwd.Context,
-				Namespace:  pod.Namespace,
-				Service:    svcName,
-				ServiceFwd: svcFwd,
-				PodName:    pod.Name,
-				PodPort:    podPort,
-				LocalIp:    localIp,
-				LocalPort:  localPort,
-				HostFile:   svcFwd.Hostfile,
-				ClusterN:   svcFwd.ClusterN,
-				NamespaceN: svcFwd.NamespaceN,
-				Domain:     svcFwd.Domain,
+				Out:           publisher,
+				Config:        svcFwd.ClientConfig,
+				ClientSet:     svcFwd.ClientSet,
+				RESTClient:    svcFwd.RESTClient,
+				Context:       svcFwd.Context,
+				Namespace:     pod.Namespace,
+				Service:       svcName,
+				ServiceFwd:    svcFwd,
+				PodName:       pod.Name,
+				PodPort:       podPort,
+				ContainerName: containerName,
+				LocalIp:       localIp,
+				LocalPort:     localPort,
+				HostFile:      svcFwd.Hostfile,
+				ClusterN:      svcFwd.ClusterN,
+				NamespaceN:    svcFwd.NamespaceN,
+				Domain:        svcFwd.Domain,
 
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
@@ -396,6 +405,7 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 		event.LocalIP = pfo.LocalIp.String()
 		event.LocalPort = pfo.LocalPort
 		event.PodPort = pfo.PodPort
+		event.ContainerName = pfo.ContainerName
 		event.Hostnames = pfo.Hosts
 		fwdtui.Emit(event)
 	}
@@ -442,16 +452,33 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 	}
 }
 
-func portSearch(portName string, containers []v1.Container) (string, bool) {
+func portSearch(portName string, containers []v1.Container) (port string, containerName string, found bool) {
 	for _, container := range containers {
 		for _, cp := range container.Ports {
 			if cp.Name == portName {
-				return fmt.Sprint(cp.ContainerPort), true
+				return fmt.Sprint(cp.ContainerPort), container.Name, true
 			}
 		}
 	}
 
-	return "", false
+	return "", "", false
+}
+
+// findContainerForPort finds the container that owns a given port number
+// Returns first container if port not found in any container spec
+func findContainerForPort(port int32, containers []v1.Container) string {
+	for _, container := range containers {
+		for _, cp := range container.Ports {
+			if cp.ContainerPort == port {
+				return container.Name
+			}
+		}
+	}
+	// Default to first container
+	if len(containers) > 0 {
+		return containers[0].Name
+	}
+	return ""
 }
 
 // port exist port map return
