@@ -10,23 +10,18 @@ import (
 type EventType int
 
 const (
-	// Service lifecycle events
 	ServiceAdded EventType = iota
 	ServiceRemoved
 	ServiceUpdated
 
-	// Pod lifecycle events
 	PodAdded
 	PodRemoved
 	PodStatusChanged
 
-	// Metrics events
 	BandwidthUpdate
 
-	// Log events
 	LogMessage
 
-	// Application lifecycle events
 	ShutdownStarted
 	ShutdownComplete
 )
