@@ -2,12 +2,18 @@
 
 ## Supported Versions
 
-The following versions currently are being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.22.x  | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| 1.23.x  | Yes       |
+| < 1.23  | No        |
 
 ## Reporting a Vulnerability
 
-Please DM [@cjimti](https://twitter.com/cjimti) on Twitter.
+Email security concerns to Craig Johnston <cj@imti.co>.
+
+Please include:
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+
+You can expect an initial response within 72 hours.
