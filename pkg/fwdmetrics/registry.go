@@ -100,26 +100,24 @@ func (r *Registry) GetService(key string) *ServiceMetrics {
 
 // RegisterPortForward adds a port forward to its parent service
 func (r *Registry) RegisterPortForward(serviceKey string, pf *PortForwardMetrics) {
-	r.mu.RLock()
+	r.mu.Lock()
 	svc, ok := r.services[serviceKey]
-	r.mu.RUnlock()
-
 	if !ok {
 		// Create service if it doesn't exist
 		svc = NewServiceMetrics(pf.ServiceName, pf.Namespace, pf.Context)
-		r.RegisterService(svc)
+		r.services[svc.Key()] = svc
 	}
+	r.mu.Unlock()
 
 	svc.AddPortForward(pf)
 }
 
 // UnregisterPortForward removes a port forward from its parent service
 func (r *Registry) UnregisterPortForward(serviceKey, podName, localPort string) {
-	r.mu.RLock()
+	r.mu.Lock()
 	svc, ok := r.services[serviceKey]
-	r.mu.RUnlock()
-
 	if !ok {
+		r.mu.Unlock()
 		return
 	}
 
@@ -127,8 +125,9 @@ func (r *Registry) UnregisterPortForward(serviceKey, podName, localPort string) 
 
 	// Remove service if no port forwards left
 	if svc.Count() == 0 {
-		r.UnregisterService(serviceKey)
+		delete(r.services, serviceKey)
 	}
+	r.mu.Unlock()
 }
 
 // GetAllServices returns all registered services
