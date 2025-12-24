@@ -48,9 +48,7 @@ func (w *KlogWriter) Write(p []byte) (n int, err error) {
 	}
 
 	// Log any other unexpected klog messages at debug level
-	if msg != "" {
-		log.Debugf("k8s: %s", msg)
-	}
+	log.Debugf("k8s: %s", msg)
 
 	return len(p), nil
 }
