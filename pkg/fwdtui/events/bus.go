@@ -2,6 +2,8 @@ package events
 
 import (
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Handler is a function that handles events
@@ -86,14 +88,25 @@ func (b *Bus) dispatch(event Event) {
 	// Call type-specific handlers
 	if handlers, ok := b.handlers[event.Type]; ok {
 		for _, handler := range handlers {
-			handler(event)
+			b.safeCall(handler, event)
 		}
 	}
 
 	// Call handlers subscribed to all events
 	for _, handler := range b.allHandle {
-		handler(event)
+		b.safeCall(handler, event)
 	}
+}
+
+// safeCall invokes a handler with panic recovery to prevent one bad handler
+// from crashing the entire event bus.
+func (b *Bus) safeCall(handler Handler, event Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("Event handler panic for %s: %v", event.Type, r)
+		}
+	}()
+	handler(event)
 }
 
 // Stop stops the event bus and waits for pending events to be processed
