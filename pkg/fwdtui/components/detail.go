@@ -429,7 +429,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.LineDown(1)
+				m.logsViewport.ScrollDown(1)
 			}
 
 		case "k", "up":
@@ -439,7 +439,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.LineUp(1)
+				m.logsViewport.ScrollUp(1)
 			}
 
 		case "g", "home":
@@ -471,7 +471,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.HalfViewDown()
+				m.logsViewport.HalfPageDown()
 			}
 
 		case "pgup", "ctrl+u":
@@ -486,7 +486,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.HalfViewUp()
+				m.logsViewport.HalfPageUp()
 			}
 		}
 
@@ -502,7 +502,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.LineUp(3)
+				m.logsViewport.ScrollUp(3)
 			}
 		} else if msg.Button == tea.MouseButtonWheelDown {
 			if m.currentTab == TabHTTP {
@@ -513,7 +513,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.LineDown(3)
+				m.logsViewport.ScrollDown(3)
 			}
 		}
 	}
