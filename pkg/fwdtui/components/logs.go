@@ -72,17 +72,17 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 		if m.focused {
 			switch msg.String() {
 			case "j", "down":
-				m.viewport.LineDown(1)
+				m.viewport.ScrollDown(1)
 			case "k", "up":
-				m.viewport.LineUp(1)
+				m.viewport.ScrollUp(1)
 			case "g", "home":
 				m.viewport.GotoTop()
 			case "G", "end":
 				m.viewport.GotoBottom()
 			case "pgdown":
-				m.viewport.HalfViewDown()
+				m.viewport.HalfPageDown()
 			case "pgup":
-				m.viewport.HalfViewUp()
+				m.viewport.HalfPageUp()
 			}
 		}
 
@@ -90,9 +90,9 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 		// Handle mouse wheel for scrolling
 		if m.focused && m.ready {
 			if msg.Button == tea.MouseButtonWheelUp {
-				m.viewport.LineUp(3)
+				m.viewport.ScrollUp(3)
 			} else if msg.Button == tea.MouseButtonWheelDown {
-				m.viewport.LineDown(3)
+				m.viewport.ScrollDown(3)
 			}
 		}
 	}
