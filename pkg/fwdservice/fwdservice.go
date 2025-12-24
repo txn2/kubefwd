@@ -117,6 +117,10 @@ func (svcFwd *ServiceFWD) String() string {
 }
 
 // scheduleReconnect schedules a reconnection attempt with exponential backoff.
+// This is triggered by --auto-reconnect flag or user pressing 'r' in TUI when connections fail.
+// Note: This complements (not replaces) the inyesformer-based pod lifecycle handling from PR #296,
+// which automatically detects pod deletion/recreation. This function handles application-level
+// connection failures with backoff retry logic.
 // Returns true if reconnect was scheduled, false if already reconnecting or shutting down.
 func (svcFwd *ServiceFWD) scheduleReconnect() bool {
 	if !svcFwd.AutoReconnect {
