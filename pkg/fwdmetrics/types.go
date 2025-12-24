@@ -9,8 +9,8 @@ import (
 // PortForwardMetrics tracks bandwidth for a single port forward
 type PortForwardMetrics struct {
 	// Atomic counters for hot path (Read/Write operations)
-	BytesIn      uint64 // Total bytes received from pod
-	BytesOut     uint64 // Total bytes sent to pod
+	bytesIn      uint64 // Total bytes received from pod
+	bytesOut     uint64 // Total bytes sent to pod
 	lastActivity int64  // Unix nano timestamp of last activity
 
 	// Immutable after creation
@@ -57,24 +57,24 @@ func (m *PortForwardMetrics) ServiceKey() string {
 
 // AddBytesIn adds bytes to the incoming counter
 func (m *PortForwardMetrics) AddBytesIn(n uint64) {
-	atomic.AddUint64(&m.BytesIn, n)
+	atomic.AddUint64(&m.bytesIn, n)
 	atomic.StoreInt64(&m.lastActivity, time.Now().UnixNano())
 }
 
 // AddBytesOut adds bytes to the outgoing counter
 func (m *PortForwardMetrics) AddBytesOut(n uint64) {
-	atomic.AddUint64(&m.BytesOut, n)
+	atomic.AddUint64(&m.bytesOut, n)
 	atomic.StoreInt64(&m.lastActivity, time.Now().UnixNano())
 }
 
 // GetBytesIn returns the total bytes received
 func (m *PortForwardMetrics) GetBytesIn() uint64 {
-	return atomic.LoadUint64(&m.BytesIn)
+	return atomic.LoadUint64(&m.bytesIn)
 }
 
 // GetBytesOut returns the total bytes sent
 func (m *PortForwardMetrics) GetBytesOut() uint64 {
-	return atomic.LoadUint64(&m.BytesOut)
+	return atomic.LoadUint64(&m.bytesOut)
 }
 
 // GetLastActivity returns the time of last activity
