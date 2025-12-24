@@ -311,6 +311,9 @@ type PodLogsErrorMsg struct {
 	Error error
 }
 
+// ReconnectErroredMsg signals request to reconnect errored services
+type ReconnectErroredMsg struct{}
+
 // Init implements tea.Model
 func (m DetailModel) Init() tea.Cmd {
 	return nil
@@ -356,6 +359,10 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		case "esc", "q":
 			cmd := m.Hide()
 			return m, cmd
+
+		case "r":
+			// Request reconnection of errored services (handled by RootModel)
+			return m, func() tea.Msg { return ReconnectErroredMsg{} }
 
 		case "tab", "right":
 			prevTab := m.currentTab

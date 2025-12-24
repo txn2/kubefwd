@@ -3,6 +3,7 @@ package fwdtui
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -86,8 +87,9 @@ type RootModel struct {
 	stopCh    <-chan struct{}
 
 	// Callbacks
-	triggerShutdown func()
-	streamPodLogs   PodLogsStreamer
+	triggerShutdown  func()
+	streamPodLogs    PodLogsStreamer
+	reconnectErrored func() int // Returns number of services reconnected
 
 	// Pod log streaming state
 	logStreamCancel context.CancelFunc
@@ -114,6 +116,16 @@ func GetEventBus() *events.Bus {
 	defer mu.RUnlock()
 	if tuiManager != nil {
 		return tuiManager.eventBus
+	}
+	return nil
+}
+
+// GetStore returns the global state store (nil if TUI not initialized)
+func GetStore() *state.Store {
+	mu.RLock()
+	defer mu.RUnlock()
+	if tuiManager != nil {
+		return tuiManager.store
 	}
 	return nil
 }
@@ -192,6 +204,14 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 func (m *Manager) SetPodLogsStreamer(streamer PodLogsStreamer) {
 	if m.model != nil {
 		m.model.streamPodLogs = streamer
+	}
+}
+
+// SetErroredServicesReconnector sets the function used to reconnect errored services
+// The function should return the number of services that were triggered for reconnection
+func (m *Manager) SetErroredServicesReconnector(reconnector func() int) {
+	if m.model != nil {
+		m.model.reconnectErrored = reconnector
 	}
 }
 
@@ -332,6 +352,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.cycleFocus()
 			return m, nil
+		case "r":
+			if !m.services.IsFiltering() {
+				if m.reconnectErrored != nil {
+					count := m.reconnectErrored()
+					if count > 0 {
+						return m, SendLog(log.InfoLevel,
+							fmt.Sprintf("Reconnecting %d service(s) with errors...", count))
+					}
+					return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
+				}
+			}
 		}
 
 		// Route to focused component
@@ -521,6 +552,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case components.PodLogsErrorMsg:
 		m.detail.SetLogsError(msg.Error.Error())
 		m.detail.SetLogsStreaming(false)
+
+	case components.ReconnectErroredMsg:
+		// Handle reconnect request from detail view
+		if m.reconnectErrored != nil {
+			count := m.reconnectErrored()
+			if count > 0 {
+				return m, SendLog(log.InfoLevel,
+					fmt.Sprintf("Reconnecting %d service(s) with errors...", count))
+			}
+			return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
+		}
 	}
 
 	return m, tea.Batch(cmds...)

@@ -37,6 +37,7 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
+	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
@@ -341,6 +342,35 @@ Try:
 			}
 
 			return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+		})
+
+		// Set up errored services reconnector
+		tuiManager.SetErroredServicesReconnector(func() int {
+			store := fwdtui.GetStore()
+			if store == nil {
+				return 0
+			}
+
+			forwards := store.GetFiltered()
+
+			// Collect unique service keys with errors
+			erroredServices := make(map[string]bool)
+			for _, fwd := range forwards {
+				if fwd.Status == state.StatusError {
+					erroredServices[fwd.ServiceKey] = true
+				}
+			}
+
+			// Trigger reconnection for each errored service
+			count := 0
+			for serviceKey := range erroredServices {
+				if svcfwd := fwdsvcregistry.Get(serviceKey); svcfwd != nil {
+					go svcfwd.SyncPodForwards(true) // force=true bypasses debouncing
+					count++
+				}
+			}
+
+			return count
 		})
 	}
 

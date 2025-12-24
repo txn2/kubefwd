@@ -82,6 +82,7 @@ func (m HelpModel) View() string {
 		{"", ""},
 		{"Actions", ""},
 		{"Enter", "Open detail view"},
+		{"r", "Reconnect errored services"},
 		{"/", "Filter services"},
 		{"Esc", "Clear filter / Close view"},
 		{"?", "Toggle help"},
