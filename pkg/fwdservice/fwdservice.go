@@ -22,6 +22,12 @@ import (
 	restclient "k8s.io/client-go/rest"
 )
 
+const (
+	// Auto-reconnect backoff settings
+	initialReconnectBackoff = 1 * time.Second
+	maxReconnectBackoff     = 5 * time.Minute
+)
+
 // ServiceFWD Single service to forward, with a reference to
 // all the pods being forwarded for it
 type ServiceFWD struct {
@@ -85,6 +91,18 @@ type ServiceFWD struct {
 
 	// RetryInterval is how often to retry when no pods found
 	RetryInterval time.Duration
+
+	// AutoReconnect enables automatic reconnection with exponential backoff
+	AutoReconnect bool
+
+	// reconnectBackoff tracks the current reconnect wait time (internal state)
+	reconnectBackoff time.Duration
+
+	// reconnectMu protects reconnect state
+	reconnectMu sync.Mutex
+
+	// reconnecting prevents multiple simultaneous reconnect attempts
+	reconnecting bool
 }
 
 type PortMap struct {
@@ -96,6 +114,70 @@ type PortMap struct {
 // in the form SERVICE_NAME.NAMESPACE.CONTEXT
 func (svcFwd *ServiceFWD) String() string {
 	return svcFwd.Svc.Name + "." + svcFwd.Namespace + "." + svcFwd.Context
+}
+
+// scheduleReconnect schedules a reconnection attempt with exponential backoff.
+// Returns true if reconnect was scheduled, false if already reconnecting or shutting down.
+func (svcFwd *ServiceFWD) scheduleReconnect() bool {
+	if !svcFwd.AutoReconnect {
+		return false
+	}
+
+	// Check if service is shutting down
+	select {
+	case <-svcFwd.DoneChannel:
+		return false
+	default:
+	}
+
+	svcFwd.reconnectMu.Lock()
+	if svcFwd.reconnecting {
+		svcFwd.reconnectMu.Unlock()
+		log.Debugf("Already reconnecting for service %s, skipping", svcFwd)
+		return false
+	}
+	svcFwd.reconnecting = true
+
+	backoff := svcFwd.reconnectBackoff
+	if backoff == 0 {
+		backoff = initialReconnectBackoff
+	}
+	svcFwd.reconnectBackoff = backoff * 2
+	if svcFwd.reconnectBackoff > maxReconnectBackoff {
+		svcFwd.reconnectBackoff = maxReconnectBackoff
+	}
+	svcFwd.reconnectMu.Unlock()
+
+	log.Infof("Scheduling reconnection for %s in %v", svcFwd, backoff)
+
+	go func() {
+		defer func() {
+			svcFwd.reconnectMu.Lock()
+			svcFwd.reconnecting = false
+			svcFwd.reconnectMu.Unlock()
+		}()
+
+		select {
+		case <-svcFwd.DoneChannel:
+			return
+		case <-time.After(backoff):
+		}
+
+		log.Infof("Attempting reconnection for service %s", svcFwd)
+		svcFwd.SyncPodForwards(true) // force=true bypasses debouncing
+	}()
+
+	return true
+}
+
+// resetReconnectBackoff resets the backoff to initial value after successful connection.
+func (svcFwd *ServiceFWD) resetReconnectBackoff() {
+	svcFwd.reconnectMu.Lock()
+	defer svcFwd.reconnectMu.Unlock()
+	if svcFwd.reconnectBackoff != 0 {
+		log.Debugf("Resetting reconnect backoff for service %s", svcFwd)
+		svcFwd.reconnectBackoff = 0
+	}
 }
 
 // GetPodsForService queries k8s and returns all pods backing this service
@@ -152,6 +234,9 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 		// Only update LastSyncedAt after successful pod discovery
 		defer func() { svcFwd.LastSyncedAt = time.Now() }()
+
+		// Reset reconnect backoff on successful pod discovery
+		svcFwd.resetReconnectBackoff()
 
 		// Check if the pods currently being forwarded still exist in k8s and if
 		// they are not in a (pre-)running state, if not: remove them
@@ -245,7 +330,15 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 	for _, pod := range pods {
 		// If pod is already configured to be forwarded, skip it
-		if _, found := svcFwd.PortForwards[pod.Name]; found {
+		// Note: PortForwards map uses key format "service.podname.port", so we check by PodName
+		hasForward := false
+		for _, pfo := range svcFwd.PortForwards {
+			if pfo.PodName == pod.Name {
+				hasForward = true
+				break
+			}
+		}
+		if hasForward {
 			continue
 		}
 
@@ -361,20 +454,40 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
-				svcFwd.AddServicePod(pfo)
-				if err := pfo.PortForward(); err != nil {
-					select {
-					case <-pfo.ManualStopChan: // if shutdown was given, we don't bother with the error.
-					default:
-						log.Errorf("PortForward error on %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
-					}
-				} else {
-					select {
-					case <-pfo.ManualStopChan: // if shutdown was given, don't log a warning as it's an intented stopping.
-					default:
-						log.Warnf("Stopped forwarding pod %s for %s", pfo.PodName, svcFwd)
-					}
+				// Check if shutdown was requested BEFORE we start
+				// (ManualStopChan may also close during PortForward due to error cleanup,
+				// but we should only skip reconnection if shutdown was requested externally)
+				wasShuttingDown := false
+				select {
+				case <-pfo.ManualStopChan:
+					wasShuttingDown = true
+				default:
 				}
+
+				svcFwd.AddServicePod(pfo)
+				err := pfo.PortForward()
+
+				// Remove the forward from the map since it's no longer active
+				// This allows SyncPodForwards to create a fresh forward on reconnection
+				svcFwd.NamespaceServiceLock.Lock()
+				servicePodKey := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
+				delete(svcFwd.PortForwards, servicePodKey)
+				svcFwd.NamespaceServiceLock.Unlock()
+
+				// If shutdown was already in progress before we started, exit cleanly
+				if wasShuttingDown {
+					return
+				}
+
+				// Log the error or unexpected stop
+				if err != nil {
+					log.Errorf("PortForward error on %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
+				} else {
+					log.Warnf("Stopped forwarding pod %s for %s", pfo.PodName, svcFwd)
+				}
+
+				// Attempt auto-reconnection if enabled
+				svcFwd.scheduleReconnect()
 			}()
 
 		}

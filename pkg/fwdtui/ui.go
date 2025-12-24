@@ -243,12 +243,6 @@ func (m *Manager) Run() error {
 
 	close(m.doneChan)
 
-	// Force exit after delay
-	go func() {
-		time.Sleep(2 * time.Second)
-		os.Exit(0)
-	}()
-
 	return err
 }
 

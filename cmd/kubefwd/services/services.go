@@ -1,19 +1,3 @@
-/*
-Copyright 2018 Craig Johnston <cjimti@gmail.com>
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package services
 
 import (
@@ -72,6 +56,7 @@ var purgeStaleIps bool
 var resyncInterval time.Duration
 var retryInterval time.Duration
 var tuiMode bool
+var autoReconnect bool
 
 // Version is set by the main package
 var Version string
@@ -101,6 +86,7 @@ func init() {
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
+	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min)")
 
 }
 
@@ -477,10 +463,14 @@ Try:
 	}
 
 	// If TUI mode, run the TUI (blocks until user quits)
+	// Otherwise, block until shutdown signal is received
 	if tuiManager != nil {
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
+	} else {
+		// In non-TUI mode, block until shutdown signal (Ctrl+C)
+		<-stopListenCh
 	}
 
 	// Wait for namespace watchers with timeout
@@ -513,6 +503,11 @@ Try:
 		case <-time.After(1 * time.Second):
 			log.Debugf("Timeout waiting for TUI cleanup")
 		}
+	}
+
+	// Final safety net: ensure all hosts are cleaned up
+	if err := fwdhost.RemoveAllocatedHosts(); err != nil {
+		log.Errorf("Failed to clean hosts file: %s", err)
 	}
 
 	log.Infof("Clean exit")
@@ -629,6 +624,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		ForwardIPReservations:    fwdReservations,
 		ResyncInterval:           resyncInterval,
 		RetryInterval:            retryInterval,
+		AutoReconnect:            autoReconnect,
 	}
 
 	// Add the service to the catalog of services being forwarded
