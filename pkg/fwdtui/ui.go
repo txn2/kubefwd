@@ -646,8 +646,8 @@ func (m *RootModel) updateSizes() {
 		statusHeight = 1
 	}
 
-	// Fixed lines: section titles (2) + blank lines (3)
-	fixedLines := 5
+	// Fixed lines: section titles (2) + blank line before Services (1)
+	fixedLines := 3
 
 	// Full terminal width
 	contentWidth := m.width
@@ -677,7 +677,7 @@ func (m *RootModel) updateSizes() {
 	m.logsHeight = logsHeight
 
 	// Calculate Y positions for click detection
-	// Layout: header, blank, "Services" title, services content, "Logs" title, logs content, blank, status
+	// Layout: header, blank, "Services" title, services content, "Logs" title, logs content, status
 	m.servicesStartY = headerHeight + 2                    // after header + blank + title
 	m.logsStartY = m.servicesStartY + m.servicesHeight + 1 // after services + title
 
