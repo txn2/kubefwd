@@ -38,50 +38,50 @@ type ServiceSnapshot struct {
 }
 
 // GetSnapshot creates an immutable snapshot of port forward metrics
-func (pf *PortForwardMetrics) GetSnapshot() PortForwardSnapshot {
-	rateIn, rateOut := pf.GetInstantRate()
-	avgRateIn, avgRateOut := pf.GetAverageRate(10)
+func (m *PortForwardMetrics) GetSnapshot() PortForwardSnapshot {
+	rateIn, rateOut := m.GetInstantRate()
+	avgRateIn, avgRateOut := m.GetAverageRate(10)
 
 	snapshot := PortForwardSnapshot{
-		ServiceName:    pf.ServiceName,
-		Namespace:      pf.Namespace,
-		Context:        pf.Context,
-		PodName:        pf.PodName,
-		LocalIP:        pf.LocalIP,
-		LocalPort:      pf.LocalPort,
-		PodPort:        pf.PodPort,
-		BytesIn:        pf.GetBytesIn(),
-		BytesOut:       pf.GetBytesOut(),
+		ServiceName:    m.ServiceName,
+		Namespace:      m.Namespace,
+		Context:        m.Context,
+		PodName:        m.PodName,
+		LocalIP:        m.LocalIP,
+		LocalPort:      m.LocalPort,
+		PodPort:        m.PodPort,
+		BytesIn:        m.GetBytesIn(),
+		BytesOut:       m.GetBytesOut(),
 		RateIn:         rateIn,
 		RateOut:        rateOut,
 		AvgRateIn:      avgRateIn,
 		AvgRateOut:     avgRateOut,
-		ConnectedAt:    pf.ConnectedAt,
-		LastActivityAt: pf.GetLastActivity(),
-		History:        pf.GetHistory(30),
+		ConnectedAt:    m.ConnectedAt,
+		LastActivityAt: m.GetLastActivity(),
+		History:        m.GetHistory(30),
 	}
 
 	// Include HTTP logs if sniffing is enabled
-	if pf.httpSniffer != nil {
-		snapshot.HTTPLogs = pf.httpSniffer.GetAllLogs()
+	if m.httpSniffer != nil {
+		snapshot.HTTPLogs = m.httpSniffer.GetAllLogs()
 	}
 
 	return snapshot
 }
 
 // GetSnapshot creates an immutable snapshot of service metrics
-func (sm *ServiceMetrics) GetSnapshot() ServiceSnapshot {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+func (s *ServiceMetrics) GetSnapshot() ServiceSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	snapshot := ServiceSnapshot{
-		ServiceName:  sm.ServiceName,
-		Namespace:    sm.Namespace,
-		Context:      sm.Context,
-		PortForwards: make([]PortForwardSnapshot, 0, len(sm.PortForwards)),
+		ServiceName:  s.ServiceName,
+		Namespace:    s.Namespace,
+		Context:      s.Context,
+		PortForwards: make([]PortForwardSnapshot, 0, len(s.PortForwards)),
 	}
 
-	for _, pf := range sm.PortForwards {
+	for _, pf := range s.PortForwards {
 		pfSnapshot := pf.GetSnapshot()
 		snapshot.PortForwards = append(snapshot.PortForwards, pfSnapshot)
 		snapshot.TotalBytesIn += pfSnapshot.BytesIn

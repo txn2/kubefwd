@@ -514,10 +514,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.SetLogsStreaming(true)
 			m.detail.SetLogsLoading(false)
 			return m, m.waitForLogLine()
-		} else {
-			// No streamer configured
-			m.detail.SetLogsError("Pod logs not available - streamer not configured")
 		}
+
+		// No streamer configured
+		m.detail.SetLogsError("Pod logs not available - streamer not configured")
 
 	case components.PodLogsStopMsg:
 		// Stop the current log stream
