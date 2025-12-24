@@ -630,7 +630,6 @@ func (m RootModel) View() string {
 		servicesContent,
 		logsTitle,
 		logsContent,
-		"", // blank line before footer
 		status,
 	)
 }
