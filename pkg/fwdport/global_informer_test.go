@@ -98,7 +98,7 @@ func TestGlobalPodInformerManager_AddPod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if !exists {
@@ -135,7 +135,7 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 	globalInformer.addPod(pod, pfo)
 
 	// Test getting the pod
-	retrievedPfo, exists := globalInformer.getPod(types.UID("test-uid-123"))
+	retrievedPfo, exists := globalInformer.getPod("test-uid-123")
 
 	if !exists {
 		t.Error("Pod should exist in the map")
@@ -146,7 +146,7 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 	}
 
 	// Test getting a non-existent pod
-	_, exists = globalInformer.getPod(types.UID("non-existent-uid"))
+	_, exists = globalInformer.getPod("non-existent-uid")
 	if exists {
 		t.Error("Non-existent pod should not exist in the map")
 	}
@@ -183,7 +183,7 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if !exists {
@@ -191,11 +191,11 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 	}
 
 	// Test removing the pod
-	globalInformer.RemovePodByUID(types.UID("test-uid-123"))
+	globalInformer.RemovePodByUID("test-uid-123")
 
 	// Verify the pod was removed
 	globalInformer.mu.RLock()
-	_, exists = globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists = globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if exists {
