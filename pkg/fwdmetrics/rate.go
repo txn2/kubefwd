@@ -67,6 +67,11 @@ func (rc *RateCalculator) GetInstantRate() (rateIn, rateOut float64) {
 		return 0, 0
 	}
 
+	// Handle counter wraparound or reset (e.g., pod restart)
+	if curr.BytesIn < prev.BytesIn || curr.BytesOut < prev.BytesOut {
+		return 0, 0
+	}
+
 	rateIn = float64(curr.BytesIn-prev.BytesIn) / duration
 	rateOut = float64(curr.BytesOut-prev.BytesOut) / duration
 	return
@@ -95,6 +100,11 @@ func (rc *RateCalculator) GetAverageRate(windowSeconds int) (rateIn, rateOut flo
 
 	duration := newest.Timestamp.Sub(oldest.Timestamp).Seconds()
 	if duration <= 0 {
+		return 0, 0
+	}
+
+	// Handle counter wraparound or reset (e.g., pod restart)
+	if newest.BytesIn < oldest.BytesIn || newest.BytesOut < oldest.BytesOut {
 		return 0, 0
 	}
 
