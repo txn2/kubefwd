@@ -628,7 +628,6 @@ func (m RootModel) View() string {
 		"", // blank line before Services
 		servicesTitle,
 		servicesContent,
-		"", // blank line before Logs
 		logsTitle,
 		logsContent,
 		"", // blank line before footer
@@ -679,9 +678,9 @@ func (m *RootModel) updateSizes() {
 	m.logsHeight = logsHeight
 
 	// Calculate Y positions for click detection
-	// Layout: header, blank, "Services" title, services content, blank, "Logs" title, logs content, blank, status
+	// Layout: header, blank, "Services" title, services content, "Logs" title, logs content, blank, status
 	m.servicesStartY = headerHeight + 2                    // after header + blank + title
-	m.logsStartY = m.servicesStartY + m.servicesHeight + 2 // after services + blank + title
+	m.logsStartY = m.servicesStartY + m.servicesHeight + 1 // after services + title
 
 	// Set component sizes - they handle their own rendering
 	m.services.SetSize(contentWidth, servicesHeight)

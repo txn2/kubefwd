@@ -23,18 +23,20 @@ type LogEntry struct {
 
 // LogsModel displays scrollable log output
 type LogsModel struct {
-	viewport viewport.Model
-	logs     []LogEntry
-	width    int
-	height   int
-	focused  bool
-	ready    bool
+	viewport   viewport.Model
+	logs       []LogEntry
+	width      int
+	height     int
+	focused    bool
+	ready      bool
+	autoFollow bool // auto-scroll to bottom on new logs
 }
 
 // NewLogsModel creates a new logs model
 func NewLogsModel() LogsModel {
 	return LogsModel{
-		logs: make([]LogEntry, 0, maxLogLines),
+		logs:       make([]LogEntry, 0, maxLogLines),
+		autoFollow: true, // auto-follow by default
 	}
 }
 
@@ -51,13 +53,18 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Viewport height is 1 less to accommodate status line
+		viewportHeight := m.height - 1
+		if viewportHeight < 1 {
+			viewportHeight = 1
+		}
 		if !m.ready {
-			m.viewport = viewport.New(m.width, m.height)
+			m.viewport = viewport.New(m.width, viewportHeight)
 			m.viewport.Style = lipgloss.NewStyle()
 			m.ready = true
 		} else {
 			m.viewport.Width = m.width
-			m.viewport.Height = m.height
+			m.viewport.Height = viewportHeight
 		}
 		m.updateContent()
 
@@ -78,10 +85,22 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 				m.viewport.HalfViewUp()
 			}
 		}
+
+	case tea.MouseMsg:
+		// Handle mouse wheel for scrolling
+		if m.focused && m.ready {
+			if msg.Button == tea.MouseButtonWheelUp {
+				m.viewport.LineUp(3)
+			} else if msg.Button == tea.MouseButtonWheelDown {
+				m.viewport.LineDown(3)
+			}
+		}
 	}
 
 	if m.ready {
 		m.viewport, cmd = m.viewport.Update(msg)
+		// Update auto-follow state based on scroll position
+		m.autoFollow = m.viewport.AtBottom()
 	}
 	return m, cmd
 }
@@ -103,8 +122,8 @@ func (m *LogsModel) AppendLog(level logrus.Level, message string, t time.Time) {
 
 	m.updateContent()
 
-	// Auto-scroll to bottom
-	if m.ready {
+	// Auto-scroll to bottom only if following
+	if m.ready && m.autoFollow {
 		m.viewport.GotoBottom()
 	}
 }
@@ -223,7 +242,18 @@ func (m LogsModel) View() string {
 	if !m.ready {
 		return "Loading..."
 	}
-	return m.viewport.View()
+
+	// Status line with following/paused indicator
+	var statusLine string
+	if m.autoFollow {
+		statusLine = styles.StatusActiveStyle.Render("Following")
+	} else {
+		statusLine = styles.StatusConnectingStyle.Render("Paused") +
+			styles.DetailLabelStyle.Render(" (scroll to bottom to resume)")
+	}
+	statusLine += styles.DetailLabelStyle.Render(fmt.Sprintf(" - %d lines", len(m.logs)))
+
+	return statusLine + "\n" + m.viewport.View()
 }
 
 // SetFocus sets the focus state
@@ -236,15 +266,21 @@ func (m *LogsModel) SetSize(width, height int) {
 	m.width = width
 	m.height = height
 
+	// Viewport height is 1 less to accommodate status line
+	viewportHeight := height - 1
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+
 	if !m.ready {
 		// Initialize viewport on first SetSize call
-		m.viewport = viewport.New(width, height)
+		m.viewport = viewport.New(width, viewportHeight)
 		m.viewport.Style = lipgloss.NewStyle()
 		m.viewport.MouseWheelEnabled = true
 		m.ready = true
 	} else {
 		m.viewport.Width = width
-		m.viewport.Height = height
+		m.viewport.Height = viewportHeight
 	}
 	m.updateContent()
 }
