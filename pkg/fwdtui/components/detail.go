@@ -640,7 +640,7 @@ func copyToClipboard(text string) bool {
 	}
 
 	_, err = pipe.Write([]byte(text))
-	pipe.Close()
+	_ = pipe.Close()
 
 	if err != nil {
 		return false

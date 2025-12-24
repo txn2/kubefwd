@@ -193,7 +193,7 @@ func TestEndToEndMetricsFlow(t *testing.T) {
 	}
 
 	// Write some data too
-	ms.Write(bytes.Repeat([]byte("y"), 5000))
+	_, _ = ms.Write(bytes.Repeat([]byte("y"), 5000))
 
 	t.Logf("Transferred data: Read=%d bytes, Wrote=5000 bytes", totalRead)
 	t.Logf("Metrics: BytesIn=%d BytesOut=%d", pf.GetBytesIn(), pf.GetBytesOut())
