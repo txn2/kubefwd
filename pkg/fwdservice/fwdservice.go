@@ -197,8 +197,37 @@ func (svcFwd *ServiceFWD) ForceReconnect() {
 	svcFwd.reconnectMu.Unlock()
 
 	log.Infof("Force reconnecting service %s", svcFwd)
+
+	// CRITICAL: Stop all existing port forwards and clear the map
+	// After computer sleep/wake, port forwards may be stuck on dead TCP connections.
+	// If we don't clear them, LoopPodsToForward will skip creating new ones
+	// because it sees entries already exist in the PortForwards map.
+	svcFwd.StopAllPortForwards()
+
 	svcFwd.CloseIdleHTTPConnections()
 	svcFwd.SyncPodForwards(true)
+}
+
+// StopAllPortForwards stops all active port forwards and clears the map.
+// This does NOT wait for the stopped forwards to finish - they will clean up asynchronously.
+// This is necessary for force reconnect because stuck forwards may never return.
+func (svcFwd *ServiceFWD) StopAllPortForwards() {
+	svcFwd.NamespaceServiceLock.Lock()
+	// Get all forwards and clear the map immediately
+	forwards := make([]*fwdport.PortForwardOpts, 0, len(svcFwd.PortForwards))
+	for _, pfo := range svcFwd.PortForwards {
+		forwards = append(forwards, pfo)
+	}
+	// Clear the map so LoopPodsToForward won't skip
+	svcFwd.PortForwards = make(map[string]*fwdport.PortForwardOpts)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	log.Debugf("Stopping %d existing port forwards for %s", len(forwards), svcFwd)
+
+	// Stop them asynchronously - don't wait for stuck goroutines
+	for _, pfo := range forwards {
+		pfo.Stop()
+	}
 }
 
 // CloseIdleHTTPConnections attempts to close idle HTTP connections in the k8s client transport.
