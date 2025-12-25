@@ -25,15 +25,25 @@ type httpRequest struct {
 	StartTime time.Time
 }
 
-// HTTPSniffer detects and parses HTTP requests/responses from stream data
+// HTTPSniffer detects and parses HTTP requests/responses from stream data.
+//
+// LIMITATION: Request/response pairing is best-effort. For pipelined or concurrent
+// HTTP requests over the same connection, responses may be incorrectly paired with
+// requests. The sniffer uses a single currentReq field to track the most recent
+// request, so only sequential request-response pairs are guaranteed to be accurate.
+// This is acceptable for debugging/monitoring purposes but should not be relied
+// upon for precise request-response correlation in high-concurrency scenarios.
 type HTTPSniffer struct {
 	mu         sync.Mutex
 	reqBuffer  *bytes.Buffer
 	resBuffer  *bytes.Buffer
 	currentReq *httpRequest
-	logs       []HTTPLogEntry
-	maxLogs    int
-	enabled    bool
+	// Ring buffer: fixed-size array with index-based wrap to avoid memory leaks
+	logs     []HTTPLogEntry
+	logIndex int // Next write position
+	logCount int // Number of valid entries (up to maxLogs)
+	maxLogs  int
+	enabled  bool
 }
 
 // HTTP detection patterns
@@ -43,7 +53,8 @@ var (
 	contentLengthRe   = regexp.MustCompile(`(?i)Content-Length:\s*(\d+)`)
 )
 
-// NewHTTPSniffer creates a new HTTP sniffer with the specified log capacity
+// NewHTTPSniffer creates a new HTTP sniffer with the specified log capacity.
+// The log buffer is pre-allocated to avoid memory growth during operation.
 func NewHTTPSniffer(maxLogs int) *HTTPSniffer {
 	if maxLogs <= 0 {
 		maxLogs = 50
@@ -51,7 +62,9 @@ func NewHTTPSniffer(maxLogs int) *HTTPSniffer {
 	return &HTTPSniffer{
 		reqBuffer: bytes.NewBuffer(make([]byte, 0, 1024)),
 		resBuffer: bytes.NewBuffer(make([]byte, 0, 1024)),
-		logs:      make([]HTTPLogEntry, 0, maxLogs),
+		logs:      make([]HTTPLogEntry, maxLogs), // Pre-allocate fixed size
+		logIndex:  0,
+		logCount:  0,
 		maxLogs:   maxLogs,
 		enabled:   true,
 	}
@@ -148,12 +161,19 @@ func (s *HTTPSniffer) SniffResponse(data []byte) {
 		line := string(bufData[:idx])
 
 		if match := httpResponseRegex.FindStringSubmatch(line); match != nil {
-			statusCode, _ := strconv.Atoi(match[1])
+			statusCode, err := strconv.Atoi(match[1])
+			if err != nil {
+				// Invalid status code format - shouldn't happen with regex match but handle gracefully
+				statusCode = 0
+			}
 
-			// Try to get content length from headers
+			// Try to get content length from headers (best-effort, size=0 if not found or invalid)
 			var size int64
 			if clMatch := contentLengthRe.FindSubmatch(bufData); clMatch != nil {
-				size, _ = strconv.ParseInt(string(clMatch[1]), 10, 64)
+				if parsed, err := strconv.ParseInt(string(clMatch[1]), 10, 64); err == nil {
+					size = parsed
+				}
+				// On parse error, size remains 0 (unknown size)
 			}
 
 			// Create log entry
@@ -180,44 +200,54 @@ func (s *HTTPSniffer) SniffResponse(data []byte) {
 	}
 }
 
-// addLog adds a log entry to the ring buffer (must be called with lock held)
+// addLog adds a log entry to the ring buffer (must be called with lock held).
+// Uses index-based ring buffer to avoid memory leaks from slice retention.
 func (s *HTTPSniffer) addLog(entry HTTPLogEntry) {
-	s.logs = append(s.logs, entry)
-	if len(s.logs) > s.maxLogs {
-		s.logs = s.logs[len(s.logs)-s.maxLogs:]
+	s.logs[s.logIndex] = entry
+	s.logIndex = (s.logIndex + 1) % s.maxLogs
+	if s.logCount < s.maxLogs {
+		s.logCount++
 	}
 }
 
-// GetLogs returns the most recent log entries
+// GetLogs returns the most recent log entries in chronological order
 func (s *HTTPSniffer) GetLogs(count int) []HTTPLogEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if count <= 0 || count > len(s.logs) {
-		count = len(s.logs)
+	if count <= 0 || count > s.logCount {
+		count = s.logCount
 	}
 
 	if count == 0 {
 		return nil
 	}
 
-	start := len(s.logs) - count
 	result := make([]HTTPLogEntry, count)
-	copy(result, s.logs[start:])
+	// Calculate start position for reading 'count' most recent entries
+	// logIndex points to next write position, so most recent is at logIndex-1
+	startIdx := (s.logIndex - count + s.maxLogs) % s.maxLogs
+	for i := 0; i < count; i++ {
+		result[i] = s.logs[(startIdx+i)%s.maxLogs]
+	}
 	return result
 }
 
-// GetAllLogs returns all log entries
+// GetAllLogs returns all log entries in chronological order
 func (s *HTTPSniffer) GetAllLogs() []HTTPLogEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.logs) == 0 {
+	if s.logCount == 0 {
 		return nil
 	}
 
-	result := make([]HTTPLogEntry, len(s.logs))
-	copy(result, s.logs)
+	result := make([]HTTPLogEntry, s.logCount)
+	// Start from oldest entry
+	startIdx := (s.logIndex - s.logCount + s.maxLogs) % s.maxLogs
+	for i := 0; i < s.logCount; i++ {
+		result[i] = s.logs[(startIdx+i)%s.maxLogs]
+	}
 	return result
 }
 
@@ -225,12 +255,17 @@ func (s *HTTPSniffer) GetAllLogs() []HTTPLogEntry {
 func (s *HTTPSniffer) ClearLogs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.logs = s.logs[:0]
+	s.logIndex = 0
+	s.logCount = 0
+	// Zero out entries to allow GC of any referenced objects
+	for i := range s.logs {
+		s.logs[i] = HTTPLogEntry{}
+	}
 }
 
 // LogCount returns the number of log entries
 func (s *HTTPSniffer) LogCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.logs)
+	return s.logCount
 }
