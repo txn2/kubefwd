@@ -153,7 +153,9 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			select {
 			case eventCh <- e:
 			default:
-				// Drop if buffer full
+				// Buffer full - drop event but log warning (to stderr since TUI owns stdout)
+				// This is rare and indicates very high event volume
+				_, _ = fmt.Fprintf(os.Stderr, "TUI: dropped event %s (buffer full)\n", e.Type)
 			}
 		})
 
@@ -864,7 +866,9 @@ func (h *tuiLogHook) Fire(entry *log.Entry) error {
 		Time:    entry.Time,
 	}:
 	default:
-		// Drop if buffer full
+		// Buffer full - drop log but write to stderr as fallback
+		// This is rare and indicates very high log volume
+		_, _ = fmt.Fprintf(os.Stderr, "TUI: dropped log (buffer full): %s\n", entry.Message)
 	}
 	return nil
 }
