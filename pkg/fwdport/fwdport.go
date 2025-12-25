@@ -490,27 +490,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	return nil
 }
 
-//// BuildHostsParams constructs the basic hostnames for the service
-//// based on the PortForwardOpts configuration
-//func (pfo *PortForwardOpts) BuildHostsParams() {
-//
-//	localServiceName := pfo.Service
-//	nsServiceName := pfo.Service + "." + pfo.Namespace
-//	fullServiceName := fmt.Sprintf("%s.%s.svc.cluster.local", pfo.Service, pfo.Namespace)
-//	svcServiceName := fmt.Sprintf("%s.%s.svc", pfo.Service, pfo.Namespace)
-//
-//	// check if this is an additional cluster (remote from the
-//	// perspective of the user / argument order)
-//	if pfo.ClusterN > 0 {
-//		fullServiceName = fmt.Sprintf("%s.%s.svc.cluster.%s", pfo.Service, pfo.Namespace, pfo.Context)
-//	}
-//	pfo.HostsParams.localServiceName = localServiceName
-//	pfo.HostsParams.nsServiceName = nsServiceName
-//	pfo.HostsParams.fullServiceName = fullServiceName
-//	pfo.HostsParams.svcServiceName = svcServiceName
-//}
-
-// AddHost
+// addHost adds a hostname to the hosts file for this port forward
 func (pfo *PortForwardOpts) addHost(host string) {
 	pfo.Hosts = append(pfo.Hosts, host)
 	fwdIp.RegisterHostname(host)

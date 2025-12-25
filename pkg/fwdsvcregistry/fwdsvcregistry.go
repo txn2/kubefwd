@@ -87,36 +87,7 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 
 	// Start port forwarding
 	go serviceFwd.SyncPodForwards(false)
-
-	// Schedule a re sync every x minutes to deal with potential connection errors.
-	// @TODO review the need for this, if we keep it make if configurable
-	// @TODO this causes the services to try and bind a second time to the local ports and fails --cjimti
-	//
-	//go func() {
-	//	for {
-	//		select {
-	//		case <-time.After(10 * time.Minute):
-	//			serviceFwd.SyncPodForwards(false)
-	//		case <-serviceFwd.DoneChannel:
-	//			return
-	//		}
-	//	}
-	//}()
 }
-
-// SyncAll does a pod sync for all known services.
-//func SyncAll() {
-//	// If we are already shutting down, don't sync services anymore.
-//	select {
-//	case <-svcRegistry.shutDownSignal:
-//		return
-//	default:
-//	}
-//
-//	for _, svc := range svcRegistry.services {
-//		svc.SyncPodForwards(true)
-//	}
-//}
 
 // ShutDownAll will shutdown all active services and remove them from the registry
 func ShutDownAll() {
