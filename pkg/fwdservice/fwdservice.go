@@ -168,6 +168,9 @@ func (svcFwd *ServiceFWD) scheduleReconnect() bool {
 		}
 
 		log.Infof("Attempting reconnection for service %s", svcFwd)
+		// Close idle HTTP connections to force fresh TCP connections
+		// This helps when previous connections timed out or are in a bad state
+		svcFwd.CloseIdleHTTPConnections()
 		svcFwd.SyncPodForwards(true) // force=true bypasses debouncing
 	}()
 
