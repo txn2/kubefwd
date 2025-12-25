@@ -358,10 +358,9 @@ Try:
 			count := 0
 			for registryKey := range erroredServices {
 				if svcfwd := fwdsvcregistry.Get(registryKey); svcfwd != nil {
-					// Close idle HTTP connections to force fresh TCP connections
-					// This helps when previous connections timed out or are stale
-					svcfwd.CloseIdleHTTPConnections()
-					go svcfwd.SyncPodForwards(true) // force=true bypasses debouncing
+					// ForceReconnect resets backoff state and triggers immediate reconnection
+					// This bypasses any pending backoff timers from auto-reconnect
+					go svcfwd.ForceReconnect()
 					count++
 				}
 			}
