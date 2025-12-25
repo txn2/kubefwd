@@ -187,6 +187,20 @@ func (svcFwd *ServiceFWD) resetReconnectBackoff() {
 	}
 }
 
+// ForceReconnect resets all reconnect state and triggers immediate reconnection.
+// This is called when user presses 'r' in TUI to manually retry errored connections.
+// Unlike scheduleReconnect(), this bypasses any pending backoff timers.
+func (svcFwd *ServiceFWD) ForceReconnect() {
+	svcFwd.reconnectMu.Lock()
+	svcFwd.reconnectBackoff = 0
+	svcFwd.reconnecting = false
+	svcFwd.reconnectMu.Unlock()
+
+	log.Infof("Force reconnecting service %s", svcFwd)
+	svcFwd.CloseIdleHTTPConnections()
+	svcFwd.SyncPodForwards(true)
+}
+
 // CloseIdleHTTPConnections attempts to close idle HTTP connections in the k8s client transport.
 // This helps when reconnecting after connection errors by forcing fresh TCP connections.
 // It's a best-effort operation - if the transport doesn't support CloseIdleConnections, it's a no-op.
