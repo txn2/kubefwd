@@ -5,13 +5,19 @@ import (
 	"time"
 )
 
-// Registry is the global registry for all bandwidth metrics
+// Registry is the global registry for all bandwidth metrics.
+//
+// Lock ordering: When acquiring multiple locks, always acquire Registry.mu BEFORE
+// ServiceMetrics.mu to avoid deadlocks. The takeSample() method demonstrates this
+// pattern: it holds Registry.mu (RLock) while iterating services, then acquires
+// ServiceMetrics.mu (RLock) for each service.
 type Registry struct {
 	services map[string]*ServiceMetrics
 	mu       sync.RWMutex
 	ticker   *time.Ticker
 	stopCh   chan struct{}
 	started  bool
+	wg       sync.WaitGroup // Tracks running goroutines for graceful shutdown
 }
 
 var globalRegistry *Registry
@@ -39,7 +45,9 @@ func (r *Registry) Start() {
 	r.mu.Unlock()
 
 	r.ticker = time.NewTicker(1 * time.Second)
+	r.wg.Add(1)
 	go func() {
+		defer r.wg.Done()
 		for {
 			select {
 			case <-r.ticker.C:
@@ -66,15 +74,19 @@ func (r *Registry) takeSample() {
 	}
 }
 
-// Stop shuts down the metrics registry
+// Stop shuts down the metrics registry and waits for the sampling goroutine to exit
 func (r *Registry) Stop() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.started {
-		close(r.stopCh)
-		r.started = false
+	if !r.started {
+		r.mu.Unlock()
+		return
 	}
+	close(r.stopCh)
+	r.started = false
+	r.mu.Unlock()
+
+	// Wait for the sampling goroutine to exit
+	r.wg.Wait()
 }
 
 // RegisterService adds a service to the registry
