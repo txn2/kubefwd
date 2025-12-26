@@ -54,6 +54,21 @@ archives:
 checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
 
+# Sign checksums with Cosign (keyless - uses OIDC identity)
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+
+# Generate Software Bill of Materials for archives
+sboms:
+  - artifacts: archive
+
 changelog:
   sort: asc
   filters:
@@ -108,6 +123,15 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.source: "{{ .GitURL }}"
+
+# Sign Docker images with Cosign (keyless)
+docker_signs:
+  - cmd: cosign
+    args:
+      - "sign"
+      - "--yes"
+      - "${artifact}"
+    artifacts: all
 
 nfpms:
   - id: default
