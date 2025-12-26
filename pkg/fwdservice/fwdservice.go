@@ -519,39 +519,36 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
-				// Check if shutdown was requested BEFORE we start
-				// (ManualStopChan may also close during PortForward due to error cleanup,
-				// but we should only skip reconnection if shutdown was requested externally)
-				wasShuttingDown := false
-				select {
-				case <-pfo.ManualStopChan:
-					wasShuttingDown = true
-				default:
-				}
-
 				svcFwd.AddServicePod(pfo)
 				err := pfo.PortForward()
 
-				// Remove the forward from the map since it's no longer active
-				// This allows SyncPodForwards to create a fresh forward on reconnection
+				// Normal cleanup - remove from map
 				svcFwd.NamespaceServiceLock.Lock()
 				servicePodKey := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
 				delete(svcFwd.PortForwards, servicePodKey)
 				svcFwd.NamespaceServiceLock.Unlock()
 
-				// If shutdown was already in progress before we started, exit cleanly
-				if wasShuttingDown {
+				// If there was an error, we should try to reconnect
+				// Note: PortForward() calls pfo.Stop() on error, so ManualStopChan
+				// will be closed - we can't use it to distinguish manual stop from error.
+				if err != nil {
+					log.Errorf("PortForward error on %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
+					// Attempt auto-reconnection if enabled
+					svcFwd.scheduleReconnect()
 					return
 				}
 
-				// Log the error or unexpected stop
-				if err != nil {
-					log.Errorf("PortForward error on %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
-				} else {
-					log.Warnf("Stopped forwarding pod %s for %s", pfo.PodName, svcFwd)
+				// No error means it was a clean stop (manual stop or shutdown)
+				// Check if service is shutting down
+				select {
+				case <-svcFwd.DoneChannel:
+					// Service is shutting down, don't reconnect
+					return
+				default:
 				}
 
-				// Attempt auto-reconnection if enabled
+				// Stopped without error but service not shutting down - unexpected
+				log.Warnf("Stopped forwarding pod %s for %s", pfo.PodName, svcFwd)
 				svcFwd.scheduleReconnect()
 			}()
 
