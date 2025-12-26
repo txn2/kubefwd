@@ -321,6 +321,9 @@ func (m DetailModel) Init() tea.Cmd {
 
 // Update handles keyboard input for the detail view
 func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
+	// Capture position BEFORE any scrolling to track user intent (for logs tab)
+	wasAtBottom := m.logsViewportReady && m.currentTab == TabLogs && m.logsViewport.AtBottom()
+
 	switch msg := msg.(type) {
 	case ClearCopiedMsg:
 		m.copiedVisible = false
@@ -421,7 +424,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			}
 			return m, nil
 
-		case "j", "down":
+		case "j":
+			// Vim-style scroll - viewport doesn't handle 'j'
 			if m.currentTab == TabHTTP {
 				maxScroll := m.getHTTPMaxScroll()
 				if m.httpScrollOffset < maxScroll {
@@ -432,7 +436,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				m.logsViewport.ScrollDown(1)
 			}
 
-		case "k", "up":
+		case "k":
+			// Vim-style scroll - viewport doesn't handle 'k'
 			if m.currentTab == TabHTTP {
 				if m.httpScrollOffset > 0 {
 					m.httpScrollOffset--
@@ -440,54 +445,90 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.ScrollUp(1)
+				m.logsAutoFollow = false // User is pausing
 			}
 
-		case "g", "home":
+		case "g":
+			// Vim-style go to top - viewport doesn't handle 'g'
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = 0
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.GotoTop()
+				m.logsAutoFollow = false // User is pausing
 			}
 
-		case "G", "end":
+		case "G":
+			// Vim-style go to bottom - viewport doesn't handle 'G'
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = m.getHTTPMaxScroll()
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.GotoBottom()
+				m.logsAutoFollow = true // User explicitly resumed
 			}
 
-		case "pgdown", "ctrl+d":
+		case "down", "pgdown", "ctrl+d":
+			// Let viewport handle scrolling for Logs tab
 			if m.currentTab == TabHTTP {
-				pageSize := m.getViewportHeight() / 2
-				if pageSize < 1 {
-					pageSize = 1
+				if key == "down" {
+					maxScroll := m.getHTTPMaxScroll()
+					if m.httpScrollOffset < maxScroll {
+						m.httpScrollOffset++
+					}
+				} else {
+					pageSize := m.getViewportHeight() / 2
+					if pageSize < 1 {
+						pageSize = 1
+					}
+					m.httpScrollOffset += pageSize
+					maxScroll := m.getHTTPMaxScroll()
+					if m.httpScrollOffset > maxScroll {
+						m.httpScrollOffset = maxScroll
+					}
 				}
-				m.httpScrollOffset += pageSize
-				maxScroll := m.getHTTPMaxScroll()
-				if m.httpScrollOffset > maxScroll {
-					m.httpScrollOffset = maxScroll
+				return m, nil
+			}
+			// For Logs tab, viewport.Update handles the scroll below
+			// wasAtBottom check at the end will resume autoFollow if needed
+
+		case "up", "pgup", "ctrl+u":
+			if m.currentTab == TabHTTP {
+				if key == "up" {
+					if m.httpScrollOffset > 0 {
+						m.httpScrollOffset--
+					}
+				} else {
+					pageSize := m.getViewportHeight() / 2
+					if pageSize < 1 {
+						pageSize = 1
+					}
+					m.httpScrollOffset -= pageSize
+					if m.httpScrollOffset < 0 {
+						m.httpScrollOffset = 0
+					}
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.HalfPageDown()
+				m.logsAutoFollow = false // User scrolling up = pausing
 			}
 
-		case "pgup", "ctrl+u":
+		case "home":
 			if m.currentTab == TabHTTP {
-				pageSize := m.getViewportHeight() / 2
-				if pageSize < 1 {
-					pageSize = 1
-				}
-				m.httpScrollOffset -= pageSize
-				if m.httpScrollOffset < 0 {
-					m.httpScrollOffset = 0
-				}
+				m.httpScrollOffset = 0
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.HalfPageUp()
+				m.logsAutoFollow = false // User going to top = pausing
 			}
+
+		case "end":
+			if m.currentTab == TabHTTP {
+				m.httpScrollOffset = m.getHTTPMaxScroll()
+				return m, nil
+			} else if m.currentTab == TabLogs && m.logsViewportReady {
+				m.logsAutoFollow = true // User going to bottom = resuming
+			}
+
 		}
 
 	case tea.WindowSizeMsg:
@@ -502,7 +543,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				}
 				return m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.ScrollUp(3)
+				// Let viewport handle the scroll, just set pause intent
+				m.logsAutoFollow = false // User scrolling up = pausing
 			}
 		} else if msg.Button == tea.MouseButtonWheelDown {
 			if m.currentTab == TabHTTP {
@@ -512,9 +554,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 					m.httpScrollOffset = maxScroll
 				}
 				return m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.ScrollDown(3)
 			}
+			// For Logs tab, viewport.Update handles the scroll below
+			// wasAtBottom check at the end will resume autoFollow if needed
 		}
 	}
 
@@ -522,8 +564,12 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.logsViewportReady && m.currentTab == TabLogs {
 		m.logsViewport, cmd = m.logsViewport.Update(msg)
-		// Update auto-follow state based on scroll position
-		m.logsAutoFollow = m.logsViewport.AtBottom()
+
+		// Resume autoFollow if user scrolled TO the bottom
+		// (they were not at bottom before, but are now)
+		if !wasAtBottom && m.logsViewport.AtBottom() {
+			m.logsAutoFollow = true
+		}
 	}
 	return m, cmd
 }
