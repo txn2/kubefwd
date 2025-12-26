@@ -21,21 +21,21 @@ func NewHeaderModel(version string) HeaderModel {
 }
 
 // Init initializes the header model
-func (m HeaderModel) Init() tea.Cmd {
+func (m *HeaderModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for the header
-func (m HeaderModel) Update(msg tea.Msg) (HeaderModel, tea.Cmd) {
+func (m *HeaderModel) Update(msg tea.Msg) (HeaderModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	}
-	return m, nil
+	return *m, nil
 }
 
 // View renders the header
-func (m HeaderModel) View() string {
+func (m *HeaderModel) View() string {
 	title := styles.HeaderTitleStyle.Render("kubefwd")
 	version := styles.HeaderVersionStyle.Render(" v" + m.version)
 	link := styles.HeaderLinkStyle.Render("github.com/txn2/kubefwd")

@@ -107,12 +107,12 @@ func buildColumns(showNS, showCtx, showBandwidth, compactView bool) []table.Colu
 }
 
 // Init initializes the services model
-func (m ServicesModel) Init() tea.Cmd {
+func (m *ServicesModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for the services table
-func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
+func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -155,7 +155,7 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 					m.filterText += msg.String()
 				}
 			}
-			return m, nil
+			return *m, nil
 		}
 
 		// Normal mode key handling
@@ -163,20 +163,20 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 		case "/":
 			m.filtering = true
 			m.filterText = m.store.GetFilter()
-			return m, nil
+			return *m, nil
 		case "esc":
 			m.store.SetFilter("")
 			m.filterText = ""
 			m.Refresh()
-			return m, nil
+			return *m, nil
 		case "b":
 			m.showBandwidth = !m.showBandwidth
 			m.rebuildColumns()
-			return m, nil
+			return *m, nil
 		case "c":
 			m.compactView = !m.compactView
 			m.rebuildColumns()
-			return m, nil
+			return *m, nil
 		case "g", "home":
 			m.table = m.table.PageFirst()
 		case "G", "end":
@@ -190,7 +190,7 @@ func (m ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 	}
 
 	m.table, cmd = m.table.Update(msg)
-	return m, cmd
+	return *m, cmd
 }
 
 // rebuildColumns rebuilds the table columns based on current visibility settings
@@ -257,7 +257,7 @@ func (m *ServicesModel) Refresh() {
 }
 
 // View renders the services table (no border - parent handles that)
-func (m ServicesModel) View() string {
+func (m *ServicesModel) View() string {
 	var filterLine string
 	if m.filtering {
 		filterLine = fmt.Sprintf(" Filter: %s█", m.filterText)
@@ -295,7 +295,7 @@ func (m *ServicesModel) SetSize(width, height int) {
 }
 
 // IsFiltering returns whether the table is in filter mode
-func (m ServicesModel) IsFiltering() bool {
+func (m *ServicesModel) IsFiltering() bool {
 	return m.filtering
 }
 
@@ -357,7 +357,7 @@ func formatPort(localPort, podPort string) string {
 }
 
 // GetSelectedKey returns the key of the currently highlighted row, or empty string if none
-func (m ServicesModel) GetSelectedKey() string {
+func (m *ServicesModel) GetSelectedKey() string {
 	row := m.table.HighlightedRow()
 	if row.Data == nil {
 		return ""
@@ -371,7 +371,7 @@ func (m ServicesModel) GetSelectedKey() string {
 }
 
 // HasSelection returns true if a row is selected
-func (m ServicesModel) HasSelection() bool {
+func (m *ServicesModel) HasSelection() bool {
 	return m.GetSelectedKey() != ""
 }
 

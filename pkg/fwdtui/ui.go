@@ -285,7 +285,7 @@ func Emit(event events.Event) {
 // RootModel methods
 
 // Init initializes the model
-func (m RootModel) Init() tea.Cmd {
+func (m *RootModel) Init() tea.Cmd {
 	return tea.Batch(
 		ListenEvents(m.eventCh),
 		ListenMetrics(m.metricsCh),
@@ -299,7 +299,7 @@ func (m RootModel) Init() tea.Cmd {
 }
 
 // Update handles messages
-func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -584,7 +584,7 @@ func (m *RootModel) waitForLogLine() tea.Cmd {
 }
 
 // View renders the UI
-func (m RootModel) View() string {
+func (m *RootModel) View() string {
 	if m.quitting {
 		return "Shutting down...\n"
 	}

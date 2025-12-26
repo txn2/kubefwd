@@ -41,12 +41,12 @@ func NewLogsModel() LogsModel {
 }
 
 // Init initializes the logs model
-func (m LogsModel) Init() tea.Cmd {
+func (m *LogsModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for the logs viewport
-func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
+func (m *LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// Capture position BEFORE any scrolling to track user intent
@@ -120,7 +120,7 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 			m.autoFollow = true
 		}
 	}
-	return m, cmd
+	return *m, cmd
 }
 
 // AppendLog adds a log entry
@@ -256,7 +256,7 @@ func wrapText(text string, width, indent int) string {
 }
 
 // View renders the logs viewport (no border - parent handles that)
-func (m LogsModel) View() string {
+func (m *LogsModel) View() string {
 	if !m.ready {
 		return "Loading..."
 	}

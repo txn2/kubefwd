@@ -21,12 +21,12 @@ func NewHelpModel() HelpModel {
 }
 
 // Init initializes the help model
-func (m HelpModel) Init() tea.Cmd {
+func (m *HelpModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for the help modal
-func (m HelpModel) Update(msg tea.Msg) (HelpModel, tea.Cmd) {
+func (m *HelpModel) Update(msg tea.Msg) (HelpModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -39,7 +39,7 @@ func (m HelpModel) Update(msg tea.Msg) (HelpModel, tea.Cmd) {
 			}
 		}
 	}
-	return m, nil
+	return *m, nil
 }
 
 // Toggle toggles the help visibility
@@ -48,7 +48,7 @@ func (m *HelpModel) Toggle() {
 }
 
 // IsVisible returns whether help is visible
-func (m HelpModel) IsVisible() bool {
+func (m *HelpModel) IsVisible() bool {
 	return m.visible
 }
 
@@ -63,7 +63,7 @@ func (m *HelpModel) Hide() {
 }
 
 // View renders the help modal
-func (m HelpModel) View() string {
+func (m *HelpModel) View() string {
 	if !m.visible {
 		return ""
 	}

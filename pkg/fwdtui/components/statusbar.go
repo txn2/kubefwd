@@ -21,17 +21,17 @@ func NewStatusBarModel() StatusBarModel {
 }
 
 // Init initializes the status bar model
-func (m StatusBarModel) Init() tea.Cmd {
+func (m *StatusBarModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles messages for the status bar
-func (m StatusBarModel) Update(msg tea.Msg) (StatusBarModel, tea.Cmd) {
+func (m *StatusBarModel) Update(msg tea.Msg) (StatusBarModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	}
-	return m, nil
+	return *m, nil
 }
 
 // UpdateStats updates the displayed statistics
@@ -40,7 +40,7 @@ func (m *StatusBarModel) UpdateStats(stats state.SummaryStats) {
 }
 
 // View renders the status bar
-func (m StatusBarModel) View() string {
+func (m *StatusBarModel) View() string {
 	s := m.stats
 
 	// Forwards count

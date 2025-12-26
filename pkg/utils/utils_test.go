@@ -142,7 +142,7 @@ func TestMockRootChecker_ThreadSafety(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 100; i++ {
 		go func() {
-			mock.CheckRoot()
+			_, _ = mock.CheckRoot()
 			done <- true
 		}()
 	}

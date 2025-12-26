@@ -118,12 +118,12 @@ func (m *DetailModel) Hide() tea.Cmd {
 }
 
 // IsVisible returns whether the detail view is visible
-func (m DetailModel) IsVisible() bool {
+func (m *DetailModel) IsVisible() bool {
 	return m.visible
 }
 
 // GetForwardKey returns the key of the currently displayed forward
-func (m DetailModel) GetForwardKey() string {
+func (m *DetailModel) GetForwardKey() string {
 	return m.forwardKey
 }
 
@@ -267,7 +267,7 @@ func (m *DetailModel) SetLogsStreaming(streaming bool) {
 }
 
 // IsLogsStreaming returns whether logs are currently streaming
-func (m DetailModel) IsLogsStreaming() bool {
+func (m *DetailModel) IsLogsStreaming() bool {
 	return m.logsStreaming
 }
 
@@ -278,12 +278,12 @@ func (m *DetailModel) SetLogsError(err string) {
 }
 
 // GetCurrentTab returns the current tab index
-func (m DetailModel) GetCurrentTab() int {
+func (m *DetailModel) GetCurrentTab() int {
 	return m.currentTab
 }
 
 // GetSnapshot returns the current snapshot
-func (m DetailModel) GetSnapshot() *state.ForwardSnapshot {
+func (m *DetailModel) GetSnapshot() *state.ForwardSnapshot {
 	return m.snapshot
 }
 
@@ -316,12 +316,12 @@ type PodLogsErrorMsg struct {
 type ReconnectErroredMsg struct{}
 
 // Init implements tea.Model
-func (m DetailModel) Init() tea.Cmd {
+func (m *DetailModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update handles keyboard input for the detail view
-func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
+func (m *DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	// Capture position BEFORE any scrolling to track user intent (for logs tab)
 	wasAtBottom := m.logsViewportReady && m.currentTab == TabLogs && m.logsViewport.AtBottom()
 
@@ -329,18 +329,18 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	case ClearCopiedMsg:
 		m.copiedVisible = false
 		m.copiedIndex = -1
-		return m, nil
+		return *m, nil
 
 	case PodLogLineMsg:
 		// Append log line from stream
 		m.AppendLogLine(msg.Line)
-		return m, nil
+		return *m, nil
 
 	case PodLogsErrorMsg:
 		m.logsError = msg.Error.Error()
 		m.logsLoading = false
 		m.logsStreaming = false
-		return m, nil
+		return *m, nil
 
 	case tea.KeyMsg:
 		key := msg.String()
@@ -353,20 +353,20 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if copyToClipboard(connectStrings[idx]) {
 					m.copiedIndex = idx
 					m.copiedVisible = true
-					return m, clearCopiedAfterDelay()
+					return *m, clearCopiedAfterDelay()
 				}
 			}
-			return m, nil
+			return *m, nil
 		}
 
 		switch key {
 		case "esc", "q":
 			cmd := m.Hide()
-			return m, cmd
+			return *m, cmd
 
 		case "r":
 			// Request reconnection of errored services (handled by RootModel)
-			return m, func() tea.Msg { return ReconnectErroredMsg{} }
+			return *m, func() tea.Msg { return ReconnectErroredMsg{} }
 
 		case "tab", "right":
 			prevTab := m.currentTab
@@ -389,9 +389,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			}
 
 			if len(cmds) > 0 {
-				return m, tea.Batch(cmds...)
+				return *m, tea.Batch(cmds...)
 			}
-			return m, nil
+			return *m, nil
 
 		case "shift+tab", "left":
 			prevTab := m.currentTab
@@ -400,7 +400,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			// Stop streaming if leaving Logs tab
 			if prevTab == TabLogs && m.logsStreaming {
 				m.logsStreaming = false
-				return m, func() tea.Msg { return PodLogsStopMsg{} }
+				return *m, func() tea.Msg { return PodLogsStopMsg{} }
 			}
 
 			// Start streaming if entering Logs tab
@@ -408,9 +408,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				m.logsLoading = true
 				m.podLogs = nil
 				m.logsViewportReady = false // Reset viewport
-				return m, m.requestPodLogs()
+				return *m, m.requestPodLogs()
 			}
-			return m, nil
+			return *m, nil
 
 		case "y": // Yank/copy first connect string (only on Info tab)
 			if m.currentTab == TabInfo {
@@ -419,11 +419,11 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 					if copyToClipboard(connectStrings[0]) {
 						m.copiedIndex = 0
 						m.copiedVisible = true
-						return m, clearCopiedAfterDelay()
+						return *m, clearCopiedAfterDelay()
 					}
 				}
 			}
-			return m, nil
+			return *m, nil
 
 		case "j":
 			// Vim-style scroll - viewport doesn't handle 'j'
@@ -432,7 +432,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.httpScrollOffset < maxScroll {
 					m.httpScrollOffset++
 				}
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.ScrollDown(1)
 			}
@@ -443,7 +443,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.httpScrollOffset > 0 {
 					m.httpScrollOffset--
 				}
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.ScrollUp(1)
 				m.logsAutoFollow = false // User is pausing
@@ -453,7 +453,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			// Vim-style go to top - viewport doesn't handle 'g'
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = 0
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.GotoTop()
 				m.logsAutoFollow = false // User is pausing
@@ -463,7 +463,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			// Vim-style go to bottom - viewport doesn't handle 'G'
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = m.getHTTPMaxScroll()
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsViewport.GotoBottom()
 				m.logsAutoFollow = true // User explicitly resumed
@@ -488,7 +488,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 						m.httpScrollOffset = maxScroll
 					}
 				}
-				return m, nil
+				return *m, nil
 			}
 			// For Logs tab, viewport.Update handles the scroll below
 			// wasAtBottom check at the end will resume autoFollow if needed
@@ -509,7 +509,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 						m.httpScrollOffset = 0
 					}
 				}
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsAutoFollow = false // User scrolling up = pausing
 			}
@@ -517,7 +517,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		case "home":
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = 0
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsAutoFollow = false // User going to top = pausing
 			}
@@ -525,7 +525,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		case "end":
 			if m.currentTab == TabHTTP {
 				m.httpScrollOffset = m.getHTTPMaxScroll()
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				m.logsAutoFollow = true // User going to bottom = resuming
 			}
@@ -542,7 +542,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.httpScrollOffset < 0 {
 					m.httpScrollOffset = 0
 				}
-				return m, nil
+				return *m, nil
 			} else if m.currentTab == TabLogs && m.logsViewportReady {
 				// Let viewport handle the scroll, just set pause intent
 				m.logsAutoFollow = false // User scrolling up = pausing
@@ -554,7 +554,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				if m.httpScrollOffset > maxScroll {
 					m.httpScrollOffset = maxScroll
 				}
-				return m, nil
+				return *m, nil
 			}
 			// For Logs tab, viewport.Update handles the scroll below
 			// wasAtBottom check at the end will resume autoFollow if needed
@@ -572,7 +572,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			m.logsAutoFollow = true
 		}
 	}
-	return m, cmd
+	return *m, cmd
 }
 
 // requestPodLogs returns a command to request pod logs
@@ -618,7 +618,7 @@ func (m *DetailModel) getHTTPMaxScroll() int {
 }
 
 // getConnectStrings returns all hostname:port combinations
-func (m DetailModel) getConnectStrings() []string {
+func (m *DetailModel) getConnectStrings() []string {
 	if m.snapshot == nil {
 		return nil
 	}
@@ -993,7 +993,7 @@ func (m *DetailModel) renderLogsTab() string {
 }
 
 // renderStatus renders the status with appropriate styling
-func (m DetailModel) renderStatus(status state.ForwardStatus) string {
+func (m *DetailModel) renderStatus(status state.ForwardStatus) string {
 	switch status {
 	case state.StatusActive:
 		return styles.StatusActiveStyle.Render("Active")
@@ -1011,7 +1011,7 @@ func (m DetailModel) renderStatus(status state.ForwardStatus) string {
 }
 
 // renderMethod renders an HTTP method with appropriate color
-func (m DetailModel) renderMethod(method string) string {
+func (m *DetailModel) renderMethod(method string) string {
 	method = strings.ToUpper(method)
 	padded := fmt.Sprintf("%-7s", method)
 	switch method {
@@ -1029,7 +1029,7 @@ func (m DetailModel) renderMethod(method string) string {
 }
 
 // renderStatusCode renders an HTTP status code with appropriate color
-func (m DetailModel) renderStatusCode(code int) string {
+func (m *DetailModel) renderStatusCode(code int) string {
 	codeStr := strconv.Itoa(code)
 	switch {
 	case code >= 500:
@@ -1046,7 +1046,7 @@ func (m DetailModel) renderStatusCode(code int) string {
 }
 
 // renderFooter renders the footer with keybindings based on current tab
-func (m DetailModel) renderFooter() string {
+func (m *DetailModel) renderFooter() string {
 	var parts []string
 
 	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Esc]")+" Back")
