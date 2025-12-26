@@ -37,7 +37,7 @@ func (m HeaderModel) Update(msg tea.Msg) (HeaderModel, tea.Cmd) {
 // View renders the header
 func (m HeaderModel) View() string {
 	title := styles.HeaderTitleStyle.Render("kubefwd")
-	version := styles.HeaderVersionStyle.Render(fmt.Sprintf(" v%s", m.version))
+	version := styles.HeaderVersionStyle.Render(" v" + m.version)
 	link := styles.HeaderLinkStyle.Render("github.com/txn2/kubefwd")
 
 	return fmt.Sprintf(" %s%s | %s", title, version, link)

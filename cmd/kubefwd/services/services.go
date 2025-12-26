@@ -87,7 +87,6 @@ func init() {
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
 	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min)")
-
 }
 
 var Cmd = &cobra.Command{
@@ -161,7 +160,6 @@ func checkConnection(clientSet kubernetes.Interface, namespaces []string) error 
 }
 
 func runCmd(cmd *cobra.Command, _ []string) {
-
 	if verbose {
 		log.SetLevel(log.DebugLevel)
 	}
@@ -653,9 +651,9 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It triggers a resync when the service's selector or ports change.
-func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
-	oldSvc, oldOk := old.(*v1.Service)
-	newSvc, newOk := new.(*v1.Service)
+func (opts *NamespaceOpts) UpdateServiceHandler(oldObj interface{}, newObj interface{}) {
+	oldSvc, oldOk := oldObj.(*v1.Service)
+	newSvc, newOk := newObj.(*v1.Service)
 
 	if !oldOk || !newOk {
 		return

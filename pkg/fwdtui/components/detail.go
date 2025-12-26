@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1029,17 +1030,19 @@ func (m DetailModel) renderMethod(method string) string {
 
 // renderStatusCode renders an HTTP status code with appropriate color
 func (m DetailModel) renderStatusCode(code int) string {
-	codeStr := fmt.Sprintf("%d", code)
-	if code >= 200 && code < 300 {
-		return styles.HTTPStatus2xxStyle.Render(codeStr)
-	} else if code >= 300 && code < 400 {
-		return styles.HTTPStatus3xxStyle.Render(codeStr)
-	} else if code >= 400 && code < 500 {
-		return styles.HTTPStatus4xxStyle.Render(codeStr)
-	} else if code >= 500 {
+	codeStr := strconv.Itoa(code)
+	switch {
+	case code >= 500:
 		return styles.HTTPStatus5xxStyle.Render(codeStr)
+	case code >= 400:
+		return styles.HTTPStatus4xxStyle.Render(codeStr)
+	case code >= 300:
+		return styles.HTTPStatus3xxStyle.Render(codeStr)
+	case code >= 200:
+		return styles.HTTPStatus2xxStyle.Render(codeStr)
+	default:
+		return styles.DetailValueStyle.Render(codeStr)
 	}
-	return styles.DetailValueStyle.Render(codeStr)
 }
 
 // renderFooter renders the footer with keybindings based on current tab

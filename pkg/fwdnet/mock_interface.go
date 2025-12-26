@@ -4,7 +4,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 // MockInterfaceManager is a test double for InterfaceManager.
@@ -13,7 +13,7 @@ type MockInterfaceManager struct {
 	mu sync.Mutex
 
 	// ReadyInterfaceCalls tracks all calls to ReadyInterface
-	ReadyInterfaceCalls []fwdIp.ForwardIPOpts
+	ReadyInterfaceCalls []fwdip.ForwardIPOpts
 
 	// RemoveInterfaceAliasCalls tracks all calls to RemoveInterfaceAlias
 	RemoveInterfaceAliasCalls []net.IP
@@ -40,7 +40,7 @@ func NewMockInterfaceManager() *MockInterfaceManager {
 
 // ReadyInterface implements InterfaceManager.
 // It allocates unique IPs per service and tracks all calls.
-func (m *MockInterfaceManager) ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
+func (m *MockInterfaceManager) ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

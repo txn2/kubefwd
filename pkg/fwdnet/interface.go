@@ -3,7 +3,7 @@ package fwdnet
 import (
 	"net"
 
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 // InterfaceManager handles loopback interface operations.
@@ -11,7 +11,7 @@ import (
 type InterfaceManager interface {
 	// ReadyInterface prepares a local IP address on the loopback interface.
 	// Returns the allocated IP or an error.
-	ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error)
+	ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP, error)
 
 	// RemoveInterfaceAlias removes an IP alias from the loopback interface.
 	RemoveInterfaceAlias(ip net.IP)

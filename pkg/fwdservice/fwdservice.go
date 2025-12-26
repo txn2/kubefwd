@@ -2,13 +2,12 @@ package fwdservice
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -409,7 +408,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			svcName = pod.Name + "." + svcFwd.Svc.Name
 		}
 
-		opts := fwdIp.ForwardIPOpts{
+		opts := fwdip.ForwardIPOpts{
 			ServiceName:              svcName,
 			PodName:                  pod.Name,
 			Context:                  svcFwd.Context,
@@ -420,7 +419,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			ForwardConfigurationPath: svcFwd.ForwardConfigurationPath,
 			ForwardIPReservations:    svcFwd.ForwardIPReservations,
 		}
-		localIp, err := fwdnet.ReadyInterface(opts)
+		localIP, err := fwdnet.ReadyInterface(opts)
 		if err != nil {
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
@@ -483,12 +482,12 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			log.Debugf("Resolving: %s to %s (%s)\n",
 				serviceHostName,
-				localIp.String(),
+				localIP.String(),
 				svcName,
 			)
 
 			log.Printf("Port-Forward: %16s %s:%d to pod %s:%s\n",
-				localIp.String(),
+				localIP.String(),
 				serviceHostName,
 				port.Port,
 				pod.Name,
@@ -507,7 +506,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				PodName:       pod.Name,
 				PodPort:       podPort,
 				ContainerName: containerName,
-				LocalIp:       localIp,
+				LocalIP:       localIP,
 				LocalPort:     localPort,
 				HostFile:      svcFwd.Hostfile,
 				ClusterN:      svcFwd.ClusterN,
@@ -580,7 +579,7 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 			pfo.PodName,
 			svcFwd.String(), // registryKey for reconnection lookup
 		)
-		event.LocalIP = pfo.LocalIp.String()
+		event.LocalIP = pfo.LocalIP.String()
 		event.LocalPort = pfo.LocalPort
 		event.PodPort = pfo.PodPort
 		event.ContainerName = pfo.ContainerName
@@ -636,7 +635,7 @@ func portSearch(portName string, containers []v1.Container) (port string, contai
 	for _, container := range containers {
 		for _, cp := range container.Ports {
 			if cp.Name == portName {
-				return fmt.Sprint(cp.ContainerPort), container.Name, true
+				return strconv.FormatInt(int64(cp.ContainerPort), 10), container.Name, true
 			}
 		}
 	}
@@ -667,7 +666,7 @@ func (svcFwd *ServiceFWD) getPortMap(port int32) string {
 	if svcFwd.PortMap != nil {
 		for _, portMapInfo := range *svcFwd.PortMap {
 			if p == portMapInfo.SourcePort {
-				//use map port
+				// use map port
 				return portMapInfo.TargetPort
 			}
 		}

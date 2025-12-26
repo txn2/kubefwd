@@ -55,8 +55,8 @@ func (m StatusBarModel) View() string {
 	}
 
 	// Bandwidth
-	rateIn := fmt.Sprintf("In: %s", humanRate(s.TotalRateIn))
-	rateOut := fmt.Sprintf("Out: %s", humanRate(s.TotalRateOut))
+	rateIn := "In: " + humanRate(s.TotalRateIn)
+	rateOut := "Out: " + humanRate(s.TotalRateOut)
 
 	// Help hint
 	help := styles.StatusBarHelpStyle.Render("Press ? for help")

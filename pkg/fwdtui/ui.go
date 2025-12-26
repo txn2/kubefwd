@@ -379,8 +379,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case FocusLogs:
 			m.logs, cmd = m.logs.Update(msg)
 			cmds = append(cmds, cmd)
-		default:
-			// FocusDetail handled separately
+		case FocusDetail:
+			// FocusDetail keyboard input is handled separately above
 		}
 
 	case tea.MouseMsg:
@@ -400,8 +400,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case FocusLogs:
 					m.logs, cmd = m.logs.Update(msg)
 					cmds = append(cmds, cmd)
-				default:
-					// FocusDetail handled above
+				case FocusDetail:
+					// FocusDetail mouse input is handled above when detail.IsVisible()
 				}
 			}
 		}
@@ -704,8 +704,8 @@ func (m *RootModel) cycleFocus() {
 		m.focus = FocusServices
 		m.services.SetFocus(true)
 		m.logs.SetFocus(false)
-	default:
-		// FocusDetail doesn't cycle
+	case FocusDetail:
+		// FocusDetail doesn't participate in tab cycling
 	}
 }
 
@@ -842,9 +842,18 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 				m.store.RemoveForward(fwd.Key)
 			}
 		}
-	default:
-		// Other event types (ServiceAdded, ServiceUpdated, BandwidthUpdate, LogMessage, etc.)
-		// are handled elsewhere or not needed for TUI state
+
+	case events.ServiceAdded, events.ServiceUpdated:
+		// Service lifecycle events - pods are tracked individually via PodAdded/PodRemoved
+
+	case events.BandwidthUpdate:
+		// Bandwidth updates are handled via MetricsUpdateMsg, not events
+
+	case events.LogMessage:
+		// Log messages are handled via tuiLogHook, not through events
+
+	case events.ShutdownStarted, events.ShutdownComplete:
+		// Shutdown events are handled via ShutdownMsg in the main Update loop
 	}
 }
 

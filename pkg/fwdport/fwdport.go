@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/httpstream"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdpub"
@@ -202,7 +202,7 @@ func ResetGlobalPodInformer() {
 // parent service.
 type ServiceFWD interface {
 	String() string
-	SyncPodForwards(bool)
+	SyncPodForwards(force bool)
 }
 
 type HostFileWithLock struct {
@@ -222,7 +222,7 @@ type PortForwardOpts struct {
 	PodUID        types.UID
 	PodPort       string
 	ContainerName string
-	LocalIp       net.IP
+	LocalIP       net.IP
 	LocalPort     string
 	// Timeout for the port-forwarding process
 	Timeout  int
@@ -381,8 +381,8 @@ func (pfo *PortForwardOpts) PortForward() error {
 	var pfMetrics *fwdmetrics.PortForwardMetrics
 	if fwdtui.IsEnabled() {
 		localIPStr := ""
-		if pfo.LocalIp != nil {
-			localIPStr = pfo.LocalIp.String()
+		if pfo.LocalIP != nil {
+			localIPStr = pfo.LocalIP.String()
 		}
 		pfMetrics = fwdmetrics.NewPortForwardMetrics(
 			pfo.Service,
@@ -404,8 +404,8 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	var address []string
-	if pfo.LocalIp != nil {
-		address = []string{pfo.LocalIp.To4().String(), pfo.LocalIp.To16().String()}
+	if pfo.LocalIP != nil {
+		address = []string{pfo.LocalIP.To4().String(), pfo.LocalIP.To16().String()}
 	} else {
 		address = []string{"localhost"}
 	}
@@ -485,13 +485,13 @@ func (pfo *PortForwardOpts) PortForward() error {
 // addHost adds a hostname to the hosts file for this port forward
 func (pfo *PortForwardOpts) addHost(host string) {
 	pfo.Hosts = append(pfo.Hosts, host)
-	fwdIp.RegisterHostname(host)
+	fwdip.RegisterHostname(host)
 	pfo.HostFile.Hosts.RemoveHost(host)
-	pfo.HostFile.Hosts.AddHost(pfo.LocalIp.String(), host)
+	pfo.HostFile.Hosts.AddHost(pfo.LocalIP.String(), host)
 
 	sanitizedHost := sanitizeHost(host)
 	if host != sanitizedHost {
-		pfo.addHost(sanitizedHost) //should recurse only once
+		pfo.addHost(sanitizedHost) // should recurse only once
 	}
 }
 
@@ -663,7 +663,7 @@ func (pfo *PortForwardOpts) removeHosts() {
 
 // removeInterfaceAlias called on stop signal to
 func (pfo *PortForwardOpts) removeInterfaceAlias() {
-	fwdnet.RemoveInterfaceAlias(pfo.LocalIp)
+	fwdnet.RemoveInterfaceAlias(pfo.LocalIP)
 }
 
 func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {

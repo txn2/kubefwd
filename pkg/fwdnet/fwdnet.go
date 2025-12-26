@@ -8,12 +8,12 @@ import (
 	"runtime"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
-func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
+func ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP, error) {
 	return Manager.ReadyInterface(opts)
 }
 
@@ -24,8 +24,8 @@ func RemoveInterfaceAlias(ip net.IP) {
 }
 
 // ReadyInterface implements InterfaceManager for the default production implementation.
-func (d *defaultInterfaceManager) ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
-	ip, err := fwdIp.GetIp(opts)
+func (d *defaultInterfaceManager) ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP, error) {
+	ip, err := fwdip.GetIP(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate IP: %w", err)
 	}

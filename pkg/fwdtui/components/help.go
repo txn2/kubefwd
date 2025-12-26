@@ -137,7 +137,7 @@ func (m HelpModel) View() string {
 	var sb strings.Builder
 
 	// Vertical padding (top)
-	for i := 0; i < verticalPadding; i++ {
+	for range verticalPadding {
 		sb.WriteString("\n")
 	}
 

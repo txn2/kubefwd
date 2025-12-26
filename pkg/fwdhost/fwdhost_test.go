@@ -11,22 +11,15 @@ import (
 )
 
 // createTempHostsFile creates a temporary hosts file for testing
-func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, func()) {
+func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string) {
 	t.Helper()
 
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "fwdhost-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-
+	// Create a temporary directory (automatically cleaned up by t.TempDir())
+	tempDir := t.TempDir()
 	hostsPath := filepath.Join(tempDir, "hosts")
 
 	// Create initial hosts file
 	if err := os.WriteFile(hostsPath, []byte(content), 0644); err != nil {
-		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
-			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
-		}
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -36,19 +29,10 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, fun
 		WriteFilePath: hostsPath,
 	})
 	if err != nil {
-		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
-			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
-		}
 		t.Fatalf("Failed to create txeh.Hosts: %v", err)
 	}
 
-	cleanup := func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			t.Logf("Warning: failed to cleanup temp dir: %v", err)
-		}
-	}
-
-	return hosts, hostsPath, cleanup
+	return hosts, hostsPath
 }
 
 // TestBackupHostFile_CreateBackup tests creating a new backup
@@ -57,30 +41,11 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string, fun
 func TestBackupHostFile_CreateBackup(t *testing.T) {
 	// Create temporary hosts file
 	content := "127.0.0.1 localhost\n192.168.1.1 example.com\n"
-	hosts, _, cleanup := createTempHostsFile(t, content)
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, content)
 
-	// Get original home dir and set up temp home
-	originalHome := os.Getenv("HOME")
-	tempHome, err := os.MkdirTemp("", "home-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp home: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tempHome); err != nil {
-			t.Logf("Warning: failed to cleanup temp home: %v", err)
-		}
-	}()
-
-	// Override HOME for this test
-	if err := os.Setenv("HOME", tempHome); err != nil {
-		t.Fatalf("Failed to set HOME env var: %v", err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME env var: %v", err)
-		}
-	}()
+	// Set up temp home (t.TempDir auto-cleans, t.Setenv auto-restores)
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	// Create backup
 	msg, err := BackupHostFile(hosts, false)
@@ -118,8 +83,7 @@ func TestBackupHostFile_CreateBackup(t *testing.T) {
 //goland:noinspection DuplicatedCode
 func TestBackupHostFile_ExistingBackup(t *testing.T) {
 	content := "127.0.0.1 localhost\n"
-	hosts, _, cleanup := createTempHostsFile(t, content)
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, content)
 
 	// Set up temp home
 	originalHome := os.Getenv("HOME")
@@ -188,8 +152,7 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 func TestBackupHostFile_MissingSourceFile(t *testing.T) {
 	// Create a hosts file, then delete it before backup
 	content := "127.0.0.1 localhost\n"
-	hosts, hostsPath, cleanup := createTempHostsFile(t, content)
-	defer cleanup()
+	hosts, hostsPath := createTempHostsFile(t, content)
 
 	// Set up temp home
 	originalHome := os.Getenv("HOME")
@@ -233,8 +196,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 	}
 
 	content := "127.0.0.1 localhost\n"
-	hosts, _, cleanup := createTempHostsFile(t, content)
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, content)
 
 	// Set up read-only temp home
 	originalHome := os.Getenv("HOME")
@@ -280,28 +242,10 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestBackupHostFile_EmptyHostsFile(t *testing.T) {
-	hosts, _, cleanup := createTempHostsFile(t, "")
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, "")
 
-	originalHome := os.Getenv("HOME")
-	tempHome, err := os.MkdirTemp("", "home-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp home: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tempHome); err != nil {
-			t.Logf("Warning: failed to cleanup temp home: %v", err)
-		}
-	}()
-
-	if err := os.Setenv("HOME", tempHome); err != nil {
-		t.Fatalf("Failed to set HOME env var: %v", err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME env var: %v", err)
-		}
-	}()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
@@ -338,28 +282,10 @@ func TestBackupHostFile_LargeFile(t *testing.T) {
 		content.WriteString(".example.com\n")
 	}
 
-	hosts, _, cleanup := createTempHostsFile(t, content.String())
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, content.String())
 
-	originalHome := os.Getenv("HOME")
-	tempHome, err := os.MkdirTemp("", "home-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp home: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tempHome); err != nil {
-			t.Logf("Warning: failed to cleanup temp home: %v", err)
-		}
-	}()
-
-	if err := os.Setenv("HOME", tempHome); err != nil {
-		t.Fatalf("Failed to set HOME env var: %v", err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME env var: %v", err)
-		}
-	}()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	msg, err := BackupHostFile(hosts, false)
 	if err != nil {
@@ -393,8 +319,7 @@ func TestBackupHostFile_SpecialCharacters(t *testing.T) {
 		"192.168.1.1 host-with-dashes\n" +
 		"10.0.0.1 host_with_underscores\n"
 
-	hosts, _, cleanup := createTempHostsFile(t, content)
-	defer cleanup()
+	hosts, _ := createTempHostsFile(t, content)
 
 	originalHome := os.Getenv("HOME")
 	tempHome, err := os.MkdirTemp("", "home-*")
@@ -475,8 +400,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 			defer wg.Done()
 
 			// Each goroutine creates its own hosts file
-			hosts, _, cleanup := createTempHostsFile(t, content)
-			defer cleanup()
+			hosts, _ := createTempHostsFile(t, content)
 
 			_, err := BackupHostFile(hosts, false)
 			results <- err
@@ -513,29 +437,11 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 func TestBackupHostFile_MessageFormats(t *testing.T) {
 	content := "127.0.0.1 localhost\n"
 
-	originalHome := os.Getenv("HOME")
-	tempHome, err := os.MkdirTemp("", "home-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp home: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tempHome); err != nil {
-			t.Logf("Warning: failed to cleanup temp home: %v", err)
-		}
-	}()
-
-	if err := os.Setenv("HOME", tempHome); err != nil {
-		t.Fatalf("Failed to set HOME env var: %v", err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME env var: %v", err)
-		}
-	}()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	// First backup - should get creation message
-	hosts1, _, cleanup1 := createTempHostsFile(t, content)
-	defer cleanup1()
+	hosts1, _ := createTempHostsFile(t, content)
 
 	msg1, err := BackupHostFile(hosts1, false)
 	if err != nil {
@@ -559,8 +465,7 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 	}
 
 	// Second backup - should get existing backup message
-	hosts2, _, cleanup2 := createTempHostsFile(t, content)
-	defer cleanup2()
+	hosts2, _ := createTempHostsFile(t, content)
 
 	msg2, err := BackupHostFile(hosts2, false)
 	if err != nil {
@@ -586,31 +491,13 @@ func TestBackupHostFile_MessageFormats(t *testing.T) {
 func TestBackupHostFile_Idempotency(t *testing.T) {
 	originalContent := "127.0.0.1 localhost\n192.168.1.1 original\n"
 
-	originalHome := os.Getenv("HOME")
-	tempHome, err := os.MkdirTemp("", "home-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp home: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tempHome); err != nil {
-			t.Logf("Warning: failed to cleanup temp home: %v", err)
-		}
-	}()
-
-	if err := os.Setenv("HOME", tempHome); err != nil {
-		t.Fatalf("Failed to set HOME env var: %v", err)
-	}
-	defer func() {
-		if err := os.Setenv("HOME", originalHome); err != nil {
-			t.Errorf("Failed to restore HOME env var: %v", err)
-		}
-	}()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	// Create first backup
-	hosts1, hostsPath1, cleanup1 := createTempHostsFile(t, originalContent)
-	defer cleanup1()
+	hosts1, hostsPath1 := createTempHostsFile(t, originalContent)
 
-	_, err = BackupHostFile(hosts1, false)
+	_, err := BackupHostFile(hosts1, false)
 	if err != nil {
 		t.Fatalf("First backup failed: %v", err)
 	}
