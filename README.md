@@ -1,449 +1,245 @@
-Kubernetes port forwarding for local development.
+# kubefwd (Kube Forward)
 
-**NOTE:** Accepting pull requests for bug fixes, tests, and documentation only. 
-
-![kubefwd - kubernetes bulk port forwarding](https://raw.githubusercontent.com/txn2/kubefwd/master/kubefwd-mast2.jpg)
+![kubefwd - kubernetes bulk port forwarding](kubefwd-mast2.jpg)
 
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/txn2/kubefwd)](https://goreportcard.com/report/github.com/txn2/kubefwd)
 [![GitHub release](https://img.shields.io/github/release/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/releases)
 
-# kubefwd (Kube Forward)
+## Develop Locally, Connect to Kubernetes
 
-Read [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/) for background and a detailed guide to **kubefwd**. Follow [Craig Johnston](https://twitter.com/cjimti) on Twitter for project updates.
+**kubefwd** enables developers to work on their local machine while seamlessly accessing services running in a Kubernetes cluster. If you're building a new API that needs to connect to a database at `db:5432`, an auth service at `auth:443`, and a cache at `redis:6379`, all running in your development cluster, kubefwd makes them available locally by their service names, exactly as they would appear in-cluster. No environment-specific configuration, no local service setup, no Docker Compose files. Just run `kubefwd` and your application's existing connection strings work.
 
-**kubefwd** is a command line utility built to port forward multiple [services] within one or more [namespaces] on one or more Kubernetes clusters. **kubefwd** uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. **kubefwd** temporarily adds domain entries to your `/etc/hosts` file with the service names it forwards.
+This is the essential use case: **reduce or eliminate environment-specific connection setup and configurations** during local development. Your code uses `http://api-gateway:8080` in production? It works the same way on your laptop with kubefwd.
 
-**Key Differentiator:** Unlike `kubectl port-forward`, kubefwd assigns each service its own unique IP address (127.x.x.x), allowing multiple services to use the same port simultaneously without conflicts. This enables you to run multiple databases on port 3306 or multiple web services on port 80, just as they would in the cluster.
+> Bulk Kubernetes port forwarding with an interactive TUI, unique IPs per service, and automatic reconnection.
 
-When working on our local workstation, my team and I often build applications that access services through their service names and ports within a [Kubernetes] namespace. **kubefwd** allows us to develop locally with services available as they would be in the cluster.
+**kubefwd** is a command-line utility that bulk port forwards Kubernetes services to your local workstation. Each service gets its own unique loopback IP (127.x.x.x), eliminating port conflicts and enabling realistic local development with cluster services accessible by name.
 
-![kubefwd - Kubernetes port forward](kubefwd_ani.gif)
+![kubefwd TUI - Main View](docs/images/tui-110-main-active.png)
+
+## Quick Start
+
+```bash
+# Install (macOS)
+brew install txn2/tap/kubefwd
+
+# Forward all services in a namespace with the interactive TUI
+sudo -E kubefwd svc -n my-namespace --tui
+```
+
+Press `?` for help, `q` to quit. See [Getting Started](docs/getting-started.md) for detailed installation and setup.
+
+## How It Works
 
 <div align="center">
   <img width="654" height="684" src="https://mk.imti.co/images/content/kubefwd-net.png" alt="kubefwd - Kubernetes Port Forward Diagram">
 </div>
 
-## Quick Start
+kubefwd discovers services in your namespace, assigns each a unique loopback IP, updates `/etc/hosts` with service names, and establishes port forwards through the Kubernetes API. Access services by name just like in-cluster:
 
 ```bash
-# macOS
-brew install txn2/tap/kubefwd
-
-# Linux (download from releases page)
-# https://github.com/txn2/kubefwd/releases
-
-# Windows
-scoop install kubefwd
-
-# Run kubefwd (requires sudo for /etc/hosts and network interface management)
-sudo -E kubefwd svc -n <your-namespace>
+curl http://api-service:8080
+mysql -h database -P 3306
+redis-cli -h cache -p 6379
 ```
 
-Press `Ctrl-C` to stop forwarding and restore your hosts file.
+See [Architecture](docs/architecture.md) for technical details on IP allocation, SPDY connections, and the TUI design.
 
-## Supported Platforms
+## Features
 
-- **macOS** (tested on Intel and Apple Silicon)
-- **Linux** (tested on various distributions and Docker containers)
-- **Windows** (via Scoop package manager or Docker)
+- **Interactive TUI** - Real-time service monitoring with traffic metrics and sparkline graphs
+- **Unique IP per Service** - Each service gets its own 127.x.x.x address, eliminating port conflicts
+- **Auto-Reconnect** - Automatically reconnects when pods restart or connections drop
+- **Bulk Forwarding** - Forward all services in a namespace (or multiple namespaces) with a single command
+- **Live Traffic Monitoring** - See bytes in/out and HTTP request activity
+- **Pod Log Streaming** - View container logs directly in the TUI
+- **Headless Service Support** - Forwards all pods for headless services
+
+See [Advanced Usage](docs/advanced-usage.md) for multi-namespace, Docker, and headless service details. See [Comparison](docs/comparison.md) for how kubefwd compares to Telepresence, mirrord, and other tools.
+
+## TUI Screenshots
+
+### Main View - Services Connecting
+
+The main view shows a services table at the top with columns for hostname, port, namespace, status, and traffic metrics (Total In/Out, Rate In/Out). Services display "Connecting" (yellow) while establishing port forwards. The logs panel at the bottom shows real-time kubefwd activity. The status bar displays forward count, errors, and aggregate throughput.
+
+![TUI Connecting](docs/images/tui-100-main-connecting.png)
+
+### Main View - Help Overlay
+
+Press `?` to toggle the help overlay showing all keyboard shortcuts. Navigation keys (j/k, g/G, PgUp/PgDn), actions (Enter for detail, r to reconnect, / to filter), display toggles (b for bandwidth, c for compact), and detail view controls (1-9 to copy, h for HTTP). Mouse wheel scrolls and Shift+drag selects text.
+
+![TUI Help](docs/images/tui-120-main-help.png)
+
+### Service Detail - Connection Info
+
+Press Enter on any service to open the detail view. The Info tab displays numbered connect strings (press 1-9 to copy), the backing pod name with connection duration, and bandwidth sparklines showing traffic over time. Multiple hostname variations are provided for flexibility (short name, FQDN, namespace-qualified).
+
+![TUI Detail Info](docs/images/tui-200-detail-info.png)
+
+### Service Detail - HTTP Activity
+
+The HTTP tab captures HTTP requests flowing through the port forward, showing timestamp, method, path, status code, response time, and payload size. Green 200s indicate successful requests; orange 404s show not-found responses. Use j/k to scroll through request history.
+
+![TUI Detail HTTP](docs/images/tui-210-detail-http.png)
+
+### Service Detail - Pod Logs
+
+The Logs tab streams live container logs from the forwarded pod. This example shows nginx worker processes starting and HTTP access logs with request details. The "Following" indicator shows the container name and line count. Scrolling up with k or mouse wheel pauses auto-follow; scroll to bottom to resume.
+
+![TUI Pod Logs](docs/images/tui-220-detail-pod_logs.png)
+
+## Why kubefwd?
+
+Unlike `kubectl port-forward`, kubefwd:
+
+| Feature | kubectl port-forward | kubefwd |
+|---------|---------------------|---------|
+| Services per command | One | All in namespace |
+| IP allocation | localhost only | Unique IP per service |
+| Port conflicts | Manual management | None (unique IPs) |
+| Service name resolution | Not supported | Automatic (/etc/hosts) |
+| Auto-reconnect | No | Yes |
+| Real-time monitoring | No | TUI with metrics |
+
+See [Comparison](docs/comparison.md) for detailed comparisons with Telepresence, mirrord, Gefyra, and other tools.
 
 ## Installation
 
-### macOS Install / Update
-
-**kubefwd** assumes you have **kubectl** installed and configured with access to a Kubernetes cluster. **kubefwd** uses the **kubectl** current context. The **kubectl** configuration is not used. However, its configuration is needed to access a Kubernetes cluster.
-
-Ensure you have a context by running:
-```bash
-kubectl config current-context
-```
-
-If you are running MacOS and use [homebrew] you can install **kubefwd** directly from the [txn2] tap:
+### macOS
 
 ```bash
 brew install txn2/tap/kubefwd
 ```
 
-To upgrade:
-```bash
-brew upgrade kubefwd
-```
+### Linux
 
-### Linux Install / Update
+Download from [releases](https://github.com/txn2/kubefwd/releases):
+- `.deb` for Debian/Ubuntu
+- `.rpm` for RHEL/CentOS/Fedora
+- `.tar.gz` for any Linux
 
-Download pre-built binaries from the [releases](https://github.com/txn2/kubefwd/releases) page:
-
-- `.deb` packages for Debian/Ubuntu
-- `.rpm` packages for RHEL/CentOS/Fedora
-- `.tar.gz` archives for any Linux distribution
-
-Example for Debian/Ubuntu:
-```bash
-# Download the latest .deb file from releases page
-sudo dpkg -i kubefwd_*.deb
-```
-
-### Windows Install / Update
-
-Using [Scoop](https://scoop.sh/):
+### Windows
 
 ```batch
 scoop install kubefwd
-```
-
-To upgrade:
-```batch
-scoop update kubefwd
 ```
 
 ### Docker
 
-Forward all services from the namespace **the-project** to a Docker container named **the-project**:
-
 ```bash
-docker run -it --rm --privileged --name the-project \
-    -v "$(echo $HOME)/.kube/":/root/.kube/ \
-    txn2/kubefwd services -n the-project
+docker run -it --rm --privileged \
+  -v "$HOME/.kube:/root/.kube:ro" \
+  txn2/kubefwd services -n my-namespace --tui
 ```
 
-
-Execute a curl call to an Elasticsearch service in your Kubernetes cluster:
-
-```bash
-docker exec the-project curl -s elasticsearch:9200
-```
-
-## Key Features
-
-- **Bulk Port Forwarding**: Forward all services in a namespace with a single command
-- **Unique IP per Service**: Each service gets its own 127.x.x.x IP address, eliminating port conflicts
-- **Automatic /etc/hosts Management**: Service hostnames automatically added and removed
-- **Headless Service Support**: Forwards all pods for headless services
-- **Dynamic Service Discovery**: Automatically starts/stops forwarding as services are created/deleted
-- **Pod Lifecycle Monitoring**: Detects pod changes and maintains forwarding
-- **Label & Field Selectors**: Filter which services to forward
-- **Multiple Namespace Support**: Forward services from multiple namespaces simultaneously
-- **Port Mapping**: Remap service ports to different local ports
-- **IP Reservation**: Configure specific IP addresses for services
-
-## IP Address Allocation
-
-kubefwd assigns unique loopback IP addresses to each forwarded service, starting from `127.1.27.1`. The allocation scheme uses the IP octets as follows:
-
-```
-127.[1+cluster].[27+namespace].[service_count]
-```
-
-| Octet | Base Value | Incremented By |
-|-------|------------|----------------|
-| 1st   | 127        | (fixed)        |
-| 2nd   | 1          | Cluster index  |
-| 3rd   | 27         | Namespace index|
-| 4th   | 1          | Service count  |
-
-**Examples:**
-- First cluster, first namespace: `127.1.27.1`, `127.1.27.2`, ... `127.1.27.255`
-- First cluster, second namespace: `127.1.28.1`, `127.1.28.2`, ...
-- Second cluster, first namespace: `127.2.27.1`, `127.2.27.2`, ...
-
-This scheme supports up to 255 services per namespace, 229 namespaces per cluster (27+228=255), and 255 clusters.
-
-To use custom IP assignments, see the `-r` (reserve) flag or `-z` (config file) options.
-
-## Contribute
-
-[Fork kubefwd](https://github.com/txn2/kubefwd) and build a custom version.
-
-**Pull Request Policy:** We are accepting pull requests for:
-- Bug fixes
-- Tests and test improvements
-- Stability and compatibility enhancements
-- Documentation improvements
-
-**Note:** We are not accepting new feature requests at this time.
+See [Advanced Usage](docs/advanced-usage.md#docker-integration) for Docker Compose examples and [Getting Started](docs/getting-started.md) for complete installation instructions.
 
 ## Usage
 
-**Important:** kubefwd requires `sudo` (root access) to modify your `/etc/hosts` file and create network interfaces. Use `sudo -E` to preserve your environment variables, especially `KUBECONFIG`.
-
-### Basic Usage
-
-Forward all services in a namespace:
+### Interactive Mode (Recommended)
 
 ```bash
-sudo -E kubefwd svc -n the-project
+sudo -E kubefwd svc -n default --tui
 ```
 
-Kubefwd finds the first Pod associated with each Kubernetes service in the namespace and port forwards it based on the Service spec to a local IP address and port. Service hostnames are added to your `/etc/hosts` file pointing to the local IP.
-
-**How it works:**
-- **Normal Services**: Forwards the first available pod using the service name
-- **Headless Services**: Forwards all pods (first pod accessible via service name, others via pod-name.service-name)
-- **Service Monitoring**: Automatically starts/stops forwarding when services are created/deleted
-- **Pod Monitoring**: Automatically restarts forwarding when pods are deleted or rescheduled
-
-### Advanced Usage
-
-Filter services with label selectors:
+### Classic Mode
 
 ```bash
-sudo -E kubefwd svc -n the-project -l system=wx
+sudo -E kubefwd svc -n default
 ```
 
-Forward a single service using field selector:
+### Common Options
 
 ```bash
-sudo -E kubefwd svc -n the-project -f metadata.name=my-service
+# Multiple namespaces
+sudo -E kubefwd svc -n default,staging,production --tui
+
+# All namespaces
+sudo -E kubefwd svc -A --tui
+
+# Filter by label
+sudo -E kubefwd svc -n default -l app=api --tui
+
+# Set-based label selectors
+sudo -E kubefwd svc -n default -l "app in (api,web,worker)" --tui
+
+# Single service by name
+sudo -E kubefwd svc -n default -f metadata.name=my-service --tui
+
+# Port mapping (service:local)
+sudo -E kubefwd svc -n default -m 80:8080 --tui
 ```
 
-Forward multiple services using the `in` clause:
+For comprehensive selector examples, see [Advanced Usage](docs/advanced-usage.md#selectors).
+
+## Demo Environment
+
+A comprehensive demo manifest is included for testing and demonstrations:
 
 ```bash
-sudo -E kubefwd svc -n the-project -l "app in (app1, app2)"
+# Deploy demo services (60 services across 2 namespaces)
+kubectl apply -f test/manifests/demo-microservices.yaml
+
+# Forward all demo services
+sudo -E kubefwd svc -n kft1,kft2 --tui
+
+# Cleanup
+kubectl delete -f test/manifests/demo-microservices.yaml
 ```
 
-Forward services from multiple namespaces:
+See [test/manifests/demo-microservices.yaml](test/manifests/demo-microservices.yaml) for advanced label selection examples.
 
-```bash
-sudo -E kubefwd svc -n default -n the-project -n another-namespace
-```
+## Documentation
 
-Forward all services from all namespaces:
+- [Getting Started](docs/getting-started.md) - Installation and first steps
+- [TUI Guide](docs/tui-guide.md) - Interactive interface and keyboard shortcuts
+- [Configuration](docs/configuration.md) - All command line options
+- [Advanced Usage](docs/advanced-usage.md) - Multi-cluster, selectors, Docker
+- [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+- [Architecture](docs/architecture.md) - How kubefwd works
+- [Comparison](docs/comparison.md) - kubefwd vs Telepresence, mirrord, Gefyra
 
-```bash
-sudo -E kubefwd svc --all-namespaces
-```
+## Keyboard Shortcuts
 
-Use custom domain suffix:
+| Key | Action |
+|-----|--------|
+| `?` | Help |
+| `q` | Quit |
+| `Tab` | Switch panels |
+| `Enter` | Open service detail |
+| `/` | Filter services |
+| `r` | Reconnect errored services |
+| `j/k` | Navigate up/down |
 
-```bash
-sudo -E kubefwd svc -n the-project -d internal.example.com
-```
+See [TUI Guide](docs/tui-guide.md) for all shortcuts, traffic monitoring, and pod log streaming.
 
-Port mapping (map service port to different local port):
+## Requirements
 
-```bash
-sudo -E kubefwd svc -n the-project -m 80:8080 -m 443:1443
-```
+- kubectl configured with cluster access
+- Root/sudo access (for /etc/hosts and network interfaces)
 
-Use IP reservation configuration:
+## Contributing
 
-```bash
-sudo -E kubefwd svc -n the-project -z path/to/conf.yml
-```
+We welcome contributions for bug fixes, tests, and documentation. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Reserve specific IP for a service:
+**Note:** Feature development is limited to maintainers at this time.
 
-```bash
-sudo -E kubefwd svc -n the-project -r my-service.the-project:127.3.3.1
-```
+## Why TUI?
 
-Enable verbose logging for debugging:
+The TUI (Terminal User Interface) provides a far more ergonomic experience: see all forwarded services and their connection state at a glance, identify errored forwards immediately, monitor bandwidth rates and totals, and quickly view pod logs for the exact container servicing each port forward—all without leaving the terminal or juggling multiple kubectl commands.
 
-```bash
-sudo -E kubefwd svc -n the-project -v
-```
-
-Refresh the hosts file backup (replace existing backup with current /etc/hosts):
-
-```bash
-sudo -E kubefwd svc -n the-project -b
-```
-
-Purge stale host entries from previous kubefwd sessions (removes entries for IPs in the 127.1.27.1 - 127.255.255.255 range):
-
-```bash
-sudo -E kubefwd svc -n the-project -p
-```
-
-## Selectors
-
-kubefwd uses the same selector syntax as `kubectl`, powered by the standard Kubernetes client-go libraries. This means you can use the same label and field selector patterns you already know.
-
-### Label Selectors (`-l`)
-
-Filter services by their labels:
-
-```bash
-# Forward services with a specific label
-sudo -E kubefwd svc -n the-project -l app=api
-
-# Multiple label requirements (AND logic)
-sudo -E kubefwd svc -n the-project -l app=api,component=backend
-
-# Set-based selectors
-sudo -E kubefwd svc -n the-project -l "app in (api, web)"
-sudo -E kubefwd svc -n the-project -l "tier notin (frontend)"
-```
-
-### Field Selectors (`-f`)
-
-Filter services by their metadata fields:
-
-```bash
-# Forward a single service by name
-sudo -E kubefwd svc -n the-project -f metadata.name=my-service
-```
-
-### Excluding Services
-
-Use the `!=` operator to exclude specific services:
-
-```bash
-# Forward all services EXCEPT one
-sudo -E kubefwd svc -n the-project -f metadata.name!=my-excluded-service
-
-# Exclude multiple services
-sudo -E kubefwd svc -n the-project -f metadata.name!=svc1,metadata.name!=svc2
-
-# Exclude services by label
-sudo -E kubefwd svc -n the-project -l app!=debug
-
-# Combine inclusion and exclusion
-sudo -E kubefwd svc -n the-project -l app=api,component!=legacy
-```
-
-### Combining Selectors
-
-You can use both label and field selectors together:
-
-```bash
-# Forward services with app=api label, excluding a specific service
-sudo -E kubefwd svc -n the-project -l app=api -f metadata.name!=api-debug
-```
-
-For more details on selector syntax, see the [Kubernetes Labels and Selectors documentation](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/).
-
-## Help
-
-```bash
-$ kubefwd svc --help
-
-INFO[00:00:48]  _          _           __             _     
-INFO[00:00:48] | | ___   _| |__   ___ / _|_      ____| |    
-INFO[00:00:48] | |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |    
-INFO[00:00:48] |   <| |_| | |_) |  __/  _|\ V  V / (_| |    
-INFO[00:00:48] |_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|    
-INFO[00:00:48]                                              
-INFO[00:00:48] Version 0.0.0                                
-INFO[00:00:48] https://github.com/txn2/kubefwd              
-INFO[00:00:48]                                              
-Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.
-
-Usage:
-  kubefwd services [flags]
-
-Aliases:
-  services, svcs, svc
-
-Examples:
-  kubefwd svc -n the-project
-  kubefwd svc -n the-project -l app=wx,component=api
-  kubefwd svc -n default -l "app in (ws, api)"
-  kubefwd svc -n default -n the-project
-  kubefwd svc -n default -d internal.example.com
-  kubefwd svc -n the-project -x prod-cluster
-  kubefwd svc -n the-project -m 80:8080 -m 443:1443
-  kubefwd svc -n the-project -z path/to/conf.yml
-  kubefwd svc -n the-project -r svc.ns:127.3.3.1
-  kubefwd svc --all-namespaces
-
-Flags:
-  -A, --all-namespaces          Enable --all-namespaces option like kubectl.
-  -b, --refresh-backup          Refresh the hosts file backup before modifying /etc/hosts.
-  -x, --context strings         specify a context to override the current context
-  -d, --domain string           Append a pseudo domain name to generated host names.
-  -f, --field-selector string   Field selector to filter on; supports '=', '==', and '!=' (e.g. -f metadata.name=service-name).
-  -z, --fwd-conf string         Define an IP reservation configuration
-  -h, --help                    help for services
-  -c, --kubeconfig string       absolute path to a kubectl config file
-  -m, --mapping strings         Specify a port mapping. Specify multiple mapping by duplicating this argument.
-  -n, --namespace strings       Specify a namespace. Specify multiple namespaces by duplicating this argument.
-  -p, --purge-stale-ips         Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.
-  -r, --reserve strings         Specify an IP reservation. Specify multiple reservations by duplicating this argument.
-  -l, --selector string         Selector (label query) to filter on; supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2).
-  -v, --verbose                 Verbose output.
-      --hosts-path              User-defined Hosts Path. The default value /etc/hosts.
-```
-
-## Troubleshooting
-
-### Permission Errors
-
-Always use `sudo -E` to run kubefwd. The `-E` flag preserves your environment variables, especially `KUBECONFIG`:
-
-```bash
-sudo -E kubefwd svc -n the-project
-```
-
-### Connection Refused Errors
-
-If you see errors like `connection refused` or `localhost:8080`, ensure:
-- `kubectl` is properly configured
-- You can connect to your cluster: `kubectl get nodes`
-- Your KUBECONFIG is preserved with the `-E` flag
-
-### Stale /etc/hosts Entries
-
-If kubefwd exits unexpectedly, your `/etc/hosts` file might contain stale entries. kubefwd backs up your original hosts file to `~/hosts.original`. You can restore it:
-
-```bash
-sudo cp ~/hosts.original /etc/hosts
-```
-
-### Services Not Appearing
-
-Check that:
-- Services have pod selectors (services without selectors are not supported)
-- Pods are in Running or Pending state
-- You have RBAC permissions to list/get/watch pods and services
-- Use verbose mode (`-v`) to see detailed logs
-
-### Port Conflicts
-
-If you encounter port conflicts, use IP reservations to assign specific IPs to services:
-
-```bash
-sudo -E kubefwd svc -n the-project -r service1:127.2.2.1 -r service2:127.2.2.2
-```
-
-Or create a configuration file (see `example.fwdconf.yml`).
-
-## Known Limitations
-
-- **UDP Protocol**: Not supported due to Kubernetes API limitations
-- **Services Without Selectors**: Services backed by manually created Endpoints are not supported
-
-## Getting Help
-
-- **Documentation**: See [CLAUDE.md](CLAUDE.md) for detailed architecture and development guide
-- **Issues**: Report bugs or issues on [GitHub Issues](https://github.com/txn2/kubefwd/issues)
-- **Blog Post**: Read the detailed guide at [Kubernetes Port Forwarding for Local Development](https://mk.imti.co/kubernetes-port-forwarding/)
+The `--tui` flag is explicit rather than default because kubefwd is over 7 years old with many developers relying on it in established workflows and scripts. We didn't want to impose a new interface on existing users. The TUI is also new, and like any significant feature, we need time to work out edge cases across different platforms and terminal environments. In future versions, we plan to make TUI the default with a `--no-tui` flag for those who prefer the classic output.
 
 ## License
 
-Apache License 2.0
+[Apache License 2.0](LICENSE)
 
-# Sponsor
+---
 
-Open source utility by [Craig Johnston](https://twitter.com/cjimti), [imti blog](http://imti.co/) and sponsored by [Deasil Works, Inc.]
+## Sponsor
 
-Please check out my book [Advanced Platform Development with Kubernetes](https://imti.co/kubernetes-platform-book/):
-Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning.
+Open source project by [Craig Johnston](https://twitter.com/cjimti), sponsored by [Deasil Works, Inc.](https://deasil.works/)
 
-[![Book Cover - Advanced Platform Development with Kubernetes: Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning](https://raw.githubusercontent.com/apk8s/book-source/master/img/apk8s-banner-w.jpg)](https://amzn.to/3g3ihZ3)
-
-Source code from the book [Advanced Platform Development with Kubernetes: Enabling Data Management, the Internet of Things, Blockchain, and Machine Learning](https://amzn.to/3g3ihZ3) by [Craig Johnston](https://imti.co) ([@cjimti](https://twitter.com/cjimti)) ISBN 978-1-4842-5610-7 [Apress; 1st ed. edition (September, 2020)](https://www.apress.com/us/book/9781484256107)
-
-Read my blog post [Advanced Platform Development with Kubernetes](https://imti.co/kubernetes-platform-book/) for more info and background on the book.
-
-Follow me on Twitter: [@cjimti](https://twitter.com/cjimti) ([Craig Johnston](https://twitter.com/cjimti))
-
-
-[Kubernetes]:https://kubernetes.io/
-[namespaces]:https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-[services]:https://kubernetes.io/docs/concepts/services-networking/service/
-[homebrew]:https://brew.sh/
-[txn2]:https://txn2.com/
-[Deasil Works, Inc.]:https://deasil.works/
+Follow [@cjimti](https://twitter.com/cjimti) on X for project updates.
