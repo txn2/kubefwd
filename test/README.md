@@ -4,7 +4,7 @@ This directory contains end-to-end integration tests for kubefwd. These tests ru
 
 ## Overview
 
-**Test Count:** 23 integration tests across 6 test files
+**Test Count:** 28 integration tests across 7 test files
 **Test Framework:** Go testing with build tags
 **Cluster:** KIND (Kubernetes IN Docker)
 **Requirements:** Docker, KIND, kubectl, sudo
@@ -13,25 +13,27 @@ This directory contains end-to-end integration tests for kubefwd. These tests ru
 
 ```
 test/
-├── integration/                # Integration test files
-│   ├── helpers.go             # Shared test utilities
-│   ├── forwarding_test.go     # Basic forwarding (5 tests)
-│   ├── headless_test.go       # Headless services (4 tests)
-│   ├── autoreconnect_test.go  # Auto-reconnect (4 tests)
-│   ├── multinamespace_test.go # Multi-namespace (3 tests)
-│   ├── portmapping_test.go    # Port mapping (3 tests)
-│   └── cleanup_test.go        # Cleanup verification (4 tests)
-├── scripts/                    # Cluster management scripts
-│   ├── setup-kind.sh          # Create KIND cluster
-│   ├── teardown-kind.sh       # Delete KIND cluster
-│   ├── deploy-test-services.sh # Deploy test workloads
-│   ├── wait-for-ready.sh      # Wait for pods ready
-│   └── verify-cleanup.sh      # Verify cleanup complete
-├── manifests/                  # Kubernetes test manifests
-│   ├── kf-a.yml               # Namespace kf-a (from k8s/test-env)
-│   ├── kf-b.yml               # Namespace kf-b (from k8s/test-env)
-│   └── simple-service.yaml    # Simple nginx service
-└── README.md                   # This file
+├── integration/                    # Integration test files
+│   ├── helpers.go                 # Shared test utilities
+│   ├── container_helpers.go       # Container-based test utilities
+│   ├── forwarding_test.go         # Basic forwarding (5 tests)
+│   ├── headless_test.go           # Headless services (4 tests)
+│   ├── autoreconnect_test.go      # Auto-reconnect (4 tests)
+│   ├── multinamespace_test.go     # Multi-namespace (3 tests)
+│   ├── portmapping_test.go        # Port mapping (3 tests)
+│   ├── cleanup_test.go            # Cleanup verification (4 tests)
+│   └── container_forwarding_test.go # Container-based tests (5 tests)
+├── scripts/                        # Cluster management scripts
+│   ├── setup-kind.sh              # Create KIND cluster
+│   ├── teardown-kind.sh           # Delete KIND cluster
+│   ├── deploy-test-services.sh    # Deploy test workloads
+│   ├── wait-for-ready.sh          # Wait for pods ready
+│   ├── verify-cleanup.sh          # Verify cleanup complete
+│   └── run-container-tests.sh     # Run tests in Docker container
+├── manifests/                      # Kubernetes test manifests
+│   ├── demo-microservices.yaml    # Comprehensive demo (30 pods, 60 services)
+│   └── simple-service.yaml        # Simple nginx service
+└── README.md                       # This file
 ```
 
 ## Prerequisites
@@ -94,7 +96,7 @@ The integration tests will look for `../../kubefwd` relative to the test files.
 ./test/scripts/run-container-tests.sh ForwardSingleService
 ```
 
-See [CONTAINER_TESTING.md](CONTAINER_TESTING.md) for details.
+Container-based tests run kubefwd with root privileges inside a Docker container, eliminating the need for sudo on your host machine.
 
 ### Option 2: Traditional Tests (Requires Sudo)
 
@@ -256,6 +258,16 @@ Plan accordingly and consider running specific test suites during development.
 - `TestHostsFileRestore`: Verify /etc/hosts restored to original
 - `TestNetworkAliasRemoval`: Verify 127.x.x.x IPs removed from loopback
 - `TestNoLeakedProcesses`: Verify no kubefwd processes remain
+
+### 7. Container-Based Tests (container_forwarding_test.go)
+
+**No sudo required** - Tests run inside Docker containers:
+
+- `TestContainerForwardSingleService`: Forward one service in container
+- `TestContainerForwardMultipleServices`: Forward multiple services
+- `TestContainerHeadlessService`: Headless service in container
+- `TestContainerCleanup`: Verify container cleanup
+- `TestContainerAllForwardingTests`: Comprehensive container test suite
 
 ## Troubleshooting
 
@@ -520,16 +532,16 @@ Expected CI workflow:
 
 For issues with integration tests:
 1. Check this README
-2. Review TESTING_PLAN.md Phase 4 section
-3. Review test output logs
-4. Check /etc/hosts and network aliases
-5. Verify KIND cluster is healthy: `kubectl get nodes`
-6. Report issues at: https://github.com/txn2/kubefwd/issues
+2. Review test output logs
+3. Check /etc/hosts and network aliases
+4. Verify KIND cluster is healthy: `kubectl get nodes`
+5. Report issues at: https://github.com/txn2/kubefwd/issues
 
 ## Summary
 
-- **23 integration tests** covering all major kubefwd features
-- **Requires sudo** - kubefwd modifies system network config
+- **28 integration tests** covering all major kubefwd features
+- **Container-based option** - no sudo required on host
+- **Traditional option** - requires sudo for host-level testing
 - **Uses KIND** - real Kubernetes cluster in Docker
 - **Build tags** - won't run with normal `go test`
 - **Cleanup critical** - verify system state after tests
