@@ -947,7 +947,6 @@ func TestScheduleReconnect_DisabledByDefault(t *testing.T) {
 // TestScheduleReconnect_EnabledTriggersReconnect tests that auto-reconnect schedules reconnection
 func TestScheduleReconnect_EnabledTriggersReconnect(t *testing.T) {
 	cleanup := setupMockInterface()
-	defer cleanup()
 
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -963,6 +962,7 @@ func TestScheduleReconnect_EnabledTriggersReconnect(t *testing.T) {
 	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
 
 	debouncer := &mockDebouncer{immediate: true}
+	doneChannel := make(chan struct{})
 
 	svcFwd := &ServiceFWD{
 		ClientSet:            clientset,
@@ -975,7 +975,7 @@ func TestScheduleReconnect_EnabledTriggersReconnect(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		AutoReconnect:        true,
-		DoneChannel:          make(chan struct{}),
+		DoneChannel:          doneChannel,
 	}
 
 	result := svcFwd.scheduleReconnect()
@@ -984,8 +984,14 @@ func TestScheduleReconnect_EnabledTriggersReconnect(t *testing.T) {
 		t.Error("scheduleReconnect should return true when AutoReconnect is enabled")
 	}
 
-	// Wait for reconnect goroutine to run (initial backoff is 1s)
-	time.Sleep(1500 * time.Millisecond)
+	// Wait a bit then close DoneChannel to stop the reconnect goroutine before cleanup
+	time.Sleep(100 * time.Millisecond)
+	close(doneChannel)
+	// Give goroutine time to see the closed channel
+	time.Sleep(50 * time.Millisecond)
+
+	// Now safe to cleanup
+	cleanup()
 }
 
 // TestScheduleReconnect_ExponentialBackoff tests that backoff increases exponentially
@@ -994,10 +1000,13 @@ func TestScheduleReconnect_ExponentialBackoff(t *testing.T) {
 		{Port: 80},
 	}, false)
 
+	doneChannel := make(chan struct{})
+	defer close(doneChannel) // Stop all goroutines spawned by scheduleReconnect
+
 	svcFwd := &ServiceFWD{
 		Svc:                  svc,
 		AutoReconnect:        true,
-		DoneChannel:          make(chan struct{}),
+		DoneChannel:          doneChannel,
 		NamespaceServiceLock: &sync.Mutex{},
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 	}
@@ -1048,10 +1057,13 @@ func TestScheduleReconnect_AlreadyReconnecting(t *testing.T) {
 		{Port: 80},
 	}, false)
 
+	doneChannel := make(chan struct{})
+	defer close(doneChannel) // Stop all goroutines spawned by scheduleReconnect
+
 	svcFwd := &ServiceFWD{
 		Svc:                  svc,
 		AutoReconnect:        true,
-		DoneChannel:          make(chan struct{}),
+		DoneChannel:          doneChannel,
 		NamespaceServiceLock: &sync.Mutex{},
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 	}
@@ -1243,10 +1255,13 @@ func TestScheduleReconnect_Concurrent(t *testing.T) {
 		{Port: 80},
 	}, false)
 
+	doneChannel := make(chan struct{})
+	defer close(doneChannel) // Stop all goroutines spawned by scheduleReconnect
+
 	svcFwd := &ServiceFWD{
 		Svc:                  svc,
 		AutoReconnect:        true,
-		DoneChannel:          make(chan struct{}),
+		DoneChannel:          doneChannel,
 		NamespaceServiceLock: &sync.Mutex{},
 		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
 	}

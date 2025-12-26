@@ -43,9 +43,9 @@ func TestNewBus_DefaultBufferSize(t *testing.T) {
 func TestSubscribe(t *testing.T) {
 	bus := NewBus(100)
 
-	received := false
+	var received int32
 	bus.Subscribe(PodAdded, func(e Event) {
-		received = true
+		atomic.StoreInt32(&received, 1)
 	})
 
 	bus.Start()
@@ -56,7 +56,7 @@ func TestSubscribe(t *testing.T) {
 	// Wait for event to be processed
 	time.Sleep(50 * time.Millisecond)
 
-	if !received {
+	if atomic.LoadInt32(&received) != 1 {
 		t.Error("Expected handler to be called")
 	}
 }
@@ -65,14 +65,14 @@ func TestSubscribe(t *testing.T) {
 func TestSubscribe_OnlyReceivesSubscribedType(t *testing.T) {
 	bus := NewBus(100)
 
-	podAddedCount := 0
+	var podAddedCount int32
 	bus.Subscribe(PodAdded, func(e Event) {
-		podAddedCount++
+		atomic.AddInt32(&podAddedCount, 1)
 	})
 
-	podRemovedCount := 0
+	var podRemovedCount int32
 	bus.Subscribe(PodRemoved, func(e Event) {
-		podRemovedCount++
+		atomic.AddInt32(&podRemovedCount, 1)
 	})
 
 	bus.Start()
@@ -84,12 +84,12 @@ func TestSubscribe_OnlyReceivesSubscribedType(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	if podAddedCount != 2 {
-		t.Errorf("Expected 2 PodAdded events, got %d", podAddedCount)
+	if atomic.LoadInt32(&podAddedCount) != 2 {
+		t.Errorf("Expected 2 PodAdded events, got %d", atomic.LoadInt32(&podAddedCount))
 	}
 
-	if podRemovedCount != 1 {
-		t.Errorf("Expected 1 PodRemoved event, got %d", podRemovedCount)
+	if atomic.LoadInt32(&podRemovedCount) != 1 {
+		t.Errorf("Expected 1 PodRemoved event, got %d", atomic.LoadInt32(&podRemovedCount))
 	}
 }
 
@@ -192,15 +192,15 @@ func TestStop_DrainsEvents(t *testing.T) {
 func TestHandlerPanicRecovery(t *testing.T) {
 	bus := NewBus(100)
 
-	panicHandlerCalled := false
+	var panicHandlerCalled int32
 	bus.Subscribe(PodAdded, func(e Event) {
-		panicHandlerCalled = true
+		atomic.StoreInt32(&panicHandlerCalled, 1)
 		panic("test panic")
 	})
 
-	normalHandlerCalled := false
+	var normalHandlerCalled int32
 	bus.Subscribe(PodAdded, func(e Event) {
-		normalHandlerCalled = true
+		atomic.StoreInt32(&normalHandlerCalled, 1)
 	})
 
 	bus.Start()
@@ -210,11 +210,11 @@ func TestHandlerPanicRecovery(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	if !panicHandlerCalled {
+	if atomic.LoadInt32(&panicHandlerCalled) != 1 {
 		t.Error("Expected panic handler to be called")
 	}
 
-	if !normalHandlerCalled {
+	if atomic.LoadInt32(&normalHandlerCalled) != 1 {
 		t.Error("Expected normal handler to still be called after panic")
 	}
 }
