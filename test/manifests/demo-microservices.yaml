@@ -1,0 +1,2821 @@
+# =============================================================================
+# kubefwd Demo Microservices Manifest
+# =============================================================================
+# Purpose: Comprehensive test environment for kubefwd demos and documentation
+#
+# Features:
+#   - 2 namespaces (kft1, kft2)
+#   - 30 pods total (~75 containers)
+#   - 60 services (30 ClusterIP + 30 Headless)
+#   - Multi-container pods (1-5 containers each)
+#   - HTTP and TCP services for connectivity testing
+#
+# Deployment:
+#   kubectl apply -f test/manifests/demo-microservices.yaml
+#
+# Testing with kubefwd:
+#   sudo -E ./kubefwd svc -n kft1
+#   sudo -E ./kubefwd svc -n kft1 -n kft2
+#
+# Cleanup:
+#   kubectl delete -f test/manifests/demo-microservices.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# NAMESPACES
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kft1
+  labels:
+    purpose: kubefwd-testing
+    platform: e-commerce
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kft2
+  labels:
+    purpose: kubefwd-testing
+    platform: devops
+
+# =============================================================================
+# NAMESPACE: kft1 - E-Commerce Platform
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. api-gateway (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: kft1
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: kft1
+  labels:
+    app: api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-headless
+  namespace: kft1
+  labels:
+    app: api-gateway
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 2. frontend-web (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-web
+  namespace: kft1
+  labels:
+    app: frontend-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-web
+  template:
+    metadata:
+      labels:
+        app: frontend-web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-web
+  namespace: kft1
+  labels:
+    app: frontend-web
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-web-headless
+  namespace: kft1
+  labels:
+    app: frontend-web
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: frontend-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 3. user-api (2 containers: httpd + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-api
+  namespace: kft1
+  labels:
+    app: user-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-api
+  template:
+    metadata:
+      labels:
+        app: user-api
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-api
+  namespace: kft1
+  labels:
+    app: user-api
+spec:
+  type: ClusterIP
+  selector:
+    app: user-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-api-headless
+  namespace: kft1
+  labels:
+    app: user-api
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: user-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 4. auth-service (2 containers: whoami + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: kft1
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: kft1
+  labels:
+    app: auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service-headless
+  namespace: kft1
+  labels:
+    app: auth-service
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 5. product-catalog (3 containers: nginx + postgres + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-catalog
+  namespace: kft1
+  labels:
+    app: product-catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-catalog
+  template:
+    metadata:
+      labels:
+        app: product-catalog
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "products"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-catalog
+  namespace: kft1
+  labels:
+    app: product-catalog
+spec:
+  type: ClusterIP
+  selector:
+    app: product-catalog
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-catalog-headless
+  namespace: kft1
+  labels:
+    app: product-catalog
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: product-catalog
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 6. order-service (3 containers: httpd + postgres + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: kft1
+  labels:
+    app: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "orders"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: kft1
+  labels:
+    app: order-service
+spec:
+  type: ClusterIP
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service-headless
+  namespace: kft1
+  labels:
+    app: order-service
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 7. payment-gateway (2 containers: nginx + postgres)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-gateway
+  namespace: kft1
+  labels:
+    app: payment-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-gateway
+  template:
+    metadata:
+      labels:
+        app: payment-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "payments"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-gateway
+  namespace: kft1
+  labels:
+    app: payment-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-gateway-headless
+  namespace: kft1
+  labels:
+    app: payment-gateway
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: payment-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+# -----------------------------------------------------------------------------
+# 8. inventory-api (2 containers: whoami + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-api
+  namespace: kft1
+  labels:
+    app: inventory-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-api
+  template:
+    metadata:
+      labels:
+        app: inventory-api
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-api
+  namespace: kft1
+  labels:
+    app: inventory-api
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-api-headless
+  namespace: kft1
+  labels:
+    app: inventory-api
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: inventory-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 9. notification-hub (4 containers: nginx + redis + memcached + http-echo)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-hub
+  namespace: kft1
+  labels:
+    app: notification-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-hub
+  template:
+    metadata:
+      labels:
+        app: notification-hub
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: memcached
+          image: memcached:alpine
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: http-echo
+          image: hashicorp/http-echo
+          args:
+            - "-listen=:8888"
+            - "-text=notification-hub"
+          ports:
+            - containerPort: 8888
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-hub
+  namespace: kft1
+  labels:
+    app: notification-hub
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-hub
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 8888
+      targetPort: 8888
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-hub-headless
+  namespace: kft1
+  labels:
+    app: notification-hub
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: notification-hub
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 8888
+      targetPort: 8888
+
+# -----------------------------------------------------------------------------
+# 10. search-engine (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-engine
+  namespace: kft1
+  labels:
+    app: search-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-engine
+  template:
+    metadata:
+      labels:
+        app: search-engine
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-engine
+  namespace: kft1
+  labels:
+    app: search-engine
+spec:
+  type: ClusterIP
+  selector:
+    app: search-engine
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-engine-headless
+  namespace: kft1
+  labels:
+    app: search-engine
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: search-engine
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 11. analytics-backend (3 containers: httpd + postgres + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-backend
+  namespace: kft1
+  labels:
+    app: analytics-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analytics-backend
+  template:
+    metadata:
+      labels:
+        app: analytics-backend
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "analytics"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-backend
+  namespace: kft1
+  labels:
+    app: analytics-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: analytics-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-backend-headless
+  namespace: kft1
+  labels:
+    app: analytics-backend
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: analytics-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 12. cache-primary (1 container: redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-primary
+  namespace: kft1
+  labels:
+    app: cache-primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-primary
+  template:
+    metadata:
+      labels:
+        app: cache-primary
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-primary
+  namespace: kft1
+  labels:
+    app: cache-primary
+spec:
+  type: ClusterIP
+  selector:
+    app: cache-primary
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-primary-headless
+  namespace: kft1
+  labels:
+    app: cache-primary
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: cache-primary
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 13. db-primary (1 container: postgres)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-primary
+  namespace: kft1
+  labels:
+    app: db-primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-primary
+  template:
+    metadata:
+      labels:
+        app: db-primary
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "primary"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-primary
+  namespace: kft1
+  labels:
+    app: db-primary
+spec:
+  type: ClusterIP
+  selector:
+    app: db-primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-primary-headless
+  namespace: kft1
+  labels:
+    app: db-primary
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: db-primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+# -----------------------------------------------------------------------------
+# 14. events-processor (4 containers: nginx + redis + redis-secondary + memcached)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: events-processor
+  namespace: kft1
+  labels:
+    app: events-processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: events-processor
+  template:
+    metadata:
+      labels:
+        app: events-processor
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis-secondary
+          image: redis:7-alpine
+          command: ["redis-server", "--port", "6380"]
+          ports:
+            - containerPort: 6380
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: memcached
+          image: memcached:alpine
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: events-processor
+  namespace: kft1
+  labels:
+    app: events-processor
+spec:
+  type: ClusterIP
+  selector:
+    app: events-processor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: redis-secondary
+      port: 6380
+      targetPort: 6380
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: events-processor-headless
+  namespace: kft1
+  labels:
+    app: events-processor
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: events-processor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: redis-secondary
+      port: 6380
+      targetPort: 6380
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+
+# -----------------------------------------------------------------------------
+# 15. service-mesh (5 containers: nginx + whoami + redis + memcached + http-echo)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-mesh
+  namespace: kft1
+  labels:
+    app: service-mesh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-mesh
+  template:
+    metadata:
+      labels:
+        app: service-mesh
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: whoami
+          image: traefik/whoami
+          args:
+            - "--port=8080"
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: memcached
+          image: memcached:alpine
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: http-echo
+          image: hashicorp/http-echo
+          args:
+            - "-listen=:9000"
+            - "-text=service-mesh"
+          ports:
+            - containerPort: 9000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-mesh
+  namespace: kft1
+  labels:
+    app: service-mesh
+spec:
+  type: ClusterIP
+  selector:
+    app: service-mesh
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: whoami
+      port: 8080
+      targetPort: 8080
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-mesh-headless
+  namespace: kft1
+  labels:
+    app: service-mesh
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: service-mesh
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: whoami
+      port: 8080
+      targetPort: 8080
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 9000
+      targetPort: 9000
+
+# =============================================================================
+# NAMESPACE: kft2 - DevOps Platform
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. dashboard-ui (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-ui
+  namespace: kft2
+  labels:
+    app: dashboard-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-ui
+  template:
+    metadata:
+      labels:
+        app: dashboard-ui
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-ui
+  namespace: kft2
+  labels:
+    app: dashboard-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: dashboard-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-ui-headless
+  namespace: kft2
+  labels:
+    app: dashboard-ui
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: dashboard-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 2. api-server (2 containers: httpd + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: kft2
+  labels:
+    app: api-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+  namespace: kft2
+  labels:
+    app: api-server
+spec:
+  type: ClusterIP
+  selector:
+    app: api-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server-headless
+  namespace: kft2
+  labels:
+    app: api-server
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: api-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 3. metrics-collector (3 containers: nginx + redis + http-echo)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-collector
+  namespace: kft2
+  labels:
+    app: metrics-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-collector
+  template:
+    metadata:
+      labels:
+        app: metrics-collector
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: http-echo
+          image: hashicorp/http-echo
+          args:
+            - "-listen=:9090"
+            - "-text=metrics-collector"
+          ports:
+            - containerPort: 9090
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-collector
+  namespace: kft2
+  labels:
+    app: metrics-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: metrics-collector
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-collector-headless
+  namespace: kft2
+  labels:
+    app: metrics-collector
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: metrics-collector
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+
+# -----------------------------------------------------------------------------
+# 4. log-aggregator (2 containers: nginx + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-aggregator
+  namespace: kft2
+  labels:
+    app: log-aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-aggregator
+  template:
+    metadata:
+      labels:
+        app: log-aggregator
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-aggregator
+  namespace: kft2
+  labels:
+    app: log-aggregator
+spec:
+  type: ClusterIP
+  selector:
+    app: log-aggregator
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-aggregator-headless
+  namespace: kft2
+  labels:
+    app: log-aggregator
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: log-aggregator
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 5. alert-manager (2 containers: whoami + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-manager
+  namespace: kft2
+  labels:
+    app: alert-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-manager
+  template:
+    metadata:
+      labels:
+        app: alert-manager
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-manager
+  namespace: kft2
+  labels:
+    app: alert-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: alert-manager
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-manager-headless
+  namespace: kft2
+  labels:
+    app: alert-manager
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: alert-manager
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 6. config-server (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-server
+  namespace: kft2
+  labels:
+    app: config-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-server
+  template:
+    metadata:
+      labels:
+        app: config-server
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server
+  namespace: kft2
+  labels:
+    app: config-server
+spec:
+  type: ClusterIP
+  selector:
+    app: config-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server-headless
+  namespace: kft2
+  labels:
+    app: config-server
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: config-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 7. secret-vault (2 containers: nginx + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-vault
+  namespace: kft2
+  labels:
+    app: secret-vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-vault
+  template:
+    metadata:
+      labels:
+        app: secret-vault
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secret-vault
+  namespace: kft2
+  labels:
+    app: secret-vault
+spec:
+  type: ClusterIP
+  selector:
+    app: secret-vault
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secret-vault-headless
+  namespace: kft2
+  labels:
+    app: secret-vault
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: secret-vault
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 8. ci-runner (3 containers: nginx + redis + postgres)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ci-runner
+  namespace: kft2
+  labels:
+    app: ci-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ci-runner
+  template:
+    metadata:
+      labels:
+        app: ci-runner
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "ci"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-runner
+  namespace: kft2
+  labels:
+    app: ci-runner
+spec:
+  type: ClusterIP
+  selector:
+    app: ci-runner
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-runner-headless
+  namespace: kft2
+  labels:
+    app: ci-runner
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: ci-runner
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+# -----------------------------------------------------------------------------
+# 9. cd-deployer (2 containers: httpd + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cd-deployer
+  namespace: kft2
+  labels:
+    app: cd-deployer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cd-deployer
+  template:
+    metadata:
+      labels:
+        app: cd-deployer
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cd-deployer
+  namespace: kft2
+  labels:
+    app: cd-deployer
+spec:
+  type: ClusterIP
+  selector:
+    app: cd-deployer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cd-deployer-headless
+  namespace: kft2
+  labels:
+    app: cd-deployer
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: cd-deployer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 10. registry-proxy (1 container: nginx)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-proxy
+  namespace: kft2
+  labels:
+    app: registry-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-proxy
+  template:
+    metadata:
+      labels:
+        app: registry-proxy
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-proxy
+  namespace: kft2
+  labels:
+    app: registry-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: registry-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-proxy-headless
+  namespace: kft2
+  labels:
+    app: registry-proxy
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: registry-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+# -----------------------------------------------------------------------------
+# 11. artifact-store (3 containers: nginx + postgres + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artifact-store
+  namespace: kft2
+  labels:
+    app: artifact-store
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: artifact-store
+  template:
+    metadata:
+      labels:
+        app: artifact-store
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "artifacts"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifact-store
+  namespace: kft2
+  labels:
+    app: artifact-store
+spec:
+  type: ClusterIP
+  selector:
+    app: artifact-store
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifact-store-headless
+  namespace: kft2
+  labels:
+    app: artifact-store
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: artifact-store
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 12. monitoring-stack (4 containers: nginx + redis + memcached + http-echo)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-stack
+  namespace: kft2
+  labels:
+    app: monitoring-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring-stack
+  template:
+    metadata:
+      labels:
+        app: monitoring-stack
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: memcached
+          image: memcached:alpine
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: http-echo
+          image: hashicorp/http-echo
+          args:
+            - "-listen=:9100"
+            - "-text=monitoring-stack"
+          ports:
+            - containerPort: 9100
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring-stack
+  namespace: kft2
+  labels:
+    app: monitoring-stack
+spec:
+  type: ClusterIP
+  selector:
+    app: monitoring-stack
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring-stack-headless
+  namespace: kft2
+  labels:
+    app: monitoring-stack
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: monitoring-stack
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+
+# -----------------------------------------------------------------------------
+# 13. backup-service (2 containers: nginx + postgres)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-service
+  namespace: kft2
+  labels:
+    app: backup-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backup-service
+  template:
+    metadata:
+      labels:
+        app: backup-service
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "backups"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backup-service
+  namespace: kft2
+  labels:
+    app: backup-service
+spec:
+  type: ClusterIP
+  selector:
+    app: backup-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backup-service-headless
+  namespace: kft2
+  labels:
+    app: backup-service
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: backup-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+# -----------------------------------------------------------------------------
+# 14. audit-logger (3 containers: httpd + postgres + redis)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-logger
+  namespace: kft2
+  labels:
+    app: audit-logger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit-logger
+  template:
+    metadata:
+      labels:
+        app: audit-logger
+    spec:
+      containers:
+        - name: httpd
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "testpass"
+            - name: POSTGRES_DB
+              value: "audit"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logger
+  namespace: kft2
+  labels:
+    app: audit-logger
+spec:
+  type: ClusterIP
+  selector:
+    app: audit-logger
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logger-headless
+  namespace: kft2
+  labels:
+    app: audit-logger
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: audit-logger
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+    - name: redis
+      port: 6379
+      targetPort: 6379
+
+# -----------------------------------------------------------------------------
+# 15. gateway-mesh (5 containers: nginx + whoami + redis + memcached + http-echo)
+# -----------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-mesh
+  namespace: kft2
+  labels:
+    app: gateway-mesh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-mesh
+  template:
+    metadata:
+      labels:
+        app: gateway-mesh
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: whoami
+          image: traefik/whoami
+          args:
+            - "--port=8080"
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: memcached
+          image: memcached:alpine
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: http-echo
+          image: hashicorp/http-echo
+          args:
+            - "-listen=:9000"
+            - "-text=gateway-mesh"
+          ports:
+            - containerPort: 9000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-mesh
+  namespace: kft2
+  labels:
+    app: gateway-mesh
+spec:
+  type: ClusterIP
+  selector:
+    app: gateway-mesh
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: whoami
+      port: 8080
+      targetPort: 8080
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-mesh-headless
+  namespace: kft2
+  labels:
+    app: gateway-mesh
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: gateway-mesh
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: whoami
+      port: 8080
+      targetPort: 8080
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+    - name: echo
+      port: 9000
+      targetPort: 9000

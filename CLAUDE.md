@@ -19,7 +19,42 @@ kubefwd is commonly integrated into development workflows:
 - **Microservices Development**: Allows developers to run one service locally while accessing dependencies in the cluster via service names
 - **Database Access**: Popular for forwarding multiple databases (MySQL, PostgreSQL, MongoDB) on their native ports without port conflicts
 
-The typical workflow: `sudo -E kubefwd svc -n <namespace>` runs in a dedicated terminal while developers work in their IDE, accessing cluster services as if running in-cluster.
+The typical workflow: `sudo -E kubefwd svc -n <namespace> --tui` runs in a dedicated terminal while developers work in their IDE, accessing cluster services as if running in-cluster.
+
+## TUI (Terminal User Interface)
+
+kubefwd includes an interactive TUI built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), enabled with `--tui`:
+
+```bash
+sudo -E kubefwd svc -n default --tui
+```
+
+### TUI Features
+- **Real-time service monitoring**: See all forwarded services with connection status
+- **Traffic metrics**: Bytes in/out with sparkline graphs
+- **Pod log streaming**: View container logs directly in the TUI
+- **HTTP activity detection**: Monitor HTTP requests/responses flowing through forwards
+- **Auto-reconnect**: Enabled by default in TUI mode, with exponential backoff (1s → 5min max)
+- **Keyboard-driven**: Full keyboard navigation (j/k, Enter, Tab, /, ?, q)
+
+### TUI Architecture
+
+The TUI follows the Model-View-Update (MVU) pattern:
+
+- **Event Bus** (`pkg/fwdtui/events`): Decoupled pub/sub communication between components
+- **State Store** (`pkg/fwdtui/state`): Centralized, thread-safe state management for all forwards
+- **Metrics Registry** (`pkg/fwdtui/metrics`): Traffic counters with atomic operations
+- **Components** (`pkg/fwdtui/components`): UI models for services list, logs, detail view
+
+### TUI Keyboard Shortcuts
+- `j/k` or arrows: Navigate
+- `Enter`: Open detail view
+- `Tab`: Switch panels/tabs
+- `/`: Filter services
+- `r`: Reconnect errored services
+- `b`: Toggle bandwidth columns
+- `?`: Help overlay
+- `q`: Quit
 
 ## Build and Development Commands
 
@@ -51,6 +86,9 @@ sudo ./kubefwd svc -n <namespace>
 
 # Use -E flag to preserve environment (especially KUBECONFIG)
 sudo -E ./kubefwd svc -n <namespace>
+
+# With interactive TUI (recommended for development)
+sudo -E ./kubefwd svc -n <namespace> --tui
 ```
 
 ### Dependencies
@@ -84,6 +122,21 @@ The verbose flag (`-v`) enables debug-level logging (logrus.DebugLevel), which s
 - IP allocation details
 - Port forwarding lifecycle events
 
+### Demo Environment
+
+A comprehensive demo manifest is available for testing:
+
+```bash
+# Deploy 60 services across 2 namespaces
+kubectl apply -f test/manifests/demo-microservices.yaml
+
+# Forward all demo services with TUI
+sudo -E ./kubefwd svc -n kft1,kft2 --tui
+
+# Cleanup
+kubectl delete -f test/manifests/demo-microservices.yaml
+```
+
 ## Architecture
 
 ### Core Components Flow
@@ -103,7 +156,7 @@ The verbose flag (`-v`) enables debug-level logging (logrus.DebugLevel), which s
    - Maintains map of active port forwards per pod
 5. **Port Forwarding** (`pkg/fwdport`): Individual pod port forwarding
    - Creates SPDY connection to k8s API server
-   - Manages port forward lifecycle with watch for pod deletion using k8s informers
+   - Manages port forward lifecycle with watch for pod deletion
    - Updates `/etc/hosts` file with service hostnames
 6. **Network/IP Management** (`pkg/fwdnet`, `pkg/fwdIp`): Loopback interface management
    - Allocates unique 127.x.x.x IPs for each service
@@ -142,6 +195,12 @@ The verbose flag (`-v`) enables debug-level logging (logrus.DebugLevel), which s
 - `fwdhost`: Hosts file backup management
 - `fwdcfg`: Kubernetes client configuration
 - `fwdpub`: Publisher interface for output
+- `fwdtui`: Terminal User Interface (Bubble Tea)
+  - `fwdtui/components`: UI view models (services list, logs, detail, help, status bar)
+  - `fwdtui/events`: Event bus with panic recovery for decoupled pub/sub
+  - `fwdtui/state`: Thread-safe state store with RWMutex protection
+  - `fwdtui/metrics`: Traffic metrics with atomic counters and rate calculation
+  - `fwdtui/portforward`: Port forward wrapper that emits metrics events
 - `utils`: Root permission checks (OS-specific)
 
 ## Important Implementation Details
@@ -198,7 +257,17 @@ pkg/
   fwdhost/            # Hosts file operations
   fwdcfg/             # K8s config
   fwdpub/             # Publisher
+  fwdtui/             # Terminal User Interface
+    components/       # UI models (services, logs, detail, help)
+    events/           # Event bus for decoupled communication
+    state/            # Centralized state store
+    metrics/          # Traffic metrics with atomic counters
+    portforward/      # Port forward wrapper with metrics
   utils/              # Utilities (root check)
+test/
+  integration/        # Integration tests (require KIND cluster)
+  manifests/          # Test Kubernetes manifests
+  scripts/            # Test setup/teardown scripts
 ```
 
 ## Contribution Policy
@@ -224,20 +293,58 @@ Uses GoReleaser (`.goreleaser.yml`):
 
 The version is set via ldflags during build: `-ldflags "-X main.Version={{.Version}}"`
 
-## Testing Considerations
+## Testing
 
-Currently limited test coverage (only `fwdport_test.go` exists). When adding tests:
-- Test pod selection logic for normal vs headless services
-- Test IP allocation and reservation
-- Test hostname generation for various cluster/namespace combinations
-- Mock k8s client interactions using fake clientsets
-- Test hosts file race condition scenarios (Issue #74)
-- Test cleanup/restore logic for error conditions (Issue #5)
-- Test pod state filtering for evicted/completed pods (Issues #34, #114)
+### Unit Tests
+
+Test coverage has improved significantly:
+
+```bash
+# Run all unit tests
+go test ./...
+
+# Run with coverage
+go test -cover ./...
+
+# Run specific package tests
+go test -v ./pkg/fwdtui/events/...     # Event bus tests (100% coverage)
+go test -v ./pkg/fwdtui/components/... # UI component tests
+go test -v ./pkg/fwdtui/state/...      # State store tests
+go test -v ./pkg/fwdport/...           # Port forwarding tests
+```
+
+### Integration Tests
+
+Located in `test/integration/`, these require a KIND cluster:
+
+```bash
+# Setup KIND cluster
+./test/scripts/setup-kind.sh
+./test/scripts/deploy-test-services.sh test/manifests
+
+# Run integration tests (requires sudo)
+sudo -E go test -tags=integration -v ./test/integration/...
+
+# Teardown
+./test/scripts/teardown-kind.sh
+```
+
+Integration tests cover: basic forwarding, headless services, auto-reconnect, multi-namespace, port mapping, and cleanup verification.
+
+### Areas for Additional Testing
+- Hosts file race condition scenarios (Issue #74)
+- Cleanup/restore logic for error conditions (Issue #5)
+- Pod state filtering for evicted/completed pods (Issues #34, #114)
 
 ## Areas for Improvement
 
 Based on known issues, these areas would benefit from development:
+
+### Auto-Reconnect Enhancement
+Auto-reconnect is now implemented (`-a` flag, enabled by default in TUI mode) with exponential backoff. However, edge cases may still exist:
+- Very rapid pod cycling during rolling deployments
+- Network partitions vs pod deletion detection
+- Reconnection priority when multiple pods are available
 
 ### Hosts File Synchronization (Issues #74, #79)
 The `HostFileWithLock` mutex in `pkg/fwdport` may not be sufficient for all race conditions. Consider:
@@ -264,6 +371,8 @@ Based on community feedback and GitHub issues, developers should be aware of:
 ### Architectural Limitations
 
 **Services Without Selectors** (Issue #35): kubefwd does not support ClusterIP services without selectors (services backed by manually created Endpoints). The code assumes services have pod selectors and will skip services with empty selector strings.
+
+**Auto-Reconnect Available** (Issue #21 resolved): Auto-reconnect is now implemented with the `-a` flag (enabled by default in TUI mode). When pods restart, kubefwd automatically re-establishes port forwards with exponential backoff (1s → 5min max).
 
 **UDP Protocol Not Supported**: Kubernetes port-forwarding API limitation (kubernetes/kubernetes#47862).
 
