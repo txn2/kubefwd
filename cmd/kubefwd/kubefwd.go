@@ -130,7 +130,6 @@ func isTUIMode() bool {
 }
 
 func main() {
-
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,

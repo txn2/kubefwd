@@ -143,6 +143,8 @@ func TestHeadlessPodHostnames(t *testing.T) {
 }
 
 // TestHeadlessStatefulSet tests headless service with StatefulSet
+//
+//goland:noinspection HttpUrlsUsage,HttpUrlsUsage
 func TestHeadlessStatefulSet(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
