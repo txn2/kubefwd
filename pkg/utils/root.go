@@ -8,7 +8,13 @@ import (
 )
 
 // CheckRoot determines if we have administrative privileges.
+// This function delegates to the package-level Checker for testability.
 func CheckRoot() (bool, error) {
+	return Checker.CheckRoot()
+}
+
+// CheckRoot implements RootChecker for defaultRootChecker on Unix systems.
+func (d *defaultRootChecker) CheckRoot() (bool, error) {
 	cmd := exec.Command("id", "-u")
 
 	output, err := cmd.Output()
