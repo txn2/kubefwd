@@ -127,6 +127,9 @@ func RemoveByName(name string) {
 	delete(svcRegistry.services, name)
 	svcRegistry.mutex.Unlock()
 
+	// Signal shutdown BEFORE stopping pods so goroutines know not to reconnect
+	close(serviceFwd.DoneChannel)
+
 	// Emit event for TUI
 	if fwdtui.IsEnabled() {
 		fwdtui.Emit(events.NewServiceEvent(
@@ -150,7 +153,4 @@ func RemoveByName(name string) {
 		}(podName)
 	}
 	podsAllDone.Wait()
-
-	// Signal that the service has shut down
-	close(serviceFwd.DoneChannel)
 }
