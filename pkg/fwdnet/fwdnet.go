@@ -13,7 +13,17 @@ import (
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
 func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
+	return Manager.ReadyInterface(opts)
+}
 
+// RemoveInterfaceAlias can remove the Interface alias after port forwarding.
+// if -alias command get err, just print the error and continue.
+func RemoveInterfaceAlias(ip net.IP) {
+	Manager.RemoveInterfaceAlias(ip)
+}
+
+// ReadyInterface implements InterfaceManager for the default production implementation.
+func (d *defaultInterfaceManager) ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 	ip, err := fwdIp.GetIp(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate IP: %w", err)
@@ -72,9 +82,8 @@ func ReadyInterface(opts fwdIp.ForwardIPOpts) (net.IP, error) {
 	return net.IP{}, errors.New("unable to find an available IP/Port")
 }
 
-// RemoveInterfaceAlias can remove the Interface alias after port forwarding.
-// if -alias command get err, just print the error and continue.
-func RemoveInterfaceAlias(ip net.IP) {
+// RemoveInterfaceAlias implements InterfaceManager for the default production implementation.
+func (d *defaultInterfaceManager) RemoveInterfaceAlias(ip net.IP) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "-alias", ip.String()}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
