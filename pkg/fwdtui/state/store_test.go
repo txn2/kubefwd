@@ -586,6 +586,9 @@ func TestGetForward_ReturnsACopy(t *testing.T) {
 
 	// Original should be unchanged
 	original := store.GetForward("svc.ns.ctx.pod.8080")
+	if original == nil {
+		t.Fatal("Expected original forward to exist")
+	}
 	if original.BytesIn == 9999 {
 		t.Error("Modifying returned forward should not affect store")
 	}
@@ -613,6 +616,9 @@ func TestGetService_ReturnsACopy(t *testing.T) {
 
 	// Original should be unchanged
 	original := store.GetService("svc.ns.ctx")
+	if original == nil {
+		t.Fatal("Expected original service to exist")
+	}
 	if original.ServiceName == "modified-name" {
 		t.Error("Modifying returned service should not affect store")
 	}
