@@ -195,7 +195,7 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 		log.SetOutput(io.Discard)
 
 		// Add log hook
-		log.AddHook(&tuiLogHook{logCh: logCh})
+		log.AddHook(&tuiLogHook{logCh: logCh, stopCh: shutdownChan})
 	})
 
 	return tuiManager
@@ -850,7 +850,8 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 
 // tuiLogHook is a logrus hook that sends logs to the TUI
 type tuiLogHook struct {
-	logCh chan<- LogEntryMsg
+	logCh  chan<- LogEntryMsg
+	stopCh <-chan struct{}
 }
 
 func (h *tuiLogHook) Levels() []log.Level {
@@ -865,9 +866,13 @@ func (h *tuiLogHook) Fire(entry *log.Entry) error {
 		Time:    entry.Time,
 	}:
 	default:
-		// Buffer full - drop log but write to stderr as fallback
-		// This is rare and indicates very high log volume
-		_, _ = fmt.Fprintf(os.Stderr, "TUI: dropped log (buffer full): %s\n", entry.Message)
+		// Buffer full - silently drop during shutdown
+		select {
+		case <-h.stopCh:
+			// Shutdown in progress, silently drop
+		default:
+			// Not shutting down but buffer full - this is rare
+		}
 	}
 	return nil
 }
