@@ -454,7 +454,8 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			localPort := svcFwd.getPortMap(port.Port)
 			p, err := strconv.ParseInt(localPort, 10, 32)
 			if err != nil {
-				log.Fatal(err)
+				log.Errorf("Failed to parse local port %q for service %s: %v", localPort, svcFwd.Svc.Name, err)
+				continue
 			}
 			port.Port = int32(p)
 

@@ -210,13 +210,6 @@ type HostFileWithLock struct {
 	sync.Mutex
 }
 
-type HostsParams struct {
-	localServiceName string
-	nsServiceName    string
-	fullServiceName  string
-	svcServiceName   string
-}
-
 type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     restclient.Config
@@ -254,7 +247,6 @@ type PortForwardOpts struct {
 	NamespaceN int
 
 	Domain         string
-	HostsParams    *HostsParams
 	Hosts          []string
 	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
 	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
@@ -710,8 +702,13 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 	// watcher until the pod status is running
 	for {
 		event, ok := <-watcher.ResultChan()
-		if !ok || event.Type == "ERROR" {
-			break
+		if !ok {
+			// Channel closed - watch ended (timeout, stop signal, etc.)
+			return nil, nil
+		}
+		if event.Type == "ERROR" {
+			// Actual error from the API server
+			return nil, fmt.Errorf("watch error for pod %s: event type ERROR", pfo.PodName)
 		}
 		if event.Object != nil && event.Type == "MODIFIED" {
 			changedPod := event.Object.(*v1.Pod)
@@ -720,7 +717,6 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 			}
 		}
 	}
-	return nil, nil
 }
 
 // Stop sends the shutdown signal to the port-forwarding process.

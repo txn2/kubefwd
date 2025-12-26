@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
@@ -12,6 +13,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+// setupMockInterface sets up the mock interface manager for tests
+// and returns a cleanup function to restore the original
+func setupMockInterface() func() {
+	mock := fwdnet.NewMockInterfaceManager()
+	fwdnet.SetManager(mock)
+	return func() {
+		fwdnet.ResetManager()
+	}
+}
 
 // mockDebouncer for testing debouncing behavior
 type mockDebouncer struct {
@@ -35,14 +46,6 @@ func (m *mockDebouncer) getCalls() int {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return m.calls
-}
-
-func (m *mockDebouncer) executeLast() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	if m.lastFunc != nil {
-		m.lastFunc()
-	}
 }
 
 // createTestService creates a test Kubernetes service
@@ -199,6 +202,9 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_NormalService(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -249,11 +255,11 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 		t.Errorf("Normal service should forward 1 pod, got %d", numPods)
 	}
 
-	// Verify it's one of our pods
+	// Verify it's one of our pods (key format: service.podname.localport)
 	foundPod := false
 	svcFwd.NamespaceServiceLock.Lock()
 	for key := range svcFwd.PortForwards {
-		if key == "test-svc.running-pod-1" || key == "test-svc.running-pod-2" {
+		if key == "test-svc.running-pod-1.80" || key == "test-svc.running-pod-2.80" {
 			foundPod = true
 		}
 	}
@@ -268,6 +274,9 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_HeadlessService(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -374,6 +383,9 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -422,6 +434,9 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -469,6 +484,9 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -536,14 +554,15 @@ func TestAddServicePod(t *testing.T) {
 	}
 
 	pfo := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	svcFwd.AddServicePod(pfo)
 
-	// Should be in map with key "service.podname"
-	if _, found := svcFwd.PortForwards["test-svc.test-pod"]; !found {
+	// Should be in map with key "service.podname.localport"
+	if _, found := svcFwd.PortForwards["test-svc.test-pod.8080"]; !found {
 		t.Error("Pod was not added to PortForwards map")
 	}
 
@@ -560,13 +579,15 @@ func TestAddServicePod_Duplicate(t *testing.T) {
 	}
 
 	pfo1 := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	pfo2 := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	svcFwd.AddServicePod(pfo1)
@@ -585,8 +606,8 @@ func TestListServicePodNames(t *testing.T) {
 		NamespaceServiceLock: &sync.Mutex{},
 	}
 
-	pfo1 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod1"}
-	pfo2 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod2"}
+	pfo1 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod1", LocalPort: "80"}
+	pfo2 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod2", LocalPort: "80"}
 
 	svcFwd.AddServicePod(pfo1)
 	svcFwd.AddServicePod(pfo2)
@@ -597,14 +618,14 @@ func TestListServicePodNames(t *testing.T) {
 		t.Errorf("Expected 2 pod names, got %d", len(names))
 	}
 
-	// Should contain both keys
+	// Should contain both keys (format: service.podname.localport)
 	foundPod1 := false
 	foundPod2 := false
 	for _, name := range names {
-		if name == "svc.pod1" {
+		if name == "svc.pod1.80" {
 			foundPod1 = true
 		}
-		if name == "svc.pod2" {
+		if name == "svc.pod2.80" {
 			foundPod2 = true
 		}
 	}
@@ -624,6 +645,7 @@ func TestRemoveServicePod(t *testing.T) {
 	pfo := &fwdport.PortForwardOpts{
 		Service:        "test-svc",
 		PodName:        "test-pod",
+		LocalPort:      "8080",
 		ManualStopChan: make(chan struct{}),
 		DoneChan:       make(chan struct{}),
 	}
@@ -641,8 +663,8 @@ func TestRemoveServicePod(t *testing.T) {
 		t.Fatal("Pod was not added")
 	}
 
-	// Remove it
-	svcFwd.RemoveServicePod("test-svc.test-pod")
+	// Remove it (key format: service.podname.localport)
+	svcFwd.RemoveServicePod("test-svc.test-pod.8080")
 
 	// Should be removed from map
 	if len(svcFwd.PortForwards) != 0 {
@@ -846,6 +868,7 @@ func TestConcurrentAddRemovePods(t *testing.T) {
 			pfo := &fwdport.PortForwardOpts{
 				Service:        "svc",
 				PodName:        string(rune('a' + n)),
+				LocalPort:      "80",
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
 			}
@@ -873,7 +896,8 @@ func TestConcurrentAddRemovePods(t *testing.T) {
 		}()
 		go func(n int) {
 			defer wg.Done()
-			podKey := "svc." + string(rune('a'+n))
+			// Key format: service.podname.localport
+			podKey := "svc." + string(rune('a'+n)) + ".80"
 			// Close DoneChan before removing to simulate stopped forwarding
 			svcFwd.NamespaceServiceLock.Lock()
 			pfo, found := svcFwd.PortForwards[podKey]

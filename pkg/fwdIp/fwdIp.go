@@ -146,7 +146,7 @@ func determineIP(regKey string, opts ForwardIPOpts) (net.IP, error) {
 func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 	allocationKey := ip.String()
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
-		// ip/port pair has allready ben allocated
+		// ip/port pair has already been allocated
 		msg := fmt.Sprintf("Unable to forward service %s to requested IP %s due to collision. Will allocate next available", opts.ServiceName, allocationKey)
 		log.Error(msg)
 		return errors.New(msg)
@@ -190,7 +190,7 @@ func ipFromString(ipStr string) (net.IP, error) {
 func hasConflictingReservations(opts ForwardIPOpts, wantIP string) *ServiceConfiguration {
 	fwdCfg := getForwardConfiguration(opts)
 	for _, cfg := range fwdCfg.ServiceConfigurations {
-		// if the IP we want is reserverd and the
+		// if the IP we want is reserved and the
 		// target service is not the one listed in
 		// the forward configuration
 		if wantIP == cfg.IP && !cfg.Matches(opts) {

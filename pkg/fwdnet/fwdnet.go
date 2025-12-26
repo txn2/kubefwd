@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdIp"
 )
 
@@ -87,10 +88,8 @@ func (d *defaultInterfaceManager) RemoveInterfaceAlias(ip net.IP) {
 	cmd := "ifconfig"
 	args := []string{"lo0", "-alias", ip.String()}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		// suppress for now
-		// @todo research alternative to ifconfig
-		// @todo suggest ifconfig or alternative
-		// @todo research libs for interface management
-		//fmt.Println("Cannot ifconfig lo0 -alias " + ip.String() + "\r\n" + err.Error())
+		// Log at debug level - alias removal errors are expected during cleanup
+		// when the alias was never created or already removed
+		log.Debugf("Note: could not remove interface alias %s: %v", ip.String(), err)
 	}
 }

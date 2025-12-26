@@ -17,7 +17,7 @@ type ServicesRegistry struct {
 	mutex          *sync.Mutex
 	services       map[string]*fwdservice.ServiceFWD
 	shutDownSignal <-chan struct{}
-	doneSignal     chan struct{} // indicates when all services were succesfully shutdown
+	doneSignal     chan struct{} // indicates when all services were successfully shutdown
 }
 
 var svcRegistry *ServicesRegistry

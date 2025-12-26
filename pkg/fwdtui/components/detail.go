@@ -616,24 +616,6 @@ func (m *DetailModel) getHTTPMaxScroll() int {
 	return maxScroll
 }
 
-// getLogsMaxScroll returns the maximum scroll offset for pod logs
-func (m *DetailModel) getLogsMaxScroll() int {
-	contentLines := len(m.podLogs)
-	viewportHeight := m.getViewportHeight()
-	// Account for streaming status line
-	if m.logsStreaming {
-		viewportHeight -= 2
-	}
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
-	maxScroll := contentLines - viewportHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	return maxScroll
-}
-
 // getConnectStrings returns all hostname:port combinations
 func (m DetailModel) getConnectStrings() []string {
 	if m.snapshot == nil {

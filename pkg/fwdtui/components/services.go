@@ -310,6 +310,8 @@ func statusStyle(status state.ForwardStatus) lipgloss.Style {
 		return styles.StatusErrorStyle
 	case state.StatusStopping:
 		return styles.StatusStoppingStyle
+	case state.StatusPending:
+		return styles.StatusPendingStyle
 	default:
 		return styles.StatusPendingStyle
 	}
