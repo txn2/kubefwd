@@ -14,68 +14,6 @@ import (
 // Test Utilities
 // =============================================================================
 
-// sendKey sends a single character key message to a model
-func sendKey(m tea.Model, key string) tea.Model {
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-	newModel, _ := m.Update(msg)
-	return newModel
-}
-
-// sendSpecialKey sends a special key type message to a model
-func sendSpecialKey(m tea.Model, keyType tea.KeyType) tea.Model {
-	msg := tea.KeyMsg{Type: keyType}
-	newModel, _ := m.Update(msg)
-	return newModel
-}
-
-// sendKeyString sends a key by string name (for special keys like "tab", "esc")
-func sendKeyString(m tea.Model, key string) tea.Model {
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-	// Handle special keys
-	switch key {
-	case "tab":
-		msg = tea.KeyMsg{Type: tea.KeyTab}
-	case "shift+tab":
-		msg = tea.KeyMsg{Type: tea.KeyShiftTab}
-	case "esc":
-		msg = tea.KeyMsg{Type: tea.KeyEscape}
-	case "enter":
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
-	case "up":
-		msg = tea.KeyMsg{Type: tea.KeyUp}
-	case "down":
-		msg = tea.KeyMsg{Type: tea.KeyDown}
-	case "left":
-		msg = tea.KeyMsg{Type: tea.KeyLeft}
-	case "right":
-		msg = tea.KeyMsg{Type: tea.KeyRight}
-	case "pgup":
-		msg = tea.KeyMsg{Type: tea.KeyPgUp}
-	case "pgdown":
-		msg = tea.KeyMsg{Type: tea.KeyPgDown}
-	case "home":
-		msg = tea.KeyMsg{Type: tea.KeyHome}
-	case "end":
-		msg = tea.KeyMsg{Type: tea.KeyEnd}
-	case "backspace":
-		msg = tea.KeyMsg{Type: tea.KeyBackspace}
-	default:
-		// Single character key
-		if len(key) == 1 {
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-		}
-	}
-	newModel, _ := m.Update(msg)
-	return newModel
-}
-
-// sendWindowSize sends a window resize message
-func sendWindowSize(m tea.Model, width, height int) tea.Model {
-	msg := tea.WindowSizeMsg{Width: width, Height: height}
-	newModel, _ := m.Update(msg)
-	return newModel
-}
-
 // createTestStore creates a store with sample test data
 func createTestStore() *state.Store {
 	store := state.NewStore(100)
