@@ -47,6 +47,8 @@ func (rc *RateCalculator) AddSample(bytesIn, bytesOut uint64, timestamp time.Tim
 }
 
 // GetInstantRate returns bytes/sec based on last two samples
+//
+//goland:noinspection DuplicatedCode
 func (rc *RateCalculator) GetInstantRate() (rateIn, rateOut float64) {
 	rc.mu.RLock()
 	defer rc.mu.RUnlock()
@@ -78,6 +80,8 @@ func (rc *RateCalculator) GetInstantRate() (rateIn, rateOut float64) {
 }
 
 // GetAverageRate returns average bytes/sec over last N seconds
+//
+//goland:noinspection DuplicatedCode
 func (rc *RateCalculator) GetAverageRate(windowSeconds int) (rateIn, rateOut float64) {
 	rc.mu.RLock()
 	defer rc.mu.RUnlock()

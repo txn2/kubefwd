@@ -30,7 +30,7 @@ func createMockServiceFWD(name, namespace, context string) *fwdservice.ServiceFW
 	}
 
 	return &fwdservice.ServiceFWD{
-		ClientSet:            fake.NewSimpleClientset(),
+		ClientSet:            fake.NewClientset(),
 		Svc:                  svc,
 		Namespace:            namespace,
 		Context:              context,

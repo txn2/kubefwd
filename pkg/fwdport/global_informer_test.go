@@ -276,7 +276,7 @@ func TestGlobalPodInformer_DeleteEvent(t *testing.T) {
 	pod := setUpTestPod("default", "test-pod")
 
 	// Create fake clientset with the pod
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 
 	// Configure watch reactor
@@ -315,7 +315,7 @@ func TestGlobalPodInformer_DeletionTimestamp(t *testing.T) {
 	now := metav1.Now()
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -348,7 +348,7 @@ func TestGlobalPodInformer_ModifiedWithoutDeletionTimestamp(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -380,7 +380,7 @@ func TestGlobalPodInformer_RapidEvents(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -432,7 +432,7 @@ func TestGlobalPodInformer_MultipleNamespaces(t *testing.T) {
 		pods = append(pods, pod)
 	}
 
-	clientset := fake.NewSimpleClientset(pods...)
+	clientset := fake.NewClientset(pods...)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 

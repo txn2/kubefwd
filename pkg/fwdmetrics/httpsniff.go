@@ -90,6 +90,8 @@ func (s *HTTPSniffer) IsEnabled() bool {
 }
 
 // SniffRequest analyzes data being sent TO the pod (outgoing request)
+//
+//goland:noinspection DuplicatedCode
 func (s *HTTPSniffer) SniffRequest(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,6 +135,8 @@ func (s *HTTPSniffer) SniffRequest(data []byte) {
 }
 
 // SniffResponse analyzes data being received FROM the pod (incoming response)
+//
+//goland:noinspection DuplicatedCode
 func (s *HTTPSniffer) SniffResponse(data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -768,6 +768,8 @@ func (m *DetailModel) renderTabBar() string {
 }
 
 // renderInfoTab renders the Info tab content
+//
+//goland:noinspection DuplicatedCode
 func (m *DetailModel) renderInfoTab() string {
 	var b strings.Builder
 
@@ -849,6 +851,7 @@ func (m *DetailModel) renderInfoTab() string {
 	// Sent
 	b.WriteString("  ")
 	b.WriteString(styles.DetailLabelStyle.Render("Sent:     "))
+	//goland:noinspection DuplicatedCode
 	b.WriteString(styles.DetailValueStyle.Render(humanBytes(m.snapshot.BytesOut)))
 	b.WriteString(" (")
 	b.WriteString(styles.DetailValueStyle.Render(humanRate(m.snapshot.RateOut)))

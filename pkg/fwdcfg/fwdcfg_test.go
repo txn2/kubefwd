@@ -71,7 +71,7 @@ func TestGetClientConfig_WithInvalidPath(t *testing.T) {
 func TestGetClientConfig_EmptyPath(t *testing.T) {
 	// Set up a valid KUBECONFIG for the test
 	originalKubeconfig := os.Getenv("KUBECONFIG")
-	defer os.Setenv("KUBECONFIG", originalKubeconfig)
+	defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
@@ -90,7 +90,9 @@ clusters:
 	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
-	os.Setenv("KUBECONFIG", configPath)
+	if err := os.Setenv("KUBECONFIG", configPath); err != nil {
+		t.Fatalf("Failed to set KUBECONFIG: %v", err)
+	}
 
 	cg := NewConfigGetter()
 	config, err := cg.GetClientConfig("")
