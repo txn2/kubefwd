@@ -106,9 +106,9 @@ func TestMockRootChecker_GetCallCount(t *testing.T) {
 		t.Errorf("Expected initial call count 0, got %d", mock.GetCallCount())
 	}
 
-	mock.CheckRoot()
-	mock.CheckRoot()
-	mock.CheckRoot()
+	_, _ = mock.CheckRoot()
+	_, _ = mock.CheckRoot()
+	_, _ = mock.CheckRoot()
 
 	if mock.GetCallCount() != 3 {
 		t.Errorf("Expected call count 3, got %d", mock.GetCallCount())
