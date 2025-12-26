@@ -86,7 +86,7 @@ func init() {
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
-	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min)")
+	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI mode.")
 }
 
 var Cmd = &cobra.Command{
@@ -196,6 +196,11 @@ Try:
 		// Start metrics registry sampling EARLY, before port forwards begin
 		// This ensures rate calculation has samples from the start of data transfer
 		fwdmetrics.GetRegistry().Start()
+
+		// In TUI mode, enable auto-reconnect by default unless user explicitly disabled it
+		if !cmd.Flags().Changed("auto-reconnect") {
+			autoReconnect = true
+		}
 	}
 
 	// Only show instructions in non-TUI mode
