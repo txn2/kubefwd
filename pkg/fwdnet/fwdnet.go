@@ -14,13 +14,13 @@ import (
 // ReadyInterface prepares a local IP address on
 // the loopback interface.
 func ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP, error) {
-	return Manager.ReadyInterface(opts)
+	return getManager().ReadyInterface(opts)
 }
 
 // RemoveInterfaceAlias can remove the Interface alias after port forwarding.
 // if -alias command get err, just print the error and continue.
 func RemoveInterfaceAlias(ip net.IP) {
-	Manager.RemoveInterfaceAlias(ip)
+	getManager().RemoveInterfaceAlias(ip)
 }
 
 // ReadyInterface implements InterfaceManager for the default production implementation.

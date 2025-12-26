@@ -2,6 +2,7 @@ package fwdnet
 
 import (
 	"net"
+	"sync"
 
 	"github.com/txn2/kubefwd/pkg/fwdip"
 )
@@ -21,16 +22,30 @@ type InterfaceManager interface {
 // Methods are defined in fwdnet.go.
 type defaultInterfaceManager struct{}
 
-// Manager is the package-level InterfaceManager used by the application.
-// Replace this with a mock for testing.
-var Manager InterfaceManager = &defaultInterfaceManager{}
+// managerMu protects access to Manager.
+var managerMu sync.RWMutex
+
+// manager is the package-level InterfaceManager used by the application.
+// Access via getManager() to ensure thread-safety.
+var manager InterfaceManager = &defaultInterfaceManager{}
+
+// getManager returns the current InterfaceManager in a thread-safe manner.
+func getManager() InterfaceManager {
+	managerMu.RLock()
+	defer managerMu.RUnlock()
+	return manager
+}
 
 // SetManager replaces the current InterfaceManager (for testing).
 func SetManager(m InterfaceManager) {
-	Manager = m
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	manager = m
 }
 
 // ResetManager restores the default InterfaceManager.
 func ResetManager() {
-	Manager = &defaultInterfaceManager{}
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	manager = &defaultInterfaceManager{}
 }
