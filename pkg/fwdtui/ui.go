@@ -153,9 +153,8 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			select {
 			case eventCh <- e:
 			default:
-				// Buffer full - drop event but log warning (to stderr since TUI owns stdout)
-				// This is rare and indicates very high event volume
-				_, _ = fmt.Fprintf(os.Stderr, "TUI: dropped event %s (buffer full)\n", e.Type)
+				// Buffer full - silently drop event
+				// This typically happens during shutdown when many removal events occur
 			}
 		})
 
