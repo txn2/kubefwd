@@ -110,7 +110,7 @@ var Cmd = &cobra.Command{
 }
 
 // setAllNamespace Form V1Core get all namespace
-func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions, namespaces *[]string) {
+func setAllNamespace(clientSet kubernetes.Interface, options metav1.ListOptions, namespaces *[]string) {
 	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), options)
 	if err != nil {
 		log.Fatalf("Error get all namespaces by CoreV1: %s\n", err.Error())
@@ -127,7 +127,7 @@ func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions
 
 // checkConnection tests if you can connect to the cluster in your config,
 // and if you have the necessary permissions to use kubefwd.
-func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error {
+func checkConnection(clientSet kubernetes.Interface, namespaces []string) error {
 	// Check simple connectivity: can you connect to the api server
 	_, err := clientSet.Discovery().ServerVersion()
 	if err != nil {
