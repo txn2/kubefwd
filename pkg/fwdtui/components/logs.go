@@ -49,6 +49,9 @@ func (m LogsModel) Init() tea.Cmd {
 func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Capture position BEFORE any scrolling to track user intent
+	wasAtBottom := m.ready && m.viewport.AtBottom()
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -69,38 +72,53 @@ func (m LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 		m.updateContent()
 
 	case tea.KeyMsg:
-		if m.focused {
+		if m.focused && m.ready {
 			switch msg.String() {
-			case "j", "down":
+			case "j":
+				// Vim-style scroll down - viewport doesn't handle 'j'
 				m.viewport.ScrollDown(1)
-			case "k", "up":
+			case "k":
+				// Vim-style scroll up - viewport doesn't handle 'k'
 				m.viewport.ScrollUp(1)
-			case "g", "home":
+				m.autoFollow = false // User is pausing
+			case "g":
+				// Vim-style go to top - viewport doesn't handle 'g'
 				m.viewport.GotoTop()
-			case "G", "end":
+				m.autoFollow = false // User is pausing
+			case "G":
+				// Vim-style go to bottom - viewport doesn't handle 'G'
 				m.viewport.GotoBottom()
-			case "pgdown":
-				m.viewport.HalfPageDown()
-			case "pgup":
-				m.viewport.HalfPageUp()
+				m.autoFollow = true // User explicitly resumed
+			case "up", "pgup", "home":
+				// Scrolling up = pausing (viewport handles the actual scroll)
+				m.autoFollow = false
+			case "end":
+				// Going to bottom = resuming (viewport handles the actual scroll)
+				m.autoFollow = true
 			}
+			// Note: "down" and "pgdown" fall through - let viewport handle them
+			// and use the wasAtBottom check below to resume if scrolled to bottom
 		}
 
 	case tea.MouseMsg:
-		// Handle mouse wheel for scrolling
+		// Track scroll direction for autoFollow
 		if m.focused && m.ready {
 			if msg.Button == tea.MouseButtonWheelUp {
-				m.viewport.ScrollUp(3)
-			} else if msg.Button == tea.MouseButtonWheelDown {
-				m.viewport.ScrollDown(3)
+				m.autoFollow = false // User scrolling up = pausing
 			}
+			// Scroll down is handled by viewport + wasAtBottom check below
 		}
 	}
 
 	if m.ready {
+		// Let viewport handle scrolling (arrows, page up/down, mouse wheel)
 		m.viewport, cmd = m.viewport.Update(msg)
-		// Update auto-follow state based on scroll position
-		m.autoFollow = m.viewport.AtBottom()
+
+		// Resume autoFollow if user scrolled TO the bottom
+		// (they were not at bottom before, but are now)
+		if !wasAtBottom && m.viewport.AtBottom() {
+			m.autoFollow = true
+		}
 	}
 	return m, cmd
 }
