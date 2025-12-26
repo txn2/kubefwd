@@ -6,6 +6,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
@@ -15,7 +17,7 @@ type ServicesRegistry struct {
 	mutex          *sync.Mutex
 	services       map[string]*fwdservice.ServiceFWD
 	shutDownSignal <-chan struct{}
-	doneSignal     chan struct{} // indicates when all services were succesfully shutdown
+	doneSignal     chan struct{} // indicates when all services were successfully shutdown
 }
 
 var svcRegistry *ServicesRegistry
@@ -73,38 +75,19 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	svcRegistry.services[serviceFwd.String()] = serviceFwd
 	log.Debugf("Registry: Start forwarding service %s", serviceFwd)
 
+	// Emit event for TUI
+	if fwdtui.IsEnabled() {
+		fwdtui.Emit(events.NewServiceEvent(
+			events.ServiceAdded,
+			serviceFwd.Svc.Name,
+			serviceFwd.Namespace,
+			serviceFwd.Context,
+		))
+	}
+
 	// Start port forwarding
 	go serviceFwd.SyncPodForwards(false)
-
-	// Schedule a re sync every x minutes to deal with potential connection errors.
-	// @TODO review the need for this, if we keep it make if configurable
-	// @TODO this causes the services to try and bind a second time to the local ports and fails --cjimti
-	//
-	//go func() {
-	//	for {
-	//		select {
-	//		case <-time.After(10 * time.Minute):
-	//			serviceFwd.SyncPodForwards(false)
-	//		case <-serviceFwd.DoneChannel:
-	//			return
-	//		}
-	//	}
-	//}()
 }
-
-// SyncAll does a pod sync for all known services.
-//func SyncAll() {
-//	// If we are already shutting down, don't sync services anymore.
-//	select {
-//	case <-svcRegistry.shutDownSignal:
-//		return
-//	default:
-//	}
-//
-//	for _, svc := range svcRegistry.services {
-//		svc.SyncPodForwards(true)
-//	}
-//}
 
 // ShutDownAll will shutdown all active services and remove them from the registry
 func ShutDownAll() {
@@ -144,6 +127,19 @@ func RemoveByName(name string) {
 	delete(svcRegistry.services, name)
 	svcRegistry.mutex.Unlock()
 
+	// Signal shutdown BEFORE stopping pods so goroutines know not to reconnect
+	close(serviceFwd.DoneChannel)
+
+	// Emit event for TUI
+	if fwdtui.IsEnabled() {
+		fwdtui.Emit(events.NewServiceEvent(
+			events.ServiceRemoved,
+			serviceFwd.Svc.Name,
+			serviceFwd.Namespace,
+			serviceFwd.Context,
+		))
+	}
+
 	// Synchronously stop the forwarding of all active pods in it
 	activePodForwards := serviceFwd.ListServicePodNames()
 	log.Debugf("Registry: Stopping service %s with %d port-forward(s)", serviceFwd, len(activePodForwards))
@@ -157,7 +153,4 @@ func RemoveByName(name string) {
 		}(podName)
 	}
 	podsAllDone.Wait()
-
-	// Signal that the service has shut down
-	close(serviceFwd.DoneChannel)
 }

@@ -63,7 +63,7 @@ func createMockPortForwardOpts(hostFile *HostFileWithLock, service, namespace, c
 		Service:    service,
 		Namespace:  namespace,
 		Context:    context,
-		LocalIp:    localIP,
+		LocalIP:    localIP,
 		HostFile:   hostFile,
 		ClusterN:   0,
 		NamespaceN: 0,

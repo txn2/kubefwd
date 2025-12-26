@@ -10,6 +10,8 @@ import (
 )
 
 // TestMultiNamespaceForwarding tests forwarding services from multiple namespaces simultaneously
+//
+//goland:noinspection HttpUrlsUsage
 func TestMultiNamespaceForwarding(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -131,6 +133,8 @@ func TestNamespaceIsolation(t *testing.T) {
 }
 
 // TestNamespaceHostnames tests hostname patterns for multi-namespace forwarding
+//
+//goland:noinspection HttpUrlsUsage
 func TestNamespaceHostnames(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)

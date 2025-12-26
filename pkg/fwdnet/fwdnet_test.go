@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 // TestReadyInterface_Linux tests behavior on Linux systems
@@ -20,7 +20,7 @@ func TestReadyInterface_Linux(t *testing.T) {
 	}
 
 	// Test with a loopback IP that should be available
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "test-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -60,7 +60,7 @@ func TestReadyInterface_Darwin(t *testing.T) {
 	}
 
 	// Test with standard loopback - this should already exist
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "test-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -91,7 +91,7 @@ func TestReadyInterface_Windows(t *testing.T) {
 		t.Skip("Skipping Windows-specific test on non-Windows platform")
 	}
 
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "test-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -191,7 +191,7 @@ func TestReadyInterface_PortInUse(t *testing.T) {
 	// On Linux/Windows, ReadyInterface should detect this
 	// On macOS without sudo, behavior may vary
 	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
-		opts := fwdIp.ForwardIPOpts{
+		opts := fwdip.ForwardIPOpts{
 			ServiceName:              "test-svc",
 			PodName:                  "test-pod",
 			Context:                  "test-ctx",
@@ -219,7 +219,7 @@ func TestReadyInterface_IPAllocation(t *testing.T) {
 	// Test that ReadyInterface allocates IPs in the correct range
 	// This test doesn't require sudo - it just verifies the IP allocation logic
 
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "test-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -260,7 +260,7 @@ func TestReadyInterface_MultipleIPs(t *testing.T) {
 	allocatedIPs := make(map[string]net.IP)
 
 	for _, svc := range services {
-		opts := fwdIp.ForwardIPOpts{
+		opts := fwdip.ForwardIPOpts{
 			ServiceName:              svc,
 			PodName:                  "test-pod",
 			Context:                  "test-ctx",
@@ -307,7 +307,7 @@ func TestReadyInterface_WithReservation(t *testing.T) {
 	// This test verifies the function completes without error
 
 	reservedIP := "127.1.27.100"
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "reserved-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -357,7 +357,7 @@ func TestInterfaceAliasIntegration(t *testing.T) {
 	}
 
 	// Reset the global IP registry to ensure this test starts fresh
-	fwdIp.ResetRegistry()
+	fwdip.ResetRegistry()
 
 	testIP := net.ParseIP("127.1.27.254")
 	if testIP == nil {
@@ -365,7 +365,7 @@ func TestInterfaceAliasIntegration(t *testing.T) {
 	}
 
 	// Test allocation
-	opts := fwdIp.ForwardIPOpts{
+	opts := fwdip.ForwardIPOpts{
 		ServiceName:              "integration-test-svc",
 		PodName:                  "test-pod",
 		Context:                  "test-ctx",
@@ -474,7 +474,7 @@ func TestConcurrentReadyInterface(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(n int) {
-			opts := fwdIp.ForwardIPOpts{
+			opts := fwdip.ForwardIPOpts{
 				ServiceName:              "concurrent-test-" + string(rune('a'+n)),
 				PodName:                  "test-pod",
 				Context:                  "test-ctx",

@@ -1,18 +1,3 @@
-/*
-Copyright 2018 Craig Johnston <cjimti@gmail.com>
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 package main
 
 import (
@@ -63,9 +48,7 @@ func (w *KlogWriter) Write(p []byte) (n int, err error) {
 	}
 
 	// Log any other unexpected klog messages at debug level
-	if msg != "" {
-		log.Debugf("k8s: %s", msg)
-	}
+	log.Debugf("k8s: %s", msg)
 
 	return len(p), nil
 }
@@ -119,6 +102,9 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
+	// Pass version to services package for TUI header
+	services.Version = Version
+
 	cmd.AddCommand(versionCmd, services.Cmd)
 
 	return cmd
@@ -133,23 +119,35 @@ func (splitter *LogOutputSplitter) Write(p []byte) (n int, err error) {
 	return os.Stdout.Write(p)
 }
 
-func main() {
+// isTUIMode checks if --tui flag is present in args
+func isTUIMode() bool {
+	for _, arg := range os.Args {
+		if arg == "--tui" {
+			return true
+		}
+	}
+	return false
+}
 
+func main() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,
 		TimestampFormat: "15:04:05",
 	})
 
-	log.Print(` _          _           __             _`)
-	log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
-	log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
-	log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
-	log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
-	log.Print("")
-	log.Printf("Version %s", Version)
-	log.Print("https://github.com/txn2/kubefwd")
-	log.Print("")
+	// Only print banner in non-TUI mode
+	if !isTUIMode() {
+		log.Print(` _          _           __             _`)
+		log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
+		log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
+		log.Print(`|   <| |_| | |_) |  __/  _|\ V  V / (_| |`)
+		log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
+		log.Print("")
+		log.Printf("Version %s", Version)
+		log.Print("https://github.com/txn2/kubefwd")
+		log.Print("")
+	}
 
 	cmd := newRootCmd()
 

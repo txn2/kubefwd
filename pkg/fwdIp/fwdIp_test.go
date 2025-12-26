@@ -1,4 +1,4 @@
-package fwdIp
+package fwdip
 
 import (
 	"errors"
@@ -22,8 +22,8 @@ func resetRegistry() {
 	forwardConfiguration = nil
 }
 
-// TestGetIp_BasicAllocation tests basic IP allocation sequencing
-func TestGetIp_BasicAllocation(t *testing.T) {
+// TestGetIP_BasicAllocation tests basic IP allocation sequencing
+func TestGetIP_BasicAllocation(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -34,9 +34,9 @@ func TestGetIp_BasicAllocation(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	ip1, err := GetIp(opts)
+	ip1, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// First IP should be 127.1.27.1 (base unreserved IP from default config)
@@ -47,9 +47,9 @@ func TestGetIp_BasicAllocation(t *testing.T) {
 
 	// Get second IP for different pod
 	opts.PodName = "test-pod-2"
-	ip2, err := GetIp(opts)
+	ip2, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Second IP should increment the last octet
@@ -60,9 +60,9 @@ func TestGetIp_BasicAllocation(t *testing.T) {
 
 	// Get third IP
 	opts.PodName = "test-pod-3"
-	ip3, err := GetIp(opts)
+	ip3, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	expected = "127.1.27.3"
@@ -71,8 +71,8 @@ func TestGetIp_BasicAllocation(t *testing.T) {
 	}
 }
 
-// TestGetIp_SameServiceReturnsSameIP tests that requesting the same service/pod returns the same IP
-func TestGetIp_SameServiceReturnsSameIP(t *testing.T) {
+// TestGetIP_SameServiceReturnsSameIP tests that requesting the same service/pod returns the same IP
+func TestGetIP_SameServiceReturnsSameIP(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -83,15 +83,15 @@ func TestGetIp_SameServiceReturnsSameIP(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	ip1, err := GetIp(opts)
+	ip1, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Request again - should get same IP
-	ip2, err := GetIp(opts)
+	ip2, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	if ip1.String() != ip2.String() {
@@ -100,9 +100,9 @@ func TestGetIp_SameServiceReturnsSameIP(t *testing.T) {
 
 	// Verify it's cached (not incrementing counter)
 	opts.PodName = "different-pod"
-	ip3, err := GetIp(opts)
+	ip3, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should get a different IP for different pod, but verifying exact value
@@ -112,8 +112,8 @@ func TestGetIp_SameServiceReturnsSameIP(t *testing.T) {
 	}
 }
 
-// TestGetIp_ClusterIncrement tests that ClusterN increments the second octet
-func TestGetIp_ClusterIncrement(t *testing.T) {
+// TestGetIP_ClusterIncrement tests that ClusterN increments the second octet
+func TestGetIP_ClusterIncrement(t *testing.T) {
 	resetRegistry()
 
 	// Cluster 0
@@ -125,9 +125,9 @@ func TestGetIp_ClusterIncrement(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	ip1, err := GetIp(opts)
+	ip1, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip1.String() != "127.1.27.1" {
 		t.Errorf("Expected 127.1.27.1, got %s", ip1.String())
@@ -137,9 +137,9 @@ func TestGetIp_ClusterIncrement(t *testing.T) {
 	opts.ClusterN = 1
 	opts.PodName = "test-pod-2"
 	opts.Context = "cluster1"
-	ip2, err := GetIp(opts)
+	ip2, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip2.String() != "127.2.27.1" {
 		t.Errorf("Expected 127.2.27.1 for cluster 1, got %s", ip2.String())
@@ -149,17 +149,17 @@ func TestGetIp_ClusterIncrement(t *testing.T) {
 	opts.ClusterN = 2
 	opts.PodName = "test-pod-3"
 	opts.Context = "cluster2"
-	ip3, err := GetIp(opts)
+	ip3, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip3.String() != "127.3.27.1" {
 		t.Errorf("Expected 127.3.27.1 for cluster 2, got %s", ip3.String())
 	}
 }
 
-// TestGetIp_NamespaceIncrement tests that NamespaceN increments the third octet
-func TestGetIp_NamespaceIncrement(t *testing.T) {
+// TestGetIP_NamespaceIncrement tests that NamespaceN increments the third octet
+func TestGetIP_NamespaceIncrement(t *testing.T) {
 	resetRegistry()
 
 	// Namespace 0
@@ -172,9 +172,9 @@ func TestGetIp_NamespaceIncrement(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	ip1, err := GetIp(opts)
+	ip1, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip1.String() != "127.1.27.1" {
 		t.Errorf("Expected 127.1.27.1, got %s", ip1.String())
@@ -184,9 +184,9 @@ func TestGetIp_NamespaceIncrement(t *testing.T) {
 	opts.NamespaceN = 1
 	opts.PodName = "test-pod-2"
 	opts.Namespace = "ns1"
-	ip2, err := GetIp(opts)
+	ip2, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip2.String() != "127.1.28.1" {
 		t.Errorf("Expected 127.1.28.1 for namespace 1, got %s", ip2.String())
@@ -196,17 +196,17 @@ func TestGetIp_NamespaceIncrement(t *testing.T) {
 	opts.NamespaceN = 5
 	opts.PodName = "test-pod-3"
 	opts.Namespace = "ns5"
-	ip3, err := GetIp(opts)
+	ip3, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 	if ip3.String() != "127.1.32.1" {
 		t.Errorf("Expected 127.1.32.1 for namespace 5, got %s", ip3.String())
 	}
 }
 
-// TestGetIp_BoundsCheckCluster tests error when ClusterN > 255
-func TestGetIp_BoundsCheckCluster(t *testing.T) {
+// TestGetIP_BoundsCheckCluster tests error when ClusterN > 255
+func TestGetIP_BoundsCheckCluster(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -217,7 +217,7 @@ func TestGetIp_BoundsCheckCluster(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	_, err := GetIp(opts)
+	_, err := GetIP(opts)
 	if err == nil {
 		t.Error("Expected error for ClusterN > 255")
 	}
@@ -226,8 +226,8 @@ func TestGetIp_BoundsCheckCluster(t *testing.T) {
 	}
 }
 
-// TestGetIp_BoundsCheckNamespace tests error when NamespaceN > 255
-func TestGetIp_BoundsCheckNamespace(t *testing.T) {
+// TestGetIP_BoundsCheckNamespace tests error when NamespaceN > 255
+func TestGetIP_BoundsCheckNamespace(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -238,7 +238,7 @@ func TestGetIp_BoundsCheckNamespace(t *testing.T) {
 		NamespaceN:  256, // Out of bounds
 	}
 
-	_, err := GetIp(opts)
+	_, err := GetIP(opts)
 	if err == nil {
 		t.Error("Expected error for NamespaceN > 255")
 	}
@@ -247,8 +247,8 @@ func TestGetIp_BoundsCheckNamespace(t *testing.T) {
 	}
 }
 
-// TestGetIp_BoundsCheckCounter tests error when counter exceeds 255
-func TestGetIp_BoundsCheckCounter(t *testing.T) {
+// TestGetIP_BoundsCheckCounter tests error when counter exceeds 255
+func TestGetIP_BoundsCheckCounter(t *testing.T) {
 	resetRegistry()
 
 	// Manually set counter to 256 (out of bounds)
@@ -262,7 +262,7 @@ func TestGetIp_BoundsCheckCounter(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	_, err := GetIp(opts)
+	_, err := GetIP(opts)
 	if err == nil {
 		t.Error("Expected error for counter > 255")
 	}
@@ -271,10 +271,10 @@ func TestGetIp_BoundsCheckCounter(t *testing.T) {
 	}
 }
 
-// TestGetIp_WithYAMLConfiguration tests IP allocation with YAML config file
+// TestGetIP_WithYAMLConfiguration tests IP allocation with YAML config file
 //
 //goland:noinspection DuplicatedCode
-func TestGetIp_WithYAMLConfiguration(t *testing.T) {
+func TestGetIP_WithYAMLConfiguration(t *testing.T) {
 	resetRegistry()
 
 	// Create temp config file
@@ -302,9 +302,9 @@ serviceConfigurations:
 		ForwardConfigurationPath: configPath,
 	}
 
-	ip, err := GetIp(opts)
+	ip, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	if ip.String() != "127.10.10.10" {
@@ -316,9 +316,9 @@ serviceConfigurations:
 	opts.ServiceName = "unreserved-svc"
 	opts.PodName = "pod2"
 
-	ip2, err := GetIp(opts)
+	ip2, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	if ip2.String() != "127.2.0.1" {
@@ -326,8 +326,8 @@ serviceConfigurations:
 	}
 }
 
-// TestGetIp_WithCLIReservations tests CLI-passed IP reservations
-func TestGetIp_WithCLIReservations(t *testing.T) {
+// TestGetIP_WithCLIReservations tests CLI-passed IP reservations
+func TestGetIP_WithCLIReservations(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -342,9 +342,9 @@ func TestGetIp_WithCLIReservations(t *testing.T) {
 		},
 	}
 
-	ip, err := GetIp(opts)
+	ip, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	if ip.String() != "127.50.50.50" {
@@ -352,8 +352,8 @@ func TestGetIp_WithCLIReservations(t *testing.T) {
 	}
 }
 
-// TestGetIp_CLIOverridesYAML tests that CLI reservations override YAML config
-func TestGetIp_CLIOverridesYAML(t *testing.T) {
+// TestGetIP_CLIOverridesYAML tests that CLI reservations override YAML config
+func TestGetIP_CLIOverridesYAML(t *testing.T) {
 	resetRegistry()
 
 	tmpDir := t.TempDir()
@@ -380,9 +380,9 @@ serviceConfigurations:
 		},
 	}
 
-	ip, err := GetIp(opts)
+	ip, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should use CLI reservation, not YAML
@@ -391,8 +391,8 @@ serviceConfigurations:
 	}
 }
 
-// TestGetIp_ConflictDetection tests IP conflict detection and auto-retry
-func TestGetIp_ConflictDetection(t *testing.T) {
+// TestGetIP_ConflictDetection tests IP conflict detection and auto-retry
+func TestGetIP_ConflictDetection(t *testing.T) {
 	resetRegistry()
 
 	// Allocate first IP
@@ -404,9 +404,9 @@ func TestGetIp_ConflictDetection(t *testing.T) {
 		NamespaceN:  0,
 	}
 
-	ip1, err := GetIp(opts1)
+	ip1, err := GetIP(opts1)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Now try to reserve the same IP for a different service
@@ -424,9 +424,9 @@ func TestGetIp_ConflictDetection(t *testing.T) {
 	// Manually allocate ip1 first
 	ipRegistry.allocated[ip1.String()] = true
 
-	ip2, err := GetIp(opts2)
+	ip2, err := GetIP(opts2)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should get next available IP
@@ -440,10 +440,10 @@ func TestGetIp_ConflictDetection(t *testing.T) {
 	}
 }
 
-// TestGetIp_ConflictingReservations tests handling of conflicting reservations
+// TestGetIP_ConflictingReservations tests handling of conflicting reservations
 //
 //goland:noinspection DuplicatedCode
-func TestGetIp_ConflictingReservations(t *testing.T) {
+func TestGetIP_ConflictingReservations(t *testing.T) {
 	resetRegistry()
 
 	tmpDir := t.TempDir()
@@ -468,9 +468,9 @@ serviceConfigurations:
 		ForwardConfigurationPath: configPath,
 	}
 
-	ip1, err := GetIp(opts1)
+	ip1, err := GetIP(opts1)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	if ip1.String() != "127.10.10.10" {
@@ -493,9 +493,9 @@ serviceConfigurations:
 		ForwardConfigurationPath: configPath,
 	}
 
-	ip2, err := GetIp(opts2)
+	ip2, err := GetIP(opts2)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should get baseUnreservedIP since reserved IP is taken
@@ -505,8 +505,8 @@ serviceConfigurations:
 	}
 }
 
-// TestGetIp_ConcurrentAllocation tests thread-safe concurrent IP allocation
-func TestGetIp_ConcurrentAllocation(t *testing.T) {
+// TestGetIP_ConcurrentAllocation tests thread-safe concurrent IP allocation
+func TestGetIP_ConcurrentAllocation(t *testing.T) {
 	resetRegistry()
 
 	numGoroutines := 50
@@ -525,9 +525,9 @@ func TestGetIp_ConcurrentAllocation(t *testing.T) {
 				NamespaceN:  0,
 			}
 
-			ip, err := GetIp(opts)
+			ip, err := GetIP(opts)
 			if err != nil {
-				t.Errorf("GetIp failed: %v", err)
+				t.Errorf("GetIP failed: %v", err)
 				return
 			}
 			results <- ip.String()
@@ -812,8 +812,8 @@ func TestNotifyOfDuplicateIPReservations(t *testing.T) {
 	notifyOfDuplicateIPReservations(config)
 }
 
-// TestGetIp_InvalidConfigFile tests handling of invalid config files
-func TestGetIp_InvalidConfigFile(t *testing.T) {
+// TestGetIP_InvalidConfigFile tests handling of invalid config files
+func TestGetIP_InvalidConfigFile(t *testing.T) {
 	resetRegistry()
 
 	tmpDir := t.TempDir()
@@ -834,9 +834,9 @@ func TestGetIp_InvalidConfigFile(t *testing.T) {
 	}
 
 	// Should fall back to default config
-	ip, err := GetIp(opts)
+	ip, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should use default base IP (127.x.x.x range)
@@ -846,8 +846,8 @@ func TestGetIp_InvalidConfigFile(t *testing.T) {
 	}
 }
 
-// TestGetIp_NonExistentConfigFile tests handling when config file doesn't exist
-func TestGetIp_NonExistentConfigFile(t *testing.T) {
+// TestGetIP_NonExistentConfigFile tests handling when config file doesn't exist
+func TestGetIP_NonExistentConfigFile(t *testing.T) {
 	resetRegistry()
 
 	opts := ForwardIPOpts{
@@ -860,9 +860,9 @@ func TestGetIp_NonExistentConfigFile(t *testing.T) {
 	}
 
 	// Should fall back to default config
-	ip, err := GetIp(opts)
+	ip, err := GetIP(opts)
 	if err != nil {
-		t.Fatalf("GetIp failed: %v", err)
+		t.Fatalf("GetIP failed: %v", err)
 	}
 
 	// Should use default base IP (127.x.x.x range)

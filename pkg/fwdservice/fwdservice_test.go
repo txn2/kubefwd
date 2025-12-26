@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
@@ -12,6 +13,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+// setupMockInterface sets up the mock interface manager for tests
+// and returns a cleanup function to restore the original
+func setupMockInterface() func() {
+	mock := fwdnet.NewMockInterfaceManager()
+	fwdnet.SetManager(mock)
+	return func() {
+		fwdnet.ResetManager()
+	}
+}
 
 // mockDebouncer for testing debouncing behavior
 type mockDebouncer struct {
@@ -35,14 +46,6 @@ func (m *mockDebouncer) getCalls() int {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return m.calls
-}
-
-func (m *mockDebouncer) executeLast() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	if m.lastFunc != nil {
-		m.lastFunc()
-	}
 }
 
 // createTestService creates a test Kubernetes service
@@ -99,10 +102,10 @@ func TestGetPodsForService_FiltersByPhase(t *testing.T) {
 	succeededPod := createTestPod("succeeded-pod", namespace, v1.PodSucceeded, labels)
 	failedPod := createTestPod("failed-pod", namespace, v1.PodFailed, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod, pendingPod, succeededPod, failedPod)
+	clientset := fake.NewClientset(runningPod, pendingPod, succeededPod, failedPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -145,10 +148,10 @@ func TestGetPodsForService_FiltersByPhase(t *testing.T) {
 // TestGetPodsForService_NoPodsFound tests handling when no pods match the selector
 func TestGetPodsForService_NoPodsFound(t *testing.T) {
 	namespace := "default"
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -176,10 +179,10 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	svcFwd := &ServiceFWD{
@@ -199,16 +202,19 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_NormalService(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	// Create hosts file mock
@@ -249,11 +255,11 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 		t.Errorf("Normal service should forward 1 pod, got %d", numPods)
 	}
 
-	// Verify it's one of our pods
+	// Verify it's one of our pods (key format: service.podname.localport)
 	foundPod := false
 	svcFwd.NamespaceServiceLock.Lock()
 	for key := range svcFwd.PortForwards {
-		if key == "test-svc.running-pod-1" || key == "test-svc.running-pod-2" {
+		if key == "test-svc.running-pod-1.80" || key == "test-svc.running-pod-2.80" {
 			foundPod = true
 		}
 	}
@@ -268,16 +274,19 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_HeadlessService(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
 	runningPod1 := createTestPod("running-pod-1", namespace, v1.PodRunning, labels)
 	runningPod2 := createTestPod("running-pod-2", namespace, v1.PodRunning, labels)
 
-	clientset := fake.NewSimpleClientset(runningPod1, runningPod2)
+	clientset := fake.NewClientset(runningPod1, runningPod2)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, true) // Headless service
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -326,10 +335,10 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -374,14 +383,17 @@ func TestSyncPodForwards_Debouncing(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -422,14 +434,17 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -469,15 +484,18 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 //
 //goland:noinspection DuplicatedCode
 func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
 	// Start with one running pod
 	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
-	clientset := fake.NewSimpleClientset(runningPod)
+	clientset := fake.NewClientset(runningPod)
 
 	svc := createTestService("test-svc", namespace, []v1.ServicePort{
-		{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: v1.ProtocolTCP},
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
 	}, false)
 
 	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
@@ -536,14 +554,15 @@ func TestAddServicePod(t *testing.T) {
 	}
 
 	pfo := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	svcFwd.AddServicePod(pfo)
 
-	// Should be in map with key "service.podname"
-	if _, found := svcFwd.PortForwards["test-svc.test-pod"]; !found {
+	// Should be in map with key "service.podname.localport"
+	if _, found := svcFwd.PortForwards["test-svc.test-pod.8080"]; !found {
 		t.Error("Pod was not added to PortForwards map")
 	}
 
@@ -560,13 +579,15 @@ func TestAddServicePod_Duplicate(t *testing.T) {
 	}
 
 	pfo1 := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	pfo2 := &fwdport.PortForwardOpts{
-		Service: "test-svc",
-		PodName: "test-pod",
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		LocalPort: "8080",
 	}
 
 	svcFwd.AddServicePod(pfo1)
@@ -585,8 +606,8 @@ func TestListServicePodNames(t *testing.T) {
 		NamespaceServiceLock: &sync.Mutex{},
 	}
 
-	pfo1 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod1"}
-	pfo2 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod2"}
+	pfo1 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod1", LocalPort: "80"}
+	pfo2 := &fwdport.PortForwardOpts{Service: "svc", PodName: "pod2", LocalPort: "80"}
 
 	svcFwd.AddServicePod(pfo1)
 	svcFwd.AddServicePod(pfo2)
@@ -597,14 +618,14 @@ func TestListServicePodNames(t *testing.T) {
 		t.Errorf("Expected 2 pod names, got %d", len(names))
 	}
 
-	// Should contain both keys
+	// Should contain both keys (format: service.podname.localport)
 	foundPod1 := false
 	foundPod2 := false
 	for _, name := range names {
-		if name == "svc.pod1" {
+		if name == "svc.pod1.80" {
 			foundPod1 = true
 		}
-		if name == "svc.pod2" {
+		if name == "svc.pod2.80" {
 			foundPod2 = true
 		}
 	}
@@ -624,6 +645,7 @@ func TestRemoveServicePod(t *testing.T) {
 	pfo := &fwdport.PortForwardOpts{
 		Service:        "test-svc",
 		PodName:        "test-pod",
+		LocalPort:      "8080",
 		ManualStopChan: make(chan struct{}),
 		DoneChan:       make(chan struct{}),
 	}
@@ -641,8 +663,8 @@ func TestRemoveServicePod(t *testing.T) {
 		t.Fatal("Pod was not added")
 	}
 
-	// Remove it
-	svcFwd.RemoveServicePod("test-svc.test-pod")
+	// Remove it (key format: service.podname.localport)
+	svcFwd.RemoveServicePod("test-svc.test-pod.8080")
 
 	// Should be removed from map
 	if len(svcFwd.PortForwards) != 0 {
@@ -755,27 +777,76 @@ func TestPortSearch(t *testing.T) {
 	}
 
 	// Test finding existing port
-	port, found := portSearch("http", containers)
+	port, containerName, found := portSearch("http", containers)
 	if !found {
 		t.Error("Expected to find 'http' port")
 	}
 	if port != "8080" {
 		t.Errorf("Expected port 8080, got %s", port)
 	}
+	if containerName != "container1" {
+		t.Errorf("Expected container container1, got %s", containerName)
+	}
 
 	// Test finding port in second container
-	port, found = portSearch("grpc", containers)
+	port, containerName, found = portSearch("grpc", containers)
 	if !found {
 		t.Error("Expected to find 'grpc' port")
 	}
 	if port != "50051" {
 		t.Errorf("Expected port 50051, got %s", port)
 	}
+	if containerName != "container2" {
+		t.Errorf("Expected container container2, got %s", containerName)
+	}
 
 	// Test non-existent port
-	_, found = portSearch("nonexistent", containers)
+	_, _, found = portSearch("nonexistent", containers)
 	if found {
 		t.Error("Should not find 'nonexistent' port")
+	}
+}
+
+// TestFindContainerForPort tests finding container by numeric port
+func TestFindContainerForPort(t *testing.T) {
+	containers := []v1.Container{
+		{
+			Name: "web",
+			Ports: []v1.ContainerPort{
+				{ContainerPort: 8080},
+				{ContainerPort: 8443},
+			},
+		},
+		{
+			Name: "sidecar",
+			Ports: []v1.ContainerPort{
+				{ContainerPort: 9090},
+			},
+		},
+	}
+
+	// Test finding port in first container
+	containerName := findContainerForPort(8080, containers)
+	if containerName != "web" {
+		t.Errorf("Expected container 'web', got '%s'", containerName)
+	}
+
+	// Test finding port in second container
+	containerName = findContainerForPort(9090, containers)
+	if containerName != "sidecar" {
+		t.Errorf("Expected container 'sidecar', got '%s'", containerName)
+	}
+
+	// Test non-existent port - should return first container
+	containerName = findContainerForPort(12345, containers)
+	if containerName != "web" {
+		t.Errorf("Expected first container 'web' for non-existent port, got '%s'", containerName)
+	}
+
+	// Test empty container list
+	containerName = findContainerForPort(8080, []v1.Container{})
+	if containerName != "" {
+		t.Errorf("Expected empty string for empty container list, got '%s'", containerName)
 	}
 }
 
@@ -797,6 +868,7 @@ func TestConcurrentAddRemovePods(t *testing.T) {
 			pfo := &fwdport.PortForwardOpts{
 				Service:        "svc",
 				PodName:        string(rune('a' + n)),
+				LocalPort:      "80",
 				ManualStopChan: make(chan struct{}),
 				DoneChan:       make(chan struct{}),
 			}
@@ -824,7 +896,8 @@ func TestConcurrentAddRemovePods(t *testing.T) {
 		}()
 		go func(n int) {
 			defer wg.Done()
-			podKey := "svc." + string(rune('a'+n))
+			// Key format: service.podname.localport
+			podKey := "svc." + string(rune('a'+n)) + ".80"
 			// Close DoneChan before removing to simulate stopped forwarding
 			svcFwd.NamespaceServiceLock.Lock()
 			pfo, found := svcFwd.PortForwards[podKey]
@@ -845,5 +918,429 @@ func TestConcurrentAddRemovePods(t *testing.T) {
 
 	if numRemaining != 0 {
 		t.Errorf("Expected 0 pods after removal, got %d", numRemaining)
+	}
+}
+
+// ============================================================================
+// Auto-Reconnect Logic Tests
+// ============================================================================
+
+// TestScheduleReconnect_DisabledByDefault tests that auto-reconnect is disabled when not enabled
+func TestScheduleReconnect_DisabledByDefault(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:           svc,
+		AutoReconnect: false, // Disabled
+		DoneChannel:   make(chan struct{}),
+	}
+
+	result := svcFwd.scheduleReconnect()
+
+	if result {
+		t.Error("scheduleReconnect should return false when AutoReconnect is disabled")
+	}
+}
+
+// TestScheduleReconnect_EnabledTriggersReconnect tests that auto-reconnect schedules reconnection
+func TestScheduleReconnect_EnabledTriggersReconnect(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	debouncer := &mockDebouncer{immediate: true}
+
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Namespace:            namespace,
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		SyncDebouncer:        debouncer.debounce,
+		AutoReconnect:        true,
+		DoneChannel:          make(chan struct{}),
+	}
+
+	result := svcFwd.scheduleReconnect()
+
+	if !result {
+		t.Error("scheduleReconnect should return true when AutoReconnect is enabled")
+	}
+
+	// Wait for reconnect goroutine to run (initial backoff is 1s)
+	time.Sleep(1500 * time.Millisecond)
+}
+
+// TestScheduleReconnect_ExponentialBackoff tests that backoff increases exponentially
+func TestScheduleReconnect_ExponentialBackoff(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		AutoReconnect:        true,
+		DoneChannel:          make(chan struct{}),
+		NamespaceServiceLock: &sync.Mutex{},
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+	}
+
+	// First call should set backoff to initial (1s) and double it for next
+	svcFwd.scheduleReconnect()
+
+	svcFwd.reconnectMu.Lock()
+	firstBackoff := svcFwd.reconnectBackoff
+	svcFwd.reconnecting = false // Reset so we can call again
+	svcFwd.reconnectMu.Unlock()
+
+	if firstBackoff != 2*time.Second {
+		t.Errorf("Expected backoff to be 2s after first call, got %v", firstBackoff)
+	}
+
+	// Second call should double again
+	svcFwd.scheduleReconnect()
+
+	svcFwd.reconnectMu.Lock()
+	secondBackoff := svcFwd.reconnectBackoff
+	svcFwd.reconnecting = false
+	svcFwd.reconnectMu.Unlock()
+
+	if secondBackoff != 4*time.Second {
+		t.Errorf("Expected backoff to be 4s after second call, got %v", secondBackoff)
+	}
+
+	// Verify backoff caps at maxReconnectBackoff (5 minutes)
+	svcFwd.reconnectMu.Lock()
+	svcFwd.reconnectBackoff = 4 * time.Minute
+	svcFwd.reconnectMu.Unlock()
+
+	svcFwd.scheduleReconnect()
+
+	svcFwd.reconnectMu.Lock()
+	cappedBackoff := svcFwd.reconnectBackoff
+	svcFwd.reconnectMu.Unlock()
+
+	if cappedBackoff != 5*time.Minute {
+		t.Errorf("Expected backoff to be capped at 5m, got %v", cappedBackoff)
+	}
+}
+
+// TestScheduleReconnect_AlreadyReconnecting tests that duplicate reconnects are prevented
+func TestScheduleReconnect_AlreadyReconnecting(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		AutoReconnect:        true,
+		DoneChannel:          make(chan struct{}),
+		NamespaceServiceLock: &sync.Mutex{},
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+	}
+
+	// First call starts reconnecting
+	result1 := svcFwd.scheduleReconnect()
+	if !result1 {
+		t.Error("First scheduleReconnect should succeed")
+	}
+
+	// Second call while still reconnecting should be rejected
+	result2 := svcFwd.scheduleReconnect()
+	if result2 {
+		t.Error("Second scheduleReconnect should be rejected while reconnecting")
+	}
+}
+
+// TestScheduleReconnect_ShuttingDown tests that reconnect is prevented during shutdown
+func TestScheduleReconnect_ShuttingDown(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	doneChannel := make(chan struct{})
+	close(doneChannel) // Simulate shutdown
+
+	svcFwd := &ServiceFWD{
+		Svc:           svc,
+		AutoReconnect: true,
+		DoneChannel:   doneChannel,
+	}
+
+	result := svcFwd.scheduleReconnect()
+
+	if result {
+		t.Error("scheduleReconnect should return false when service is shutting down")
+	}
+}
+
+// TestResetReconnectBackoff tests that backoff is reset after successful connection
+func TestResetReconnectBackoff(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc: svc,
+	}
+
+	// Set some backoff
+	svcFwd.reconnectMu.Lock()
+	svcFwd.reconnectBackoff = 2 * time.Minute
+	svcFwd.reconnectMu.Unlock()
+
+	// Reset backoff
+	svcFwd.resetReconnectBackoff()
+
+	svcFwd.reconnectMu.Lock()
+	backoff := svcFwd.reconnectBackoff
+	svcFwd.reconnectMu.Unlock()
+
+	if backoff != 0 {
+		t.Errorf("Expected backoff to be reset to 0, got %v", backoff)
+	}
+}
+
+// TestForceReconnect_ResetsState tests that ForceReconnect resets all reconnect state
+func TestForceReconnect_ResetsState(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	debouncer := &mockDebouncer{immediate: true}
+
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Namespace:            namespace,
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		SyncDebouncer:        debouncer.debounce,
+		DoneChannel:          make(chan struct{}),
+	}
+
+	// Set some state
+	svcFwd.reconnectMu.Lock()
+	svcFwd.reconnectBackoff = 2 * time.Minute
+	svcFwd.reconnecting = true
+	svcFwd.reconnectMu.Unlock()
+
+	// Force reconnect
+	svcFwd.ForceReconnect()
+
+	// Verify state was reset
+	svcFwd.reconnectMu.Lock()
+	backoff := svcFwd.reconnectBackoff
+	reconnecting := svcFwd.reconnecting
+	svcFwd.reconnectMu.Unlock()
+
+	if backoff != 0 {
+		t.Errorf("Expected backoff to be reset to 0, got %v", backoff)
+	}
+
+	if reconnecting {
+		t.Error("Expected reconnecting to be reset to false")
+	}
+}
+
+// TestStopAllPortForwards tests that all port forwards are stopped and map is cleared
+func TestStopAllPortForwards(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		DoneChannel:          make(chan struct{}),
+	}
+
+	// Add some port forwards
+	for i := 0; i < 5; i++ {
+		pfo := &fwdport.PortForwardOpts{
+			Service:        "test-svc",
+			PodName:        string(rune('a' + i)),
+			LocalPort:      "80",
+			ManualStopChan: make(chan struct{}),
+			DoneChan:       make(chan struct{}),
+		}
+		key := "test-svc." + string(rune('a'+i)) + ".80"
+		svcFwd.PortForwards[key] = pfo
+	}
+
+	// Verify we have 5 forwards
+	svcFwd.NamespaceServiceLock.Lock()
+	initialCount := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if initialCount != 5 {
+		t.Fatalf("Expected 5 port forwards, got %d", initialCount)
+	}
+
+	// Stop all
+	svcFwd.StopAllPortForwards()
+
+	// Verify map is cleared
+	svcFwd.NamespaceServiceLock.Lock()
+	finalCount := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if finalCount != 0 {
+		t.Errorf("Expected 0 port forwards after StopAllPortForwards, got %d", finalCount)
+	}
+}
+
+// TestCloseIdleHTTPConnections tests that the method doesn't panic
+func TestCloseIdleHTTPConnections(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc: svc,
+	}
+
+	// Should not panic even with nil transport
+	svcFwd.CloseIdleHTTPConnections()
+}
+
+// TestScheduleReconnect_Concurrent tests thread safety of scheduleReconnect
+func TestScheduleReconnect_Concurrent(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		AutoReconnect:        true,
+		DoneChannel:          make(chan struct{}),
+		NamespaceServiceLock: &sync.Mutex{},
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+	}
+
+	var wg sync.WaitGroup
+	numGoroutines := 20
+	successCount := 0
+	var mu sync.Mutex
+
+	// Call scheduleReconnect from many goroutines
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if svcFwd.scheduleReconnect() {
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Only one should succeed (the first one)
+	if successCount != 1 {
+		t.Errorf("Expected exactly 1 successful scheduleReconnect, got %d", successCount)
+	}
+}
+
+// TestForceReconnect_ClearsPortForwardsBeforeSync tests that ForceReconnect clears port forwards
+func TestForceReconnect_ClearsPortForwardsBeforeSync(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	syncCalled := false
+	var syncCalledWithForwardsCleared bool
+	var forwardsAtSyncTime int
+
+	// Create svcFwd first without the debouncer
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Namespace:            namespace,
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		DoneChannel:          make(chan struct{}),
+	}
+
+	// Now set the debouncer that captures svcFwd
+	svcFwd.SyncDebouncer = func(f func()) {
+		syncCalled = true
+		// Check if port forwards were cleared before sync
+		svcFwd.NamespaceServiceLock.Lock()
+		forwardsAtSyncTime = len(svcFwd.PortForwards)
+		syncCalledWithForwardsCleared = forwardsAtSyncTime == 0
+		svcFwd.NamespaceServiceLock.Unlock()
+		f()
+	}
+
+	// Add a port forward
+	pfo := &fwdport.PortForwardOpts{
+		Service:        "test-svc",
+		PodName:        "old-pod",
+		LocalPort:      "80",
+		ManualStopChan: make(chan struct{}),
+		DoneChan:       make(chan struct{}),
+	}
+	svcFwd.PortForwards["test-svc.old-pod.80"] = pfo
+
+	// Force reconnect
+	svcFwd.ForceReconnect()
+
+	if !syncCalled {
+		t.Error("Expected SyncPodForwards to be called")
+	}
+
+	if !syncCalledWithForwardsCleared {
+		t.Errorf("Expected port forwards to be cleared before sync was called, found %d", forwardsAtSyncTime)
 	}
 }

@@ -46,7 +46,7 @@ func TestForwardSingleService(t *testing.T) {
 
 // TestForwardMultipleServices tests forwarding multiple services from one namespace
 //
-//goland:noinspection DuplicatedCode
+//goland:noinspection DuplicatedCode,HttpUrlsUsage
 func TestForwardMultipleServices(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -98,6 +98,8 @@ func TestForwardMultipleServices(t *testing.T) {
 }
 
 // TestForwardWithCustomDomain tests forwarding with a custom domain suffix
+//
+//goland:noinspection HttpUrlsUsage
 func TestForwardWithCustomDomain(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -136,7 +138,7 @@ func TestForwardWithCustomDomain(t *testing.T) {
 
 // TestForwardMultipleNamespaces tests forwarding services from multiple namespaces
 //
-//goland:noinspection DuplicatedCode
+//goland:noinspection DuplicatedCode,HttpUrlsUsage
 func TestForwardMultipleNamespaces(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)
@@ -205,6 +207,8 @@ func TestForwardMultipleNamespaces(t *testing.T) {
 }
 
 // TestServiceAccessibility tests that forwarded services are actually accessible via HTTP
+//
+//goland:noinspection HttpUrlsUsage
 func TestServiceAccessibility(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)

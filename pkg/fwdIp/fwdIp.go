@@ -1,4 +1,4 @@
-package fwdIp
+package fwdip
 
 import (
 	"errors"
@@ -60,17 +60,6 @@ func init() {
 	}
 }
 
-func GetAllocatedIPs() []string {
-	ipRegistry.mutex.Lock()
-	defer ipRegistry.mutex.Unlock()
-
-	ips := make([]string, 0, len(ipRegistry.allocated))
-	for ip := range ipRegistry.allocated {
-		ips = append(ips, ip)
-	}
-	return ips
-}
-
 func RegisterHostname(hostname string) {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()
@@ -97,7 +86,7 @@ func ResetRegistry() {
 	forwardConfiguration = nil
 }
 
-func GetIp(opts ForwardIPOpts) (net.IP, error) {
+func GetIP(opts ForwardIPOpts) (net.IP, error) {
 	ipRegistry.mutex.Lock()
 	defer ipRegistry.mutex.Unlock()
 
@@ -157,7 +146,7 @@ func determineIP(regKey string, opts ForwardIPOpts) (net.IP, error) {
 func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 	allocationKey := ip.String()
 	if _, ok := ipRegistry.allocated[allocationKey]; ok {
-		// ip/port pair has allready ben allocated
+		// ip/port pair has already been allocated
 		msg := fmt.Sprintf("Unable to forward service %s to requested IP %s due to collision. Will allocate next available", opts.ServiceName, allocationKey)
 		log.Error(msg)
 		return errors.New(msg)
@@ -181,19 +170,19 @@ func ipFromString(ipStr string) (net.IP, error) {
 
 	octet0, err := strconv.Atoi(ipParts[0])
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse BaseIP octet 0")
+		return nil, errors.New("unable to parse BaseIP octet 0")
 	}
 	octet1, err := strconv.Atoi(ipParts[1])
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse BaseIP octet 1")
+		return nil, errors.New("unable to parse BaseIP octet 1")
 	}
 	octet2, err := strconv.Atoi(ipParts[2])
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse BaseIP octet 2")
+		return nil, errors.New("unable to parse BaseIP octet 2")
 	}
 	octet3, err := strconv.Atoi(ipParts[3])
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse BaseIP octet 3")
+		return nil, errors.New("unable to parse BaseIP octet 3")
 	}
 	return net.IP{byte(octet0), byte(octet1), byte(octet2), byte(octet3)}.To4(), nil
 }
@@ -201,7 +190,7 @@ func ipFromString(ipStr string) (net.IP, error) {
 func hasConflictingReservations(opts ForwardIPOpts, wantIP string) *ServiceConfiguration {
 	fwdCfg := getForwardConfiguration(opts)
 	for _, cfg := range fwdCfg.ServiceConfigurations {
-		// if the IP we want is reserverd and the
+		// if the IP we want is reserved and the
 		// target service is not the one listed in
 		// the forward configuration
 		if wantIP == cfg.IP && !cfg.Matches(opts) {

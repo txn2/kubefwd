@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/txn2/kubefwd/pkg/fwdIp"
+	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/txeh"
 )
 
@@ -48,7 +48,7 @@ func BackupHostFile(hostFile *txeh.Hosts, forceRefresh bool) (string, error) {
 }
 
 func RemoveAllocatedHosts() error {
-	hostnames := fwdIp.GetRegisteredHostnames()
+	hostnames := fwdip.GetRegisteredHostnames()
 	if len(hostnames) == 0 {
 		return nil
 	}

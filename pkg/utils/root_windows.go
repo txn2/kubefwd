@@ -1,4 +1,4 @@
-// +build windows
+//go:build windows
 
 /*
 Copyright 2018 Craig Johnston <cjimti@gmail.com>
@@ -7,7 +7,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,8 +23,14 @@ import (
 )
 
 // CheckRoot determines if we have administrative privileges.
-// Ref: https://coolaj86.com/articles/golang-and-windows-and-admins-oh-my/
+// This function delegates to the package-level Checker for testability.
 func CheckRoot() (bool, error) {
+	return Checker.CheckRoot()
+}
+
+// CheckRoot implements RootChecker for defaultRootChecker on Windows.
+// Ref: https://coolaj86.com/articles/golang-and-windows-and-admins-oh-my/
+func (d *defaultRootChecker) CheckRoot() (bool, error) {
 	var sid *windows.SID
 
 	// Although this looks scary, it is directly copied from the

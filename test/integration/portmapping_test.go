@@ -109,6 +109,8 @@ func TestMultiplePortMappings(t *testing.T) {
 }
 
 // TestPortMappingConflicts tests error handling for conflicting port mappings
+//
+//goland:noinspection HttpUrlsUsage
 func TestPortMappingConflicts(t *testing.T) {
 	requiresSudo(t)
 	requiresKindCluster(t)

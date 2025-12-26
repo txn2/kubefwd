@@ -98,7 +98,7 @@ func TestGlobalPodInformerManager_AddPod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if !exists {
@@ -135,7 +135,7 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 	globalInformer.addPod(pod, pfo)
 
 	// Test getting the pod
-	retrievedPfo, exists := globalInformer.getPod(types.UID("test-uid-123"))
+	retrievedPfo, exists := globalInformer.getPod("test-uid-123")
 
 	if !exists {
 		t.Error("Pod should exist in the map")
@@ -146,7 +146,7 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 	}
 
 	// Test getting a non-existent pod
-	_, exists = globalInformer.getPod(types.UID("non-existent-uid"))
+	_, exists = globalInformer.getPod("non-existent-uid")
 	if exists {
 		t.Error("Non-existent pod should not exist in the map")
 	}
@@ -183,7 +183,7 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if !exists {
@@ -191,11 +191,11 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 	}
 
 	// Test removing the pod
-	globalInformer.RemovePodByUID(types.UID("test-uid-123"))
+	globalInformer.RemovePodByUID("test-uid-123")
 
 	// Verify the pod was removed
 	globalInformer.mu.RLock()
-	_, exists = globalInformer.activePods[types.UID("test-uid-123")]
+	_, exists = globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
 	if exists {
@@ -276,7 +276,7 @@ func TestGlobalPodInformer_DeleteEvent(t *testing.T) {
 	pod := setUpTestPod("default", "test-pod")
 
 	// Create fake clientset with the pod
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 
 	// Configure watch reactor
@@ -315,7 +315,7 @@ func TestGlobalPodInformer_DeletionTimestamp(t *testing.T) {
 	now := metav1.Now()
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -348,7 +348,7 @@ func TestGlobalPodInformer_ModifiedWithoutDeletionTimestamp(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -380,7 +380,7 @@ func TestGlobalPodInformer_RapidEvents(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	pod := setUpTestPod("default", "test-pod")
 
-	clientset := fake.NewSimpleClientset(pod)
+	clientset := fake.NewClientset(pod)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 
@@ -432,7 +432,7 @@ func TestGlobalPodInformer_MultipleNamespaces(t *testing.T) {
 		pods = append(pods, pod)
 	}
 
-	clientset := fake.NewSimpleClientset(pods...)
+	clientset := fake.NewClientset(pods...)
 	watcher := watch.NewFake()
 	clientset.PrependWatchReactor("pods", testing2.DefaultWatchReactor(watcher, nil))
 

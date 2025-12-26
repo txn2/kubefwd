@@ -1,24 +1,9 @@
-/*
-Copyright 2018 Craig Johnston <cjimti@gmail.com>
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package services
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -30,9 +15,13 @@ import (
 	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
+	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
@@ -66,6 +55,11 @@ var refreshHostsBackup bool
 var purgeStaleIps bool
 var resyncInterval time.Duration
 var retryInterval time.Duration
+var tuiMode bool
+var autoReconnect bool
+
+// Version is set by the main package
+var Version string
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -91,7 +85,8 @@ func init() {
 	Cmd.Flags().BoolVarP(&purgeStaleIps, "purge-stale-ips", "p", false, "Remove stale kubefwd host entries (IPs in 127.1.27.1 - 127.255.255.255 range) before starting.")
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
-
+	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
+	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI mode.")
 }
 
 var Cmd = &cobra.Command{
@@ -114,7 +109,7 @@ var Cmd = &cobra.Command{
 }
 
 // setAllNamespace Form V1Core get all namespace
-func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions, namespaces *[]string) {
+func setAllNamespace(clientSet kubernetes.Interface, options metav1.ListOptions, namespaces *[]string) {
 	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), options)
 	if err != nil {
 		log.Fatalf("Error get all namespaces by CoreV1: %s\n", err.Error())
@@ -131,7 +126,7 @@ func setAllNamespace(clientSet *kubernetes.Clientset, options metav1.ListOptions
 
 // checkConnection tests if you can connect to the cluster in your config,
 // and if you have the necessary permissions to use kubefwd.
-func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error {
+func checkConnection(clientSet kubernetes.Interface, namespaces []string) error {
 	// Check simple connectivity: can you connect to the api server
 	_, err := clientSet.Discovery().ServerVersion()
 	if err != nil {
@@ -165,7 +160,6 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 }
 
 func runCmd(cmd *cobra.Command, _ []string) {
-
 	if verbose {
 		log.SetLevel(log.DebugLevel)
 	}
@@ -195,8 +189,25 @@ Try:
 		log.Fatalf("Hosts path does not exist: %s", hostsPath)
 	}
 
-	log.Println("Press [Ctrl-C] to stop forwarding.")
-	log.Println("'cat " + hostsPath + "' to see all host entries.")
+	// Initialize TUI mode if enabled
+	if tuiMode {
+		fwdtui.Version = Version
+		fwdtui.Enable()
+		// Start metrics registry sampling EARLY, before port forwards begin
+		// This ensures rate calculation has samples from the start of data transfer
+		fwdmetrics.GetRegistry().Start()
+
+		// In TUI mode, enable auto-reconnect by default unless user explicitly disabled it
+		if !cmd.Flags().Changed("auto-reconnect") {
+			autoReconnect = true
+		}
+	}
+
+	// Only show instructions in non-TUI mode
+	if !tuiMode {
+		log.Println("Press [Ctrl-C] to stop forwarding.")
+		log.Println("'cat " + hostsPath + "' to see all host entries.")
+	}
 
 	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{
 		ReadFilePath:    hostsPath,
@@ -285,6 +296,82 @@ Try:
 
 	stopListenCh := make(chan struct{})
 
+	// Initialize TUI manager if in TUI mode
+	var tuiManager *fwdtui.Manager
+	var stopOnce sync.Once
+	triggerShutdown := func() {
+		stopOnce.Do(func() {
+			close(stopListenCh)
+		})
+	}
+	// Map of context -> clientSet for pod log streaming
+	clientSets := make(map[string]*kubernetes.Clientset)
+	var clientSetsMu sync.RWMutex
+
+	if fwdtui.IsEnabled() {
+		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
+
+		// Set up pod logs streamer
+		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+			clientSetsMu.RLock()
+			clientSet, ok := clientSets[k8sContext]
+			clientSetsMu.RUnlock()
+
+			if !ok {
+				return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+			}
+
+			opts := &v1.PodLogOptions{
+				Follow:    true,
+				TailLines: &tailLines,
+			}
+			// Set container name if specified (required for multi-container pods)
+			if containerName != "" {
+				opts.Container = containerName
+			}
+
+			return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+		})
+
+		// Set up errored services reconnector
+		tuiManager.SetErroredServicesReconnector(func() int {
+			store := fwdtui.GetStore()
+			if store == nil {
+				return 0
+			}
+
+			forwards := store.GetFiltered()
+
+			// Collect unique registry keys with errors
+			// Use RegistryKey (not ServiceKey) for proper registry lookup
+			// ServiceKey may include pod name for headless services, but registry uses service.namespace.context
+			erroredServices := make(map[string]bool)
+			for _, fwd := range forwards {
+				if fwd.Status == state.StatusError {
+					// Prefer RegistryKey if available, fall back to ServiceKey for backwards compatibility
+					key := fwd.RegistryKey
+					if key == "" {
+						key = fwd.ServiceKey
+					}
+					erroredServices[key] = true
+				}
+			}
+
+			// Trigger reconnection for each errored service
+			count := 0
+			for registryKey := range erroredServices {
+				if svcfwd := fwdsvcregistry.Get(registryKey); svcfwd != nil {
+					// ForceReconnect resets backoff state and triggers immediate reconnection
+					// This bypasses any pending backoff timers from auto-reconnect
+					go svcfwd.ForceReconnect()
+					count++
+				}
+			}
+
+			return count
+		})
+	}
+
 	// Listen for shutdown signal from user
 	go func() {
 		sigChan := make(chan os.Signal, 2)
@@ -293,8 +380,12 @@ Try:
 
 		// First signal: graceful shutdown
 		<-sigChan
-		log.Infof("Shutting down... (press Ctrl+C again to force)")
-		close(stopListenCh)
+		if fwdtui.IsEnabled() {
+			fwdtui.Emit(events.Event{Type: events.ShutdownStarted})
+		} else {
+			log.Infof("Shutting down... (press Ctrl+C again to force)")
+		}
+		triggerShutdown()
 
 		// Second signal: force exit
 		<-sigChan
@@ -329,6 +420,11 @@ Try:
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
 		}
 
+		// Store clientSet for pod log streaming
+		clientSetsMu.Lock()
+		clientSets[ctx] = clientSet
+		clientSetsMu.Unlock()
+
 		// if use --all-namespace ,from v1 api get all ns.
 		if isAllNs {
 			if len(namespaces) > 1 {
@@ -342,7 +438,6 @@ Try:
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
-		log.Infof("Successfully connected context: %v", ctx)
 
 		// create the k8s RESTclient
 		restClient, err := configGetter.GetRESTClient()
@@ -379,11 +474,53 @@ Try:
 		}
 	}
 
-	nsWatchesDone.Wait()
-	log.Debugf("All namespace watchers are done")
+	// If TUI mode, run the TUI (blocks until user quits)
+	// Otherwise, block until shutdown signal is received
+	if tuiManager != nil {
+		if err := tuiManager.Run(); err != nil {
+			log.Errorf("TUI error: %s", err)
+		}
+	} else {
+		// In non-TUI mode, block until shutdown signal (Ctrl+C)
+		<-stopListenCh
+	}
 
-	// Shutdown all active services
-	<-fwdsvcregistry.Done()
+	// Wait for namespace watchers with timeout
+	watchersDone := make(chan struct{})
+	go func() {
+		nsWatchesDone.Wait()
+		close(watchersDone)
+	}()
+
+	select {
+	case <-watchersDone:
+		log.Debugf("All namespace watchers are done")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for namespace watchers, forcing exit")
+	}
+
+	// Shutdown all active services with timeout
+	select {
+	case <-fwdsvcregistry.Done():
+		log.Debugf("Service registry shutdown complete")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for service registry, forcing exit")
+	}
+
+	// Wait for TUI cleanup if enabled
+	if tuiManager != nil {
+		select {
+		case <-tuiManager.Done():
+			log.Debugf("TUI cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for TUI cleanup")
+		}
+	}
+
+	// Final safety net: ensure all hosts are cleaned up
+	if err := fwdhost.RemoveAllocatedHosts(); err != nil {
+		log.Errorf("Failed to clean hosts file: %s", err)
+	}
 
 	log.Infof("Clean exit")
 }
@@ -499,6 +636,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		ForwardIPReservations:    fwdReservations,
 		ResyncInterval:           resyncInterval,
 		RetryInterval:            retryInterval,
+		AutoReconnect:            autoReconnect,
 	}
 
 	// Add the service to the catalog of services being forwarded
@@ -518,9 +656,9 @@ func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
 
 // UpdateServiceHandler is the event handler to deal with service changes from k8s.
 // It triggers a resync when the service's selector or ports change.
-func (opts *NamespaceOpts) UpdateServiceHandler(old interface{}, new interface{}) {
-	oldSvc, oldOk := old.(*v1.Service)
-	newSvc, newOk := new.(*v1.Service)
+func (opts *NamespaceOpts) UpdateServiceHandler(oldObj interface{}, newObj interface{}) {
+	oldSvc, oldOk := oldObj.(*v1.Service)
+	newSvc, newOk := newObj.(*v1.Service)
 
 	if !oldOk || !newOk {
 		return

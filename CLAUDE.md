@@ -203,13 +203,15 @@ pkg/
 
 ## Contribution Policy
 
-**IMPORTANT**: The project maintainers currently accept pull requests for:
+**Public Contributions**: The project welcomes pull requests from the community for:
 - Bug fixes
 - Tests
 - Documentation
 - Stability and compatibility enhancements
 
-The project is NOT accepting new features at this time. This policy is documented in the README and reflects the project's mature, stable state.
+**Feature Development**: New features are developed by select contributors only. Public feature PRs are discouraged due to past experience with contributions that introduced drastic codebase changes, were difficult to review and test, and added significant technical debt. This policy is documented in the README.
+
+**Internal Development**: Maintainers and trusted contributors are welcome to develop new features. If you're working on this codebase with direct access, feature development is encouraged.
 
 ## Release Process
 
