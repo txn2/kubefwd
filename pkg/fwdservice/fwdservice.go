@@ -34,7 +34,7 @@ type ServiceFWD struct {
 	ListOptions  metav1.ListOptions
 	Hostfile     *fwdport.HostFileWithLock
 	ClientConfig restclient.Config
-	RESTClient   restclient.RESTClient
+	RESTClient   *restclient.RESTClient
 
 	// Context is a unique key (string) in kubectl config representing
 	// a user/cluster combination. Kubefwd uses context as the
@@ -228,14 +228,16 @@ func (svcFwd *ServiceFWD) StopAllPortForwards() {
 	for _, pfo := range forwards {
 		pfo.Stop()
 		if fwdtui.IsEnabled() {
-			fwdtui.Emit(events.NewPodEvent(
+			event := events.NewPodEvent(
 				events.PodRemoved,
 				pfo.Service,
 				pfo.Namespace,
 				pfo.Context,
 				pfo.PodName,
 				svcFwd.String(),
-			))
+			)
+			event.LocalPort = pfo.LocalPort
+			fwdtui.Emit(event)
 		}
 	}
 }
@@ -547,14 +549,16 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 				// Emit PodRemoved event so TUI can clean up the entry
 				if fwdtui.IsEnabled() {
-					fwdtui.Emit(events.NewPodEvent(
+					event := events.NewPodEvent(
 						events.PodRemoved,
 						pfo.Service,
 						pfo.Namespace,
 						pfo.Context,
 						pfo.PodName,
 						svcFwd.String(),
-					))
+					)
+					event.LocalPort = pfo.LocalPort
+					fwdtui.Emit(event)
 				}
 
 				// If there was an error, we should try to reconnect
@@ -653,14 +657,16 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 		// Use pod (PortForwardOpts) values to match metrics key construction exactly
 		// Pass svcFwd.String() as registryKey for proper registry lookup
 		if fwdtui.IsEnabled() {
-			fwdtui.Emit(events.NewPodEvent(
+			event := events.NewPodEvent(
 				events.PodRemoved,
 				pod.Service,
 				pod.Namespace,
 				pod.Context,
 				pod.PodName,
 				svcFwd.String(), // registryKey for reconnection lookup
-			))
+			)
+			event.LocalPort = pod.LocalPort
+			fwdtui.Emit(event)
 		}
 	}
 }

@@ -1,6 +1,8 @@
 package fwdservice
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	restclient "k8s.io/client-go/rest"
 )
 
 // setupMockInterface sets up the mock interface manager for tests
@@ -24,6 +28,42 @@ func setupMockInterface() func() {
 	return func() {
 		fwdnet.ResetManager()
 	}
+}
+
+// setupMockRESTClient creates a mock REST client that blocks on requests.
+// This allows tests to verify that pods are added to the PortForwards map
+// before PortForward() returns. Returns the RESTClient and a cleanup function.
+func setupMockRESTClient() (*restclient.RESTClient, func()) {
+	// Create a test server that blocks indefinitely on port-forward requests
+	// This simulates a real port-forward connection staying open
+	blockChan := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until cleanup is called
+		<-blockChan
+	}))
+
+	config := &restclient.Config{
+		Host: server.URL,
+		ContentConfig: restclient.ContentConfig{
+			GroupVersion:         &v1.SchemeGroupVersion,
+			NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
+		},
+	}
+
+	client, err := restclient.RESTClientFor(config)
+	if err != nil {
+		// If we can't create a client, return nil - tests should handle this
+		server.Close()
+		close(blockChan)
+		return nil, func() {}
+	}
+
+	cleanup := func() {
+		close(blockChan) // Unblock any waiting handlers
+		server.Close()
+	}
+
+	return client, cleanup
 }
 
 // mockDebouncer for testing debouncing behavior
@@ -207,6 +247,9 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -240,6 +283,7 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute), // Old sync time
+		RESTClient:           restClient,
 	}
 
 	// Sync with force=true to bypass debouncer
@@ -279,6 +323,9 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -311,6 +358,7 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
 	}
 
 	svcFwd.SyncPodForwards(true)
@@ -388,6 +436,9 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -418,6 +469,7 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now(), // Recent sync
+		RESTClient:           restClient,
 	}
 
 	// Call with force=true - should bypass debouncer
@@ -443,6 +495,9 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
 
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -474,6 +529,7 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-6 * time.Minute), // 6 minutes ago
+		RESTClient:           restClient,
 	}
 
 	// Call without force, but LastSyncedAt is >5 minutes ago
@@ -498,6 +554,9 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
 
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -530,6 +589,7 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
 	}
 
 	// Add a mock pod forward entry for a pod that no longer exists
@@ -1617,11 +1677,13 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		t.Fatalf("Expected %d PodRemoved events, got %d", numForwards, collector.CountOfType(events.PodRemoved))
 	}
 
-	// Filter events for this specific service (extra safety against parallel test pollution)
+	// Filter events for this specific test's pods (extra safety against parallel test pollution)
+	// This test uses pod-a, pod-b, pod-c
+	validPods := map[string]bool{"pod-a": true, "pod-b": true, "pod-c": true}
 	allPodRemovedEvents := collector.EventsOfType(events.PodRemoved)
 	var podRemovedEvents []events.Event
 	for _, e := range allPodRemovedEvents {
-		if e.Service == "test-svc" {
+		if e.Service == "test-svc" && validPods[e.PodName] {
 			podRemovedEvents = append(podRemovedEvents, e)
 		}
 	}
@@ -1630,10 +1692,14 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		t.Errorf("Expected %d PodRemoved events for 'test-svc', got %d", numForwards, len(podRemovedEvents))
 	}
 
-	// Verify each event has correct service info
+	// Verify each event has correct service info including LocalPort
 	for _, event := range podRemovedEvents {
 		if event.Namespace != "default" {
 			t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
+		}
+		// Critical: LocalPort must be set for TUI to match the removal key
+		if event.LocalPort != "80" {
+			t.Errorf("Expected LocalPort '80', got '%s'", event.LocalPort)
 		}
 	}
 }
