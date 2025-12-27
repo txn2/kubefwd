@@ -645,3 +645,562 @@ func TestMatchesFilter_Hostnames(t *testing.T) {
 		t.Errorf("Expected 1 match for 'cluster.local' hostname, got %d", len(filtered))
 	}
 }
+
+// TestMatchesFilter_PodName tests filter matching on pod name
+func TestMatchesFilter_PodName(t *testing.T) {
+	store := NewStore(100)
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc.ns.ctx.my-pod-abc123.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "my-service",
+		Namespace:   "default",
+		PodName:     "my-pod-abc123",
+	})
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc.ns.ctx.other-pod-xyz.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "my-service",
+		Namespace:   "default",
+		PodName:     "other-pod-xyz",
+	})
+
+	// Filter by pod name
+	store.SetFilter("abc123")
+	filtered := store.GetFiltered()
+
+	if len(filtered) != 1 {
+		t.Errorf("Expected 1 match for 'abc123' pod name, got %d", len(filtered))
+	}
+
+	if filtered[0].PodName != "my-pod-abc123" {
+		t.Errorf("Expected pod 'my-pod-abc123', got %s", filtered[0].PodName)
+	}
+}
+
+// TestGetServices tests getting all services
+func TestGetServices(t *testing.T) {
+	store := NewStore(100)
+
+	// Add forwards for multiple services
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns.ctx.pod.8080",
+		ServiceKey:  "svc1.ns.ctx",
+		ServiceName: "zebra-service",
+		Namespace:   "default",
+		Status:      StatusActive,
+	})
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc2.ns.ctx.pod.8080",
+		ServiceKey:  "svc2.ns.ctx",
+		ServiceName: "alpha-service",
+		Namespace:   "default",
+		Status:      StatusActive,
+	})
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc3.ns.ctx.pod.8080",
+		ServiceKey:  "svc3.ns.ctx",
+		ServiceName: "beta-service",
+		Namespace:   "production",
+		Status:      StatusError,
+	})
+
+	services := store.GetServices()
+
+	if len(services) != 3 {
+		t.Fatalf("Expected 3 services, got %d", len(services))
+	}
+
+	// Services should be sorted by name
+	if services[0].ServiceName != "alpha-service" {
+		t.Errorf("Expected first service 'alpha-service', got %s", services[0].ServiceName)
+	}
+
+	if services[1].ServiceName != "beta-service" {
+		t.Errorf("Expected second service 'beta-service', got %s", services[1].ServiceName)
+	}
+
+	if services[2].ServiceName != "zebra-service" {
+		t.Errorf("Expected third service 'zebra-service', got %s", services[2].ServiceName)
+	}
+}
+
+// TestSortForwards_AllFields tests all sort field options
+func TestSortForwards_AllFields(t *testing.T) {
+	store := NewStore(100)
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns.ctx.pod.8080",
+		ServiceKey:  "svc1.ns.ctx",
+		ServiceName: "alpha",
+		Namespace:   "zebra",
+		LocalPort:   "8080",
+		Hostnames:   []string{"alpha"},
+		Status:      StatusActive,
+		RateIn:      100.0,
+		RateOut:     50.0,
+	})
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc2.ns.ctx.pod.9090",
+		ServiceKey:  "svc2.ns.ctx",
+		ServiceName: "zebra",
+		Namespace:   "alpha",
+		LocalPort:   "9090",
+		Hostnames:   []string{"zebra"},
+		Status:      StatusError,
+		RateIn:      200.0,
+		RateOut:     100.0,
+	})
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc3.ns.ctx.pod.7070",
+		ServiceKey:  "svc3.ns.ctx",
+		ServiceName: "mango",
+		Namespace:   "mango",
+		LocalPort:   "7070",
+		Hostnames:   []string{"mango"},
+		Status:      StatusConnecting,
+		RateIn:      50.0,
+		RateOut:     25.0,
+	})
+
+	tests := []struct {
+		sortField string
+		ascending bool
+		firstSvc  string
+		lastSvc   string
+	}{
+		{"hostname", true, "alpha", "zebra"},
+		{"hostname", false, "zebra", "alpha"},
+		{"namespace", true, "zebra", "alpha"},     // namespace alpha < mango < zebra
+		{"namespace", false, "alpha", "zebra"},    // descending
+		{"status", true, "mango", "zebra"},        // StatusConnecting(1) < StatusActive(2) < StatusError(3)
+		{"status", false, "zebra", "mango"},       // descending
+		{"rateIn", true, "mango", "zebra"},        // 50 < 100 < 200
+		{"rateIn", false, "zebra", "mango"},       // descending
+		{"rateOut", true, "mango", "zebra"},       // 25 < 50 < 100
+		{"rateOut", false, "zebra", "mango"},      // descending
+		{"unknown_field", true, "alpha", "zebra"}, // default to hostname
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.sortField+"_"+boolToStr(tt.ascending), func(t *testing.T) {
+			store.SetSort(tt.sortField, tt.ascending)
+			filtered := store.GetFiltered()
+
+			if filtered[0].ServiceName != tt.firstSvc {
+				t.Errorf("Sort by %s (asc=%v): expected first '%s', got '%s'",
+					tt.sortField, tt.ascending, tt.firstSvc, filtered[0].ServiceName)
+			}
+
+			if filtered[len(filtered)-1].ServiceName != tt.lastSvc {
+				t.Errorf("Sort by %s (asc=%v): expected last '%s', got '%s'",
+					tt.sortField, tt.ascending, tt.lastSvc, filtered[len(filtered)-1].ServiceName)
+			}
+		})
+	}
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "asc"
+	}
+	return "desc"
+}
+
+// TestForwardStatus_String tests all ForwardStatus string representations
+func TestForwardStatus_String(t *testing.T) {
+	tests := []struct {
+		status   ForwardStatus
+		expected string
+	}{
+		{StatusPending, "Pending"},
+		{StatusConnecting, "Connecting"},
+		{StatusActive, "Active"},
+		{StatusError, "Error"},
+		{StatusStopping, "Stopping"},
+		{ForwardStatus(99), "Unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			if tt.status.String() != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, tt.status.String())
+			}
+		})
+	}
+}
+
+// TestForwardSnapshot_PrimaryHostname tests PrimaryHostname edge cases
+func TestForwardSnapshot_PrimaryHostname(t *testing.T) {
+	tests := []struct {
+		name     string
+		snapshot ForwardSnapshot
+		expected string
+	}{
+		{
+			name: "no hostnames returns service name",
+			snapshot: ForwardSnapshot{
+				ServiceName: "my-service",
+				Hostnames:   []string{},
+			},
+			expected: "my-service",
+		},
+		{
+			name: "nil hostnames returns service name",
+			snapshot: ForwardSnapshot{
+				ServiceName: "my-service",
+				Hostnames:   nil,
+			},
+			expected: "my-service",
+		},
+		{
+			name: "single hostname",
+			snapshot: ForwardSnapshot{
+				ServiceName: "my-service",
+				Hostnames:   []string{"svc"},
+			},
+			expected: "svc",
+		},
+		{
+			name: "multiple hostnames returns shortest",
+			snapshot: ForwardSnapshot{
+				ServiceName: "my-service",
+				Hostnames:   []string{"my-service.namespace.svc.cluster.local", "my-service.namespace", "my-service"},
+			},
+			expected: "my-service",
+		},
+		{
+			name: "first is already shortest",
+			snapshot: ForwardSnapshot{
+				ServiceName: "my-service",
+				Hostnames:   []string{"a", "bb", "ccc"},
+			},
+			expected: "a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.snapshot.PrimaryHostname()
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestForwardSnapshot_LocalAddress tests LocalAddress
+func TestForwardSnapshot_LocalAddress(t *testing.T) {
+	snapshot := ForwardSnapshot{
+		LocalIP:   "127.1.27.1",
+		LocalPort: "8080",
+	}
+
+	expected := "127.1.27.1:8080"
+	if snapshot.LocalAddress() != expected {
+		t.Errorf("Expected %q, got %q", expected, snapshot.LocalAddress())
+	}
+}
+
+// TestNewRateHistory tests creating a new rate history
+func TestNewRateHistory(t *testing.T) {
+	h := NewRateHistory(30)
+	if h == nil {
+		t.Fatal("Expected non-nil RateHistory")
+	}
+	if h.maxSize != 30 {
+		t.Errorf("Expected maxSize 30, got %d", h.maxSize)
+	}
+	if h.Size() != 0 {
+		t.Errorf("Expected size 0, got %d", h.Size())
+	}
+}
+
+// TestNewRateHistory_DefaultSize tests default max size
+func TestNewRateHistory_DefaultSize(t *testing.T) {
+	h := NewRateHistory(0)
+	if h.maxSize != 60 {
+		t.Errorf("Expected default maxSize 60, got %d", h.maxSize)
+	}
+
+	h2 := NewRateHistory(-10)
+	if h2.maxSize != 60 {
+		t.Errorf("Expected default maxSize 60 for negative, got %d", h2.maxSize)
+	}
+}
+
+// TestRateHistory_AddSample tests adding samples
+func TestRateHistory_AddSample(t *testing.T) {
+	h := NewRateHistory(5)
+
+	h.AddSample("fwd1", 100.0, 50.0)
+	h.AddSample("fwd1", 200.0, 100.0)
+	h.AddSample("fwd1", 300.0, 150.0)
+
+	if h.Size() != 1 {
+		t.Errorf("Expected 1 forward tracked, got %d", h.Size())
+	}
+
+	rateIn, rateOut := h.GetAllHistory("fwd1")
+	if len(rateIn) != 3 {
+		t.Errorf("Expected 3 rateIn samples, got %d", len(rateIn))
+	}
+	if len(rateOut) != 3 {
+		t.Errorf("Expected 3 rateOut samples, got %d", len(rateOut))
+	}
+
+	if rateIn[0] != 100.0 || rateIn[2] != 300.0 {
+		t.Errorf("Unexpected rateIn values: %v", rateIn)
+	}
+}
+
+// TestRateHistory_AddSample_Overflow tests sample buffer overflow
+func TestRateHistory_AddSample_Overflow(t *testing.T) {
+	h := NewRateHistory(3)
+
+	// Add more samples than max size
+	for i := 1; i <= 5; i++ {
+		h.AddSample("fwd1", float64(i*100), float64(i*50))
+	}
+
+	rateIn, rateOut := h.GetAllHistory("fwd1")
+
+	// Should only have last 3 samples
+	if len(rateIn) != 3 {
+		t.Errorf("Expected 3 samples after overflow, got %d", len(rateIn))
+	}
+
+	// Should be samples 3, 4, 5 (values 300, 400, 500)
+	if rateIn[0] != 300.0 || rateIn[1] != 400.0 || rateIn[2] != 500.0 {
+		t.Errorf("Expected [300, 400, 500], got %v", rateIn)
+	}
+
+	if rateOut[0] != 150.0 || rateOut[1] != 200.0 || rateOut[2] != 250.0 {
+		t.Errorf("Expected [150, 200, 250], got %v", rateOut)
+	}
+}
+
+// TestRateHistory_GetHistory tests getting limited history
+func TestRateHistory_GetHistory(t *testing.T) {
+	h := NewRateHistory(10)
+
+	for i := 1; i <= 6; i++ {
+		h.AddSample("fwd1", float64(i*100), float64(i*50))
+	}
+
+	// Get last 3 samples
+	rateIn, rateOut := h.GetHistory("fwd1", 3)
+
+	if len(rateIn) != 3 {
+		t.Errorf("Expected 3 samples, got %d", len(rateIn))
+	}
+
+	// Should be samples 4, 5, 6 (values 400, 500, 600)
+	if rateIn[0] != 400.0 || rateIn[1] != 500.0 || rateIn[2] != 600.0 {
+		t.Errorf("Expected [400, 500, 600], got %v", rateIn)
+	}
+
+	if rateOut[0] != 200.0 || rateOut[1] != 250.0 || rateOut[2] != 300.0 {
+		t.Errorf("Expected [200, 250, 300], got %v", rateOut)
+	}
+}
+
+// TestRateHistory_GetHistory_NonExistent tests getting history for non-existent forward
+func TestRateHistory_GetHistory_NonExistent(t *testing.T) {
+	h := NewRateHistory(10)
+
+	rateIn, rateOut := h.GetHistory("nonexistent", 5)
+
+	if rateIn != nil {
+		t.Errorf("Expected nil rateIn for nonexistent key, got %v", rateIn)
+	}
+	if rateOut != nil {
+		t.Errorf("Expected nil rateOut for nonexistent key, got %v", rateOut)
+	}
+}
+
+// TestRateHistory_GetAllHistory tests getting all history
+func TestRateHistory_GetAllHistory(t *testing.T) {
+	h := NewRateHistory(10)
+
+	for i := 1; i <= 5; i++ {
+		h.AddSample("fwd1", float64(i), float64(i*2))
+	}
+
+	rateIn, rateOut := h.GetAllHistory("fwd1")
+
+	if len(rateIn) != 5 {
+		t.Errorf("Expected 5 samples, got %d", len(rateIn))
+	}
+	if len(rateOut) != 5 {
+		t.Errorf("Expected 5 rateOut samples, got %d", len(rateOut))
+	}
+
+	// Verify it returns a copy (intentionally discarding result to test immutability)
+	originalLen := len(rateIn)
+	_ = append(rateIn, 999.0)
+
+	rateIn2, _ := h.GetAllHistory("fwd1")
+	if len(rateIn2) != originalLen {
+		t.Error("GetAllHistory should return a copy, not modify original")
+	}
+}
+
+// TestRateHistory_GetAllHistory_NonExistent tests getting all history for non-existent forward
+func TestRateHistory_GetAllHistory_NonExistent(t *testing.T) {
+	h := NewRateHistory(10)
+
+	rateIn, rateOut := h.GetAllHistory("nonexistent")
+
+	if rateIn != nil {
+		t.Errorf("Expected nil rateIn, got %v", rateIn)
+	}
+	if rateOut != nil {
+		t.Errorf("Expected nil rateOut, got %v", rateOut)
+	}
+}
+
+// TestRateHistory_Remove tests removing a forward
+func TestRateHistory_Remove(t *testing.T) {
+	h := NewRateHistory(10)
+
+	h.AddSample("fwd1", 100.0, 50.0)
+	h.AddSample("fwd2", 200.0, 100.0)
+
+	if h.Size() != 2 {
+		t.Errorf("Expected 2 forwards, got %d", h.Size())
+	}
+
+	h.Remove("fwd1")
+
+	if h.Size() != 1 {
+		t.Errorf("Expected 1 forward after remove, got %d", h.Size())
+	}
+
+	rateIn, _ := h.GetAllHistory("fwd1")
+	if rateIn != nil {
+		t.Error("Expected nil after remove")
+	}
+
+	rateIn, _ = h.GetAllHistory("fwd2")
+	if rateIn == nil {
+		t.Error("Expected fwd2 to still exist")
+	}
+}
+
+// TestRateHistory_Clear tests clearing all history
+func TestRateHistory_Clear(t *testing.T) {
+	h := NewRateHistory(10)
+
+	h.AddSample("fwd1", 100.0, 50.0)
+	h.AddSample("fwd2", 200.0, 100.0)
+	h.AddSample("fwd3", 300.0, 150.0)
+
+	if h.Size() != 3 {
+		t.Errorf("Expected 3 forwards, got %d", h.Size())
+	}
+
+	h.Clear()
+
+	if h.Size() != 0 {
+		t.Errorf("Expected 0 forwards after clear, got %d", h.Size())
+	}
+}
+
+// TestRateHistory_Concurrent tests thread safety
+func TestRateHistory_Concurrent(t *testing.T) {
+	h := NewRateHistory(100)
+
+	var wg sync.WaitGroup
+	numGoroutines := 50
+
+	// Concurrent adds
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := "fwd" + string(rune('a'+n%26))
+			h.AddSample(key, float64(n*100), float64(n*50))
+		}(i)
+	}
+
+	// Concurrent reads
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := "fwd" + string(rune('a'+n%26))
+			_, _ = h.GetHistory(key, 5)
+			_, _ = h.GetAllHistory(key)
+			_ = h.Size()
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Should not panic and size should be reasonable
+	if h.Size() > 26 {
+		t.Errorf("Size should be <= 26, got %d", h.Size())
+	}
+}
+
+// TestUpdateMetrics_NonExistent tests updating metrics for non-existent forward
+func TestUpdateMetrics_NonExistent(t *testing.T) {
+	store := NewStore(100)
+
+	// Should not panic
+	store.UpdateMetrics("nonexistent.key", 1000, 2000, 100.0, 200.0, 50.0, 100.0)
+
+	if store.Count() != 0 {
+		t.Error("Should not create forward when updating non-existent key")
+	}
+}
+
+// TestUpdateStatus_NonExistent tests updating status for non-existent forward
+func TestUpdateStatus_NonExistent(t *testing.T) {
+	store := NewStore(100)
+
+	// Should not panic
+	store.UpdateStatus("nonexistent.key", StatusError, "error message")
+
+	if store.Count() != 0 {
+		t.Error("Should not create forward when updating non-existent key")
+	}
+}
+
+// TestUpdateHostnames_NonExistent tests updating hostnames for non-existent forward
+func TestUpdateHostnames_NonExistent(t *testing.T) {
+	store := NewStore(100)
+
+	// Should not panic
+	store.UpdateHostnames("nonexistent.key", []string{"host1", "host2"})
+
+	if store.Count() != 0 {
+		t.Error("Should not create forward when updating non-existent key")
+	}
+}
+
+// TestGetForward_NonExistent tests getting non-existent forward
+func TestGetForward_NonExistent(t *testing.T) {
+	store := NewStore(100)
+
+	fwd := store.GetForward("nonexistent.key")
+	if fwd != nil {
+		t.Error("Expected nil for non-existent forward")
+	}
+}
+
+// TestGetService_NonExistent tests getting non-existent service
+func TestGetService_NonExistent(t *testing.T) {
+	store := NewStore(100)
+
+	svc := store.GetService("nonexistent.key")
+	if svc != nil {
+		t.Error("Expected nil for non-existent service")
+	}
+}
