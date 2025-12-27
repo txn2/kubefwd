@@ -1471,6 +1471,9 @@ func TestAddServicePod_EmitsPodAdded(t *testing.T) {
 		LocalPort: "8080",
 	}
 
+	// Clear collector before the action we want to test (avoid pollution from parallel tests)
+	collector.Clear()
+
 	// Add the pod
 	isNew := svcFwd.AddServicePod(pfo)
 
@@ -1483,19 +1486,20 @@ func TestAddServicePod_EmitsPodAdded(t *testing.T) {
 		t.Fatal("Expected PodAdded event to be emitted")
 	}
 
-	// Verify event details
-	podAddedEvents := collector.EventsOfType(events.PodAdded)
+	// Filter events for this specific service (extra safety against parallel test pollution)
+	allPodAddedEvents := collector.EventsOfType(events.PodAdded)
+	var podAddedEvents []events.Event
+	for _, e := range allPodAddedEvents {
+		if e.Service == "test-svc" && e.PodName == "test-pod-abc123" {
+			podAddedEvents = append(podAddedEvents, e)
+		}
+	}
+
 	if len(podAddedEvents) != 1 {
-		t.Fatalf("Expected 1 PodAdded event, got %d", len(podAddedEvents))
+		t.Fatalf("Expected 1 PodAdded event for test-svc/test-pod-abc123, got %d", len(podAddedEvents))
 	}
 
 	event := podAddedEvents[0]
-	if event.Service != "test-svc" {
-		t.Errorf("Expected Service 'test-svc', got '%s'", event.Service)
-	}
-	if event.PodName != "test-pod-abc123" {
-		t.Errorf("Expected PodName 'test-pod-abc123', got '%s'", event.PodName)
-	}
 	if event.Namespace != "default" {
 		t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
 	}
@@ -1537,6 +1541,9 @@ func TestAddServicePod_DuplicateDoesNotEmit(t *testing.T) {
 		LocalPort: "8080",
 	}
 
+	// Clear collector before the action we want to test (avoid pollution from parallel tests)
+	collector.Clear()
+
 	// Add first pod
 	svcFwd.AddServicePod(pfo1)
 	// Try to add duplicate
@@ -1549,10 +1556,18 @@ func TestAddServicePod_DuplicateDoesNotEmit(t *testing.T) {
 	// Wait a bit for any events
 	time.Sleep(100 * time.Millisecond)
 
+	// Filter events for this specific service (extra safety against parallel test pollution)
+	allPodAddedEvents := collector.EventsOfType(events.PodAdded)
+	var podAddedEvents []events.Event
+	for _, e := range allPodAddedEvents {
+		if e.Service == "test-svc" && e.PodName == "test-pod" {
+			podAddedEvents = append(podAddedEvents, e)
+		}
+	}
+
 	// Should only have 1 PodAdded event (from first add)
-	podAddedEvents := collector.EventsOfType(events.PodAdded)
 	if len(podAddedEvents) != 1 {
-		t.Errorf("Expected 1 PodAdded event (no duplicate), got %d", len(podAddedEvents))
+		t.Errorf("Expected 1 PodAdded event for test-svc/test-pod (no duplicate), got %d", len(podAddedEvents))
 	}
 }
 
@@ -1591,6 +1606,9 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		svcFwd.PortForwards[key] = pfo
 	}
 
+	// Clear collector before the action we want to test (avoid pollution from parallel tests)
+	collector.Clear()
+
 	// Stop all port forwards
 	svcFwd.StopAllPortForwards()
 
@@ -1599,17 +1617,21 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		t.Fatalf("Expected %d PodRemoved events, got %d", numForwards, collector.CountOfType(events.PodRemoved))
 	}
 
-	// Verify we got the right number of events
-	podRemovedEvents := collector.EventsOfType(events.PodRemoved)
+	// Filter events for this specific service (extra safety against parallel test pollution)
+	allPodRemovedEvents := collector.EventsOfType(events.PodRemoved)
+	var podRemovedEvents []events.Event
+	for _, e := range allPodRemovedEvents {
+		if e.Service == "test-svc" {
+			podRemovedEvents = append(podRemovedEvents, e)
+		}
+	}
+
 	if len(podRemovedEvents) != numForwards {
-		t.Errorf("Expected %d PodRemoved events, got %d", numForwards, len(podRemovedEvents))
+		t.Errorf("Expected %d PodRemoved events for 'test-svc', got %d", numForwards, len(podRemovedEvents))
 	}
 
 	// Verify each event has correct service info
 	for _, event := range podRemovedEvents {
-		if event.Service != "test-svc" {
-			t.Errorf("Expected Service 'test-svc', got '%s'", event.Service)
-		}
 		if event.Namespace != "default" {
 			t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
 		}
