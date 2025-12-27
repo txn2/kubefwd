@@ -176,8 +176,11 @@ func (svcFwd *ServiceFWD) scheduleReconnect() bool {
 	return true
 }
 
-// resetReconnectBackoff resets the backoff to initial value after successful connection.
-func (svcFwd *ServiceFWD) resetReconnectBackoff() {
+// ResetReconnectBackoff resets the backoff to initial value after successful connection.
+// This is called from PortForward() when the port forward is successfully established,
+// not when pods are merely discovered. This prevents the backoff from resetting during
+// pod transitions when connections immediately fail.
+func (svcFwd *ServiceFWD) ResetReconnectBackoff() {
 	svcFwd.reconnectMu.Lock()
 	defer svcFwd.reconnectMu.Unlock()
 	if svcFwd.reconnectBackoff != 0 {
@@ -260,6 +263,25 @@ func (svcFwd *ServiceFWD) CloseIdleHTTPConnections() {
 	}
 }
 
+// isPodReady checks if a pod has at least one container in Ready state.
+// A pod can be in Running phase but have containers that are not yet ready,
+// which would cause port forwarding to fail.
+func isPodReady(pod *v1.Pod) bool {
+	// For Pending pods, we can't check readiness yet - let them through
+	// so we can wait for them to become Running
+	if pod.Status.Phase == v1.PodPending {
+		return true
+	}
+
+	// For Running pods, check if at least one container is Ready
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Ready {
+			return true
+		}
+	}
+	return false
+}
+
 // GetPodsForService queries k8s and returns all pods backing this service
 // which are eligible for port-forwarding; exclude some pods which are in final/failure state.
 func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
@@ -279,8 +301,13 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
 
 	for _, pod := range pods.Items {
-		// Only include pods that are running/pending AND not marked for deletion
-		if (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
+		// Only include pods that are:
+		// 1. Running or Pending phase
+		// 2. Not marked for deletion
+		// 3. Have at least one Ready container (for Running pods)
+		if (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) &&
+			pod.DeletionTimestamp == nil &&
+			isPodReady(&pod) {
 			podsEligible = append(podsEligible, pod)
 		}
 	}
@@ -317,8 +344,9 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		// Only update LastSyncedAt after successful pod discovery
 		defer func() { svcFwd.LastSyncedAt = time.Now() }()
 
-		// Reset reconnect backoff on successful pod discovery
-		svcFwd.resetReconnectBackoff()
+		// Note: Backoff reset moved to PortForward() when connection actually succeeds.
+		// Resetting here was causing rapid reconnection loops during pod transitions
+		// because pods would be found but connections would immediately fail.
 
 		// Check if the pods currently being forwarded still exist in k8s and if
 		// they are not in a (pre-)running state, if not: remove them

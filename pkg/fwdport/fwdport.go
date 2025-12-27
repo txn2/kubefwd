@@ -203,6 +203,7 @@ func ResetGlobalPodInformer() {
 type ServiceFWD interface {
 	String() string
 	SyncPodForwards(force bool)
+	ResetReconnectBackoff() // Called when port forward succeeds to reset exponential backoff
 }
 
 type HostFileWithLock struct {
@@ -451,6 +452,11 @@ func (pfo *PortForwardOpts) PortForward() error {
 		event.Hostnames = pfo.Hosts // Include hostnames now that AddHosts() has run
 		fwdtui.Emit(event)
 	}
+
+	// Reset reconnect backoff now that connection is successfully established.
+	// This is the correct place to reset - after ForwardPorts setup completes,
+	// not when pods are merely discovered.
+	pfo.ServiceFwd.ResetReconnectBackoff()
 
 	// Blocking call
 	if err = fw.ForwardPorts(); err != nil {

@@ -111,7 +111,7 @@ func createTestService(name, namespace string, ports []v1.ServicePort, headless 
 
 // createTestPod creates a test Kubernetes pod
 func createTestPod(name, namespace string, phase v1.PodPhase, labels map[string]string) *v1.Pod {
-	return &v1.Pod{
+	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -131,6 +131,18 @@ func createTestPod(name, namespace string, phase v1.PodPhase, labels map[string]
 			},
 		},
 	}
+
+	// For Running pods, add Ready container status
+	if phase == v1.PodRunning {
+		pod.Status.ContainerStatuses = []v1.ContainerStatus{
+			{
+				Name:  "test-container",
+				Ready: true,
+			},
+		}
+	}
+
+	return pod
 }
 
 // TestGetPodsForService_FiltersByPhase tests that only Pending/Running pods are returned
@@ -1260,7 +1272,7 @@ func TestResetReconnectBackoff(t *testing.T) {
 	svcFwd.reconnectMu.Unlock()
 
 	// Reset backoff
-	svcFwd.resetReconnectBackoff()
+	svcFwd.ResetReconnectBackoff()
 
 	svcFwd.reconnectMu.Lock()
 	backoff := svcFwd.reconnectBackoff
