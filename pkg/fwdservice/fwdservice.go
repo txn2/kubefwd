@@ -224,8 +224,19 @@ func (svcFwd *ServiceFWD) StopAllPortForwards() {
 	log.Debugf("Stopping %d existing port forwards for %s", len(forwards), svcFwd)
 
 	// Stop them asynchronously - don't wait for stuck goroutines
+	// Emit PodRemoved events so TUI can clean up entries
 	for _, pfo := range forwards {
 		pfo.Stop()
+		if fwdtui.IsEnabled() {
+			fwdtui.Emit(events.NewPodEvent(
+				events.PodRemoved,
+				pfo.Service,
+				pfo.Namespace,
+				pfo.Context,
+				pfo.PodName,
+				svcFwd.String(),
+			))
+		}
 	}
 }
 
@@ -519,14 +530,32 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
-				svcFwd.AddServicePod(pfo)
+				// AddServicePod returns false if this forward was already registered
+				// (race condition with another goroutine). Exit early to prevent duplicates.
+				if !svcFwd.AddServicePod(pfo) {
+					log.Debugf("Forward already registered for %s.%s.%s, skipping duplicate", pfo.Service, pfo.PodName, pfo.LocalPort)
+					return
+				}
+
 				err := pfo.PortForward()
 
-				// Normal cleanup - remove from map
+				// Normal cleanup - remove from map and emit TUI event
 				svcFwd.NamespaceServiceLock.Lock()
 				servicePodKey := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
 				delete(svcFwd.PortForwards, servicePodKey)
 				svcFwd.NamespaceServiceLock.Unlock()
+
+				// Emit PodRemoved event so TUI can clean up the entry
+				if fwdtui.IsEnabled() {
+					fwdtui.Emit(events.NewPodEvent(
+						events.PodRemoved,
+						pfo.Service,
+						pfo.Namespace,
+						pfo.Context,
+						pfo.PodName,
+						svcFwd.String(),
+					))
+				}
 
 				// If there was an error, we should try to reconnect
 				// Note: PortForward() calls pfo.Stop() on error, so ManualStopChan
@@ -557,7 +586,10 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 	}
 }
 
-func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
+// AddServicePod registers a port forward in the service's map and emits a TUI event.
+// Returns true if this is a new forward, false if it was already registered (duplicate).
+// Callers should check the return value and avoid starting duplicate port forwards.
+func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) bool {
 	svcFwd.NamespaceServiceLock.Lock()
 	ServicePod := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
 	isNew := false
@@ -586,6 +618,8 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) {
 		event.Hostnames = pfo.Hosts
 		fwdtui.Emit(event)
 	}
+
+	return isNew
 }
 
 func (svcFwd *ServiceFWD) ListServicePodNames() []string {
