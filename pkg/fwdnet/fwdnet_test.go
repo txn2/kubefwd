@@ -445,13 +445,14 @@ func TestPlatformDetection(t *testing.T) {
 	}
 
 	// Verify the platform detection logic matches what the code expects
-	if goos == "linux" || goos == "windows" {
+	switch goos {
+	case "linux", "windows":
 		// Should try to use "lo" interface
 		_, err := net.InterfaceByName("lo")
 		if err != nil && goos == "linux" {
 			t.Logf("Warning: 'lo' interface not found on Linux")
 		}
-	} else if goos == "darwin" {
+	case "darwin":
 		// Should use "lo0" interface
 		_, err := net.InterfaceByName("lo0")
 		if err != nil {
