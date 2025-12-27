@@ -1,8 +1,6 @@
 module github.com/txn2/kubefwd
 
-go 1.24.0
-
-toolchain go1.24.7
+go 1.25.0
 
 require (
 	github.com/bep/debounce v1.2.0
@@ -17,7 +15,7 @@ require (
 	golang.org/x/sys v0.39.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.34.3
-	k8s.io/apimachinery v0.34.3
+	k8s.io/apimachinery v0.35.0
 	k8s.io/cli-runtime v0.31.0
 	k8s.io/client-go v0.34.3
 	k8s.io/klog/v2 v2.130.1
@@ -27,6 +25,7 @@ require (
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
