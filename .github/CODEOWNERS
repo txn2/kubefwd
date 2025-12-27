@@ -1,0 +1,13 @@
+# Default owners for everything in the repo
+* @cjimti
+
+# TUI components
+/pkg/fwdtui/ @cjimti
+
+# Documentation
+/docs/ @cjimti
+*.md @cjimti
+
+# CI/CD and release configuration
+/.github/ @cjimti
+.goreleaser.yml @cjimti
