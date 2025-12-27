@@ -10,6 +10,16 @@ permissions:
   contents: read
 
 jobs:
+  validate-actions:
+    name: Validate Action SHAs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate GitHub Action SHA pins
+        run: ./scripts/validate-action-shas.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
