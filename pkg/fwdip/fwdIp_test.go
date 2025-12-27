@@ -871,3 +871,234 @@ func TestGetIP_NonExistentConfigFile(t *testing.T) {
 		t.Errorf("Expected fallback to loopback IP in 127.x.x.x range, got %s", ip.String())
 	}
 }
+
+// TestRegisterHostname tests registering hostnames
+func TestRegisterHostname(t *testing.T) {
+	ResetRegistry()
+
+	RegisterHostname("my-service")
+	RegisterHostname("my-service.default")
+	RegisterHostname("my-service.default.svc.cluster.local")
+
+	hostnames := GetRegisteredHostnames()
+
+	if len(hostnames) != 3 {
+		t.Errorf("Expected 3 hostnames, got %d", len(hostnames))
+	}
+
+	expected := []string{"my-service", "my-service.default", "my-service.default.svc.cluster.local"}
+	for i, h := range expected {
+		if hostnames[i] != h {
+			t.Errorf("Expected hostname %s at index %d, got %s", h, i, hostnames[i])
+		}
+	}
+}
+
+// TestGetRegisteredHostnames_ReturnsACopy tests that GetRegisteredHostnames returns a copy
+func TestGetRegisteredHostnames_ReturnsACopy(t *testing.T) {
+	ResetRegistry()
+
+	RegisterHostname("host1")
+	RegisterHostname("host2")
+
+	hostnames := GetRegisteredHostnames()
+	originalLen := len(hostnames)
+
+	// Modify the returned slice
+	hostnames = append(hostnames, "host3")
+
+	// Original should be unchanged
+	hostnames2 := GetRegisteredHostnames()
+	if len(hostnames2) != originalLen {
+		t.Error("GetRegisteredHostnames should return a copy, not the original slice")
+	}
+}
+
+// TestGetRegisteredHostnames_Empty tests empty hostnames
+func TestGetRegisteredHostnames_Empty(t *testing.T) {
+	ResetRegistry()
+
+	hostnames := GetRegisteredHostnames()
+
+	if len(hostnames) != 0 {
+		t.Errorf("Expected 0 hostnames after reset, got %d", len(hostnames))
+	}
+}
+
+// TestResetRegistry tests the ResetRegistry function
+func TestResetRegistry(t *testing.T) {
+	// First add some state
+	ResetRegistry()
+
+	RegisterHostname("test-host")
+
+	// Verify state exists
+	hostnames := GetRegisteredHostnames()
+	if len(hostnames) != 1 {
+		t.Errorf("Expected 1 hostname before reset, got %d", len(hostnames))
+	}
+
+	// Reset
+	ResetRegistry()
+
+	// Verify all state is cleared
+	hostnames = GetRegisteredHostnames()
+	if len(hostnames) != 0 {
+		t.Errorf("Expected 0 hostnames after reset, got %d", len(hostnames))
+	}
+
+	// Test that forwardConfiguration is reset by verifying we can get IP
+	// (forwardConfiguration is also set to nil in ResetRegistry)
+	opts := ForwardIPOpts{
+		ServiceName: "reset-test-svc",
+		PodName:     "reset-test-pod",
+		Context:     "ctx",
+		ClusterN:    0,
+		NamespaceN:  0,
+	}
+	ip, err := GetIP(opts)
+	if err != nil {
+		t.Fatalf("GetIP failed after reset: %v", err)
+	}
+
+	// Should get a valid loopback IP
+	if !ip.IsLoopback() {
+		t.Errorf("Expected loopback IP after reset, got %s", ip.String())
+	}
+}
+
+// TestServiceConfiguration_String tests the String method
+func TestServiceConfiguration_String(t *testing.T) {
+	cfg := ServiceConfiguration{
+		Name: "my-service",
+		IP:   "127.1.27.50",
+	}
+
+	result := cfg.String()
+	expected := "Name: my-service IP:127.1.27.50"
+
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+}
+
+// TestServiceConfiguration_MatchesName tests the MatchesName method
+func TestServiceConfiguration_MatchesName(t *testing.T) {
+	cfg1 := &ServiceConfiguration{Name: "my-service", IP: "127.0.0.1"}
+	cfg2 := &ServiceConfiguration{Name: "my-service", IP: "127.0.0.2"}
+	cfg3 := &ServiceConfiguration{Name: "other-service", IP: "127.0.0.3"}
+
+	if !cfg1.MatchesName(cfg2) {
+		t.Error("Expected same names to match")
+	}
+
+	if cfg1.MatchesName(cfg3) {
+		t.Error("Expected different names not to match")
+	}
+}
+
+// TestForwardIPOpts_MatchList_NamespaceN tests match list for different namespaces
+func TestForwardIPOpts_MatchList_NamespaceN(t *testing.T) {
+	opts := ForwardIPOpts{
+		ServiceName: "my-svc",
+		PodName:     "my-pod",
+		Context:     "my-ctx",
+		Namespace:   "ns2",
+		ClusterN:    0,
+		NamespaceN:  1, // Non-zero namespace
+	}
+
+	matchList := opts.MatchList()
+
+	// For ClusterN == 0 && NamespaceN > 0, should include namespace in names
+	expectedMatches := []string{
+		"my-svc.ns2",
+		"my-svc.ns2.svc",
+		"my-pod.ns2",
+		"my-pod.my-svc.ns2",
+	}
+
+	for _, expected := range expectedMatches {
+		found := false
+		for _, match := range matchList {
+			if match == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected match list to contain %s for NamespaceN > 0", expected)
+		}
+	}
+
+	// Should NOT contain just the service name (since NamespaceN > 0)
+	for _, match := range matchList {
+		if match == "my-svc" {
+			t.Error("Did not expect match list to contain just 'my-svc' for NamespaceN > 0")
+			break
+		}
+	}
+}
+
+// TestForwardIPOpts_MatchList_BothNonZero tests match list for both cluster and namespace non-zero
+func TestForwardIPOpts_MatchList_BothNonZero(t *testing.T) {
+	opts := ForwardIPOpts{
+		ServiceName: "my-svc",
+		PodName:     "my-pod",
+		Context:     "cluster2",
+		Namespace:   "ns2",
+		ClusterN:    1,
+		NamespaceN:  1,
+	}
+
+	matchList := opts.MatchList()
+
+	// For ClusterN > 0 && NamespaceN > 0, should include both context and namespace
+	expectedMatches := []string{
+		"my-svc.ns2.cluster2",
+		"my-pod.ns2.cluster2",
+		"my-svc.ns2.svc.cluster2",
+		"my-pod.my-svc.ns2.cluster2",
+	}
+
+	for _, expected := range expectedMatches {
+		found := false
+		for _, match := range matchList {
+			if match == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected match list to contain %s for both ClusterN > 0 and NamespaceN > 0", expected)
+		}
+	}
+
+	// Verify we got the expected count (9 items for this case)
+	if len(matchList) != 9 {
+		t.Errorf("Expected 9 match list items for both non-zero, got %d", len(matchList))
+	}
+}
+
+// TestRegisterHostname_Concurrent tests concurrent hostname registration
+func TestRegisterHostname_Concurrent(t *testing.T) {
+	ResetRegistry()
+
+	var wg sync.WaitGroup
+	numGoroutines := 50
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			RegisterHostname(fmt.Sprintf("host-%d", n))
+		}(i)
+	}
+
+	wg.Wait()
+
+	hostnames := GetRegisteredHostnames()
+	if len(hostnames) != numGoroutines {
+		t.Errorf("Expected %d hostnames, got %d", numGoroutines, len(hostnames))
+	}
+}
