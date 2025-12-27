@@ -6,7 +6,7 @@ coverage.out
 dist
 vendor
 dist/
-kubefwd
+/kubefwd
 RELEASE_*
 NOTES_*
 site/
