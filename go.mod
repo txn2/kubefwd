@@ -12,7 +12,7 @@ require (
 	github.com/evertras/bubble-table v0.19.2
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.2
 	github.com/txn2/txeh v1.7.0
 	golang.org/x/sys v0.38.0
 	gopkg.in/yaml.v2 v2.4.0
