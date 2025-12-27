@@ -1617,11 +1617,13 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		t.Fatalf("Expected %d PodRemoved events, got %d", numForwards, collector.CountOfType(events.PodRemoved))
 	}
 
-	// Filter events for this specific service (extra safety against parallel test pollution)
+	// Filter events for this specific test's pods (extra safety against parallel test pollution)
+	// This test uses pod-a, pod-b, pod-c
+	validPods := map[string]bool{"pod-a": true, "pod-b": true, "pod-c": true}
 	allPodRemovedEvents := collector.EventsOfType(events.PodRemoved)
 	var podRemovedEvents []events.Event
 	for _, e := range allPodRemovedEvents {
-		if e.Service == "test-svc" {
+		if e.Service == "test-svc" && validPods[e.PodName] {
 			podRemovedEvents = append(podRemovedEvents, e)
 		}
 	}
