@@ -575,7 +575,12 @@ func TestAddServicePod(t *testing.T) {
 		LocalPort: "8080",
 	}
 
-	svcFwd.AddServicePod(pfo)
+	isNew := svcFwd.AddServicePod(pfo)
+
+	// Should return true for new pod
+	if !isNew {
+		t.Error("AddServicePod should return true for new pod")
+	}
 
 	// Should be in map with key "service.podname.localport"
 	if _, found := svcFwd.PortForwards["test-svc.test-pod.8080"]; !found {
@@ -606,12 +611,70 @@ func TestAddServicePod_Duplicate(t *testing.T) {
 		LocalPort: "8080",
 	}
 
-	svcFwd.AddServicePod(pfo1)
-	svcFwd.AddServicePod(pfo2)
+	isNew1 := svcFwd.AddServicePod(pfo1)
+	isNew2 := svcFwd.AddServicePod(pfo2)
+
+	// First should return true, second should return false
+	if !isNew1 {
+		t.Error("First AddServicePod should return true")
+	}
+	if isNew2 {
+		t.Error("Second AddServicePod should return false for duplicate")
+	}
 
 	// Should only have one entry (second one doesn't add duplicate)
 	if len(svcFwd.PortForwards) != 1 {
 		t.Errorf("Expected 1 entry (no duplicates), got %d", len(svcFwd.PortForwards))
+	}
+}
+
+// TestAddServicePod_ConcurrentDuplicates tests that concurrent adds of the same pod
+// only result in one entry and only one returns true (the winner of the race)
+func TestAddServicePod_ConcurrentDuplicates(t *testing.T) {
+	svcFwd := &ServiceFWD{
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+	}
+
+	var wg sync.WaitGroup
+	numGoroutines := 50
+	successCount := 0
+	var mu sync.Mutex
+
+	// All goroutines try to add the SAME pod
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pfo := &fwdport.PortForwardOpts{
+				Service:        "test-svc",
+				PodName:        "same-pod", // Same pod for all
+				LocalPort:      "8080",
+				ManualStopChan: make(chan struct{}),
+				DoneChan:       make(chan struct{}),
+			}
+			if svcFwd.AddServicePod(pfo) {
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Only ONE should succeed (win the race)
+	if successCount != 1 {
+		t.Errorf("Expected exactly 1 successful AddServicePod for same pod, got %d", successCount)
+	}
+
+	// Should only have one entry
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if count != 1 {
+		t.Errorf("Expected 1 entry in PortForwards, got %d", count)
 	}
 }
 
