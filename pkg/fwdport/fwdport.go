@@ -214,7 +214,7 @@ type PortForwardOpts struct {
 	Out        *fwdpub.Publisher
 	Config     restclient.Config
 	ClientSet  kubernetes.Interface
-	RESTClient restclient.RESTClient
+	RESTClient *restclient.RESTClient
 
 	Service       string
 	ServiceFwd    ServiceFWD
@@ -311,6 +311,9 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	// if need to set timeout, set it here.
 	// restClient.Client.Timeout = 32
+	if pfo.RESTClient == nil {
+		return fmt.Errorf("RESTClient is nil for pod %s", pfo.PodName)
+	}
 	req := pfo.RESTClient.Post().
 		Resource("pods").
 		Namespace(pfo.Namespace).

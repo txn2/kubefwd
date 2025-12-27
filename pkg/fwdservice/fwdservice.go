@@ -34,7 +34,7 @@ type ServiceFWD struct {
 	ListOptions  metav1.ListOptions
 	Hostfile     *fwdport.HostFileWithLock
 	ClientConfig restclient.Config
-	RESTClient   restclient.RESTClient
+	RESTClient   *restclient.RESTClient
 
 	// Context is a unique key (string) in kubectl config representing
 	// a user/cluster combination. Kubefwd uses context as the

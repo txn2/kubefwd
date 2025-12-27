@@ -459,7 +459,7 @@ Try:
 				ListOptions:       listOptions,
 				HostFile:          hostFileWithLock,
 				ClientConfig:      *restConfig,
-				RESTClient:        *restClient,
+				RESTClient:        restClient,
 				ClusterN:          i,
 				NamespaceN:        ii,
 				Domain:            domain,
@@ -532,7 +532,7 @@ type NamespaceOpts struct {
 
 	ClientSet    kubernetes.Interface
 	ClientConfig restclient.Config
-	RESTClient   restclient.RESTClient
+	RESTClient   *restclient.RESTClient
 
 	// Context is a unique key (string) in kubectl config representing
 	// a user/cluster combination. Kubefwd uses context as the

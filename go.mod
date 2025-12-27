@@ -1,6 +1,8 @@
 module github.com/txn2/kubefwd
 
-go 1.25.0
+go 1.24.0
+
+toolchain go1.24.7
 
 require (
 	github.com/bep/debounce v1.2.0
@@ -14,10 +16,10 @@ require (
 	github.com/txn2/txeh v1.7.0
 	golang.org/x/sys v0.38.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.35.0
-	k8s.io/apimachinery v0.35.0
+	k8s.io/api v0.34.3
+	k8s.io/apimachinery v0.34.3
 	k8s.io/cli-runtime v0.31.0
-	k8s.io/client-go v0.35.0
+	k8s.io/client-go v0.34.3
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/kubectl v0.31.0
 )
@@ -43,6 +45,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
