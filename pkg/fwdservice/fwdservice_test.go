@@ -1,6 +1,8 @@
 package fwdservice
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	restclient "k8s.io/client-go/rest"
 )
 
 // setupMockInterface sets up the mock interface manager for tests
@@ -24,6 +28,42 @@ func setupMockInterface() func() {
 	return func() {
 		fwdnet.ResetManager()
 	}
+}
+
+// setupMockRESTClient creates a mock REST client that blocks on requests.
+// This allows tests to verify that pods are added to the PortForwards map
+// before PortForward() returns. Returns the RESTClient and a cleanup function.
+func setupMockRESTClient() (*restclient.RESTClient, func()) {
+	// Create a test server that blocks indefinitely on port-forward requests
+	// This simulates a real port-forward connection staying open
+	blockChan := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until cleanup is called
+		<-blockChan
+	}))
+
+	config := &restclient.Config{
+		Host: server.URL,
+		ContentConfig: restclient.ContentConfig{
+			GroupVersion:         &v1.SchemeGroupVersion,
+			NegotiatedSerializer: scheme.Codecs.WithoutConversion(),
+		},
+	}
+
+	client, err := restclient.RESTClientFor(config)
+	if err != nil {
+		// If we can't create a client, return nil - tests should handle this
+		server.Close()
+		close(blockChan)
+		return nil, func() {}
+	}
+
+	cleanup := func() {
+		close(blockChan) // Unblock any waiting handlers
+		server.Close()
+	}
+
+	return client, cleanup
 }
 
 // mockDebouncer for testing debouncing behavior
@@ -207,6 +247,9 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -240,6 +283,7 @@ func TestSyncPodForwards_NormalService(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute), // Old sync time
+		RESTClient:           restClient,
 	}
 
 	// Sync with force=true to bypass debouncer
@@ -279,6 +323,9 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -311,6 +358,7 @@ func TestSyncPodForwards_HeadlessService(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
 	}
 
 	svcFwd.SyncPodForwards(true)
@@ -388,6 +436,9 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
 
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
 
@@ -418,6 +469,7 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now(), // Recent sync
+		RESTClient:           restClient,
 	}
 
 	// Call with force=true - should bypass debouncer
@@ -443,6 +495,9 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
 
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -474,6 +529,7 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-6 * time.Minute), // 6 minutes ago
+		RESTClient:           restClient,
 	}
 
 	// Call without force, but LastSyncedAt is >5 minutes ago
@@ -498,6 +554,9 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 	cleanup := setupMockInterface()
 	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
 
 	namespace := "default"
 	labels := map[string]string{"app": "test"}
@@ -530,6 +589,7 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 		Hostfile:             hostFile,
 		SyncDebouncer:        debouncer.debounce,
 		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
 	}
 
 	// Add a mock pod forward entry for a pod that no longer exists
