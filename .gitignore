@@ -2,6 +2,7 @@
 .idea
 .DS_Store
 .vscode
+coverage.out
 dist
 vendor
 dist/
