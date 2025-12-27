@@ -1,0 +1,69 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Important:** While we appreciate feature suggestions, feature development is currently limited to maintainers and trusted contributors.
+
+        We welcome community contributions for:
+        - Bug fixes
+        - Tests
+        - Documentation improvements
+        - Stability and compatibility enhancements
+
+        See [CONTRIBUTING.md](https://github.com/txn2/kubefwd/blob/master/CONTRIBUTING.md) for details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? Is this related to a frustration with kubefwd?
+      placeholder: |
+        I'm always frustrated when...
+
+        OR
+
+        Currently there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this to work? Describe the feature in detail.
+      placeholder: |
+        It would be great if kubefwd could...
+
+        Example usage:
+        sudo -E kubefwd svc -n default --new-flag
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions or workarounds have you considered?
+      placeholder: |
+        I've tried using X, but it doesn't work because...
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: How important is this feature to your workflow?
+      options:
+        - Nice to have
+        - Would significantly improve my workflow
+        - Blocking my use of kubefwd
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or examples that would help explain the feature
