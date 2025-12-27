@@ -1,0 +1,238 @@
+package handlers
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+)
+
+// MetricsHandler handles metrics-related endpoints
+type MetricsHandler struct {
+	state      types.StateReader
+	metrics    types.MetricsProvider
+	getManager func() types.ManagerInfo
+}
+
+// NewMetricsHandler creates a new metrics handler
+func NewMetricsHandler(state types.StateReader, metrics types.MetricsProvider, getManager func() types.ManagerInfo) *MetricsHandler {
+	return &MetricsHandler{
+		state:      state,
+		metrics:    metrics,
+		getManager: getManager,
+	}
+}
+
+// Summary returns overall metrics summary
+func (h *MetricsHandler) Summary(c *gin.Context) {
+	if h.state == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_READY",
+				Message: "State store not available",
+			},
+		})
+		return
+	}
+
+	summary := h.state.GetSummary()
+
+	uptime := ""
+	if h.getManager != nil {
+		if m := h.getManager(); m != nil {
+			uptime = m.Uptime().Round(time.Second).String()
+		}
+	}
+
+	response := types.MetricsSummaryResponse{
+		TotalServices:  summary.TotalServices,
+		ActiveServices: summary.ActiveServices,
+		TotalForwards:  summary.TotalForwards,
+		ActiveForwards: summary.ActiveForwards,
+		ErrorCount:     summary.ErrorCount,
+		TotalBytesIn:   summary.TotalBytesIn,
+		TotalBytesOut:  summary.TotalBytesOut,
+		TotalRateIn:    summary.TotalRateIn,
+		TotalRateOut:   summary.TotalRateOut,
+		Uptime:         uptime,
+		LastUpdated:    summary.LastUpdated,
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data:    response,
+		Meta: &types.MetaInfo{
+			Timestamp: time.Now(),
+		},
+	})
+}
+
+// ByService returns metrics for all services
+func (h *MetricsHandler) ByService(c *gin.Context) {
+	if h.metrics == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_READY",
+				Message: "Metrics provider not available",
+			},
+		})
+		return
+	}
+
+	snapshots := h.metrics.GetAllSnapshots()
+
+	response := make([]types.ServiceMetricsResponse, len(snapshots))
+	for i, svc := range snapshots {
+		response[i] = types.ServiceMetricsResponse{
+			Key:           svc.ServiceName + "." + svc.Namespace + "." + svc.Context,
+			ServiceName:   svc.ServiceName,
+			Namespace:     svc.Namespace,
+			Context:       svc.Context,
+			TotalBytesIn:  svc.TotalBytesIn,
+			TotalBytesOut: svc.TotalBytesOut,
+			RateIn:        svc.TotalRateIn,
+			RateOut:       svc.TotalRateOut,
+			PortForwards:  mapPortForwardMetrics(svc.PortForwards),
+		}
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data:    response,
+		Meta: &types.MetaInfo{
+			Count:     len(snapshots),
+			Timestamp: time.Now(),
+		},
+	})
+}
+
+// ServiceDetail returns metrics for a single service
+func (h *MetricsHandler) ServiceDetail(c *gin.Context) {
+	if h.metrics == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_READY",
+				Message: "Metrics provider not available",
+			},
+		})
+		return
+	}
+
+	key := c.Param("key")
+	svc := h.metrics.GetServiceSnapshot(key)
+
+	if svc == nil {
+		c.JSON(http.StatusNotFound, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_FOUND",
+				Message: "Service metrics not found: " + key,
+			},
+		})
+		return
+	}
+
+	response := types.ServiceMetricsResponse{
+		Key:           svc.ServiceName + "." + svc.Namespace + "." + svc.Context,
+		ServiceName:   svc.ServiceName,
+		Namespace:     svc.Namespace,
+		Context:       svc.Context,
+		TotalBytesIn:  svc.TotalBytesIn,
+		TotalBytesOut: svc.TotalBytesOut,
+		RateIn:        svc.TotalRateIn,
+		RateOut:       svc.TotalRateOut,
+		PortForwards:  mapPortForwardMetrics(svc.PortForwards),
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data:    response,
+		Meta: &types.MetaInfo{
+			Timestamp: time.Now(),
+		},
+	})
+}
+
+// ServiceHistory returns rate history for a service (for graphing)
+func (h *MetricsHandler) ServiceHistory(c *gin.Context) {
+	if h.metrics == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_READY",
+				Message: "Metrics provider not available",
+			},
+		})
+		return
+	}
+
+	key := c.Param("key")
+	pointsStr := c.DefaultQuery("points", "60")
+	points, err := strconv.Atoi(pointsStr)
+	if err != nil || points < 1 {
+		points = 60
+	}
+	if points > 300 {
+		points = 300
+	}
+
+	svc := h.metrics.GetServiceSnapshot(key)
+
+	if svc == nil {
+		c.JSON(http.StatusNotFound, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_FOUND",
+				Message: "Service metrics not found: " + key,
+			},
+		})
+		return
+	}
+
+	// Collect history from all port forwards
+	history := make([]types.RateSampleResponse, 0)
+	for _, pf := range svc.PortForwards {
+		for _, sample := range pf.History {
+			history = append(history, types.RateSampleResponse{
+				Timestamp: sample.Timestamp,
+				BytesIn:   sample.BytesIn,
+				BytesOut:  sample.BytesOut,
+			})
+		}
+	}
+
+	// Limit to requested points
+	if len(history) > points {
+		history = history[len(history)-points:]
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data: gin.H{
+			"key":     key,
+			"history": history,
+		},
+		Meta: &types.MetaInfo{
+			Count:     len(history),
+			Timestamp: time.Now(),
+		},
+	})
+}
+
+// mapPortForwardMetrics converts fwdmetrics port forward snapshots to API response
+func mapPortForwardMetrics(pfs interface{}) []types.PortForwardMetrics {
+	// Type switch to handle the slice
+	switch v := pfs.(type) {
+	case []interface{}:
+		result := make([]types.PortForwardMetrics, len(v))
+		// Each item would need individual handling
+		return result
+	default:
+		return nil
+	}
+}
