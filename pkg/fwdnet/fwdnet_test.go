@@ -506,3 +506,221 @@ func TestConcurrentReadyInterface(t *testing.T) {
 		t.Log("All concurrent ReadyInterface calls succeeded")
 	}
 }
+
+// TestMockInterfaceManager tests the MockInterfaceManager
+func TestMockInterfaceManager(t *testing.T) {
+	mock := NewMockInterfaceManager()
+
+	// Test initial state
+	if mock.GetReadyInterfaceCallCount() != 0 {
+		t.Errorf("Expected 0 ReadyInterface calls, got %d", mock.GetReadyInterfaceCallCount())
+	}
+
+	if mock.GetRemoveAliasCallCount() != 0 {
+		t.Errorf("Expected 0 RemoveInterfaceAlias calls, got %d", mock.GetRemoveAliasCallCount())
+	}
+
+	// Test ReadyInterface
+	opts := fwdip.ForwardIPOpts{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+	}
+
+	ip, err := mock.ReadyInterface(opts)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if ip == nil {
+		t.Error("Expected non-nil IP")
+	}
+
+	if mock.GetReadyInterfaceCallCount() != 1 {
+		t.Errorf("Expected 1 ReadyInterface call, got %d", mock.GetReadyInterfaceCallCount())
+	}
+
+	// Test same service returns same IP
+	ip2, err := mock.ReadyInterface(opts)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !ip.Equal(ip2) {
+		t.Errorf("Expected same IP for same service, got %s and %s", ip, ip2)
+	}
+
+	// Test different service gets different IP
+	opts2 := fwdip.ForwardIPOpts{
+		ServiceName: "other-svc",
+		Namespace:   "default",
+	}
+
+	ip3, err := mock.ReadyInterface(opts2)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if ip.Equal(ip3) {
+		t.Errorf("Expected different IP for different service, got %s", ip3)
+	}
+
+	// Test RemoveInterfaceAlias
+	mock.RemoveInterfaceAlias(ip)
+
+	if mock.GetRemoveAliasCallCount() != 1 {
+		t.Errorf("Expected 1 RemoveInterfaceAlias call, got %d", mock.GetRemoveAliasCallCount())
+	}
+}
+
+// TestMockInterfaceManager_Error tests error handling in mock
+func TestMockInterfaceManager_Error(t *testing.T) {
+	mock := NewMockInterfaceManager()
+
+	// Set error
+	testErr := net.UnknownNetworkError("test error")
+	mock.ReadyInterfaceErr = testErr
+
+	opts := fwdip.ForwardIPOpts{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+	}
+
+	_, err := mock.ReadyInterface(opts)
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	if err.Error() != testErr.Error() {
+		t.Errorf("Expected error %q, got %q", testErr, err)
+	}
+}
+
+// TestMockInterfaceManager_Reset tests reset functionality
+func TestMockInterfaceManager_Reset(t *testing.T) {
+	mock := NewMockInterfaceManager()
+
+	// Add some state
+	opts := fwdip.ForwardIPOpts{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+	}
+	ip, _ := mock.ReadyInterface(opts)
+	mock.RemoveInterfaceAlias(ip)
+
+	if mock.GetReadyInterfaceCallCount() != 1 {
+		t.Error("Expected 1 call before reset")
+	}
+
+	// Reset
+	mock.Reset()
+
+	if mock.GetReadyInterfaceCallCount() != 0 {
+		t.Errorf("Expected 0 calls after reset, got %d", mock.GetReadyInterfaceCallCount())
+	}
+
+	if mock.GetRemoveAliasCallCount() != 0 {
+		t.Errorf("Expected 0 alias calls after reset, got %d", mock.GetRemoveAliasCallCount())
+	}
+
+	// Verify IP counter was reset
+	ip2, _ := mock.ReadyInterface(opts)
+	if ip2.String() != "127.1.27.1" {
+		t.Errorf("Expected IP counter to reset to 127.1.27.1, got %s", ip2)
+	}
+}
+
+// TestSetManager tests setting a custom manager
+func TestSetManager(t *testing.T) {
+	// Save original manager
+	defer ResetManager()
+
+	mock := NewMockInterfaceManager()
+	SetManager(mock)
+
+	opts := fwdip.ForwardIPOpts{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+		Port:        "8080",
+	}
+
+	// Calls should go to mock
+	_, err := ReadyInterface(opts)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if mock.GetReadyInterfaceCallCount() != 1 {
+		t.Errorf("Expected mock to receive 1 call, got %d", mock.GetReadyInterfaceCallCount())
+	}
+
+	// Test RemoveInterfaceAlias goes to mock
+	testIP := net.ParseIP("127.1.27.50")
+	RemoveInterfaceAlias(testIP)
+
+	if mock.GetRemoveAliasCallCount() != 1 {
+		t.Errorf("Expected mock to receive 1 RemoveInterfaceAlias call, got %d", mock.GetRemoveAliasCallCount())
+	}
+}
+
+// TestResetManager tests restoring the default manager
+func TestResetManager(t *testing.T) {
+	mock := NewMockInterfaceManager()
+	SetManager(mock)
+
+	// Verify mock is active
+	opts := fwdip.ForwardIPOpts{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+		Port:        "8080",
+	}
+
+	_, _ = ReadyInterface(opts)
+	if mock.GetReadyInterfaceCallCount() != 1 {
+		t.Error("Expected mock to be active")
+	}
+
+	// Reset to default
+	ResetManager()
+
+	// Calls should now go to default manager (not the mock)
+	opts.ServiceName = "another-svc"
+	_, _ = ReadyInterface(opts)
+
+	// Mock call count should still be 1 (not incremented)
+	if mock.GetReadyInterfaceCallCount() != 1 {
+		t.Error("Expected calls to go to default manager after reset")
+	}
+}
+
+// TestGetManager_ThreadSafety tests concurrent access to manager
+func TestGetManager_ThreadSafety(t *testing.T) {
+	defer ResetManager()
+
+	numGoroutines := 50
+	done := make(chan bool, numGoroutines*2)
+
+	// Mix of getManager calls and SetManager/ResetManager calls
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			_ = getManager()
+			done <- true
+		}()
+
+		go func(n int) {
+			if n%2 == 0 {
+				SetManager(NewMockInterfaceManager())
+			} else {
+				ResetManager()
+			}
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines*2; i++ {
+		<-done
+	}
+
+	// If we get here without panic/race, the test passes
+	t.Log("Concurrent manager access completed without issues")
+}
