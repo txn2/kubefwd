@@ -77,16 +77,16 @@ func newRootCmd() *cobra.Command {
 		Use:   "kubefwd",
 		Short: "Expose Kubernetes services for local development.",
 		Example: " kubefwd services --help\n" +
-			"  kubefwd svc -n the-project\n" +
-			"  kubefwd svc -n the-project -l env=dev,component=api\n" +
-			"  kubefwd svc -n the-project -f metadata.name=service-name\n" +
-			"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
-			"  kubefwd svc -n default -n the-project\n" +
-			"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
-			"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
-			"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
-			"  kubefwd svc --all-namespaces\n" +
-			"  kubefwd svc --hosts-path /etc/hosts",
+			"  kubefwd svc -n the-project --tui\n" +
+			"  kubefwd svc -n the-project -l env=dev,component=api --tui\n" +
+			"  kubefwd svc -n the-project -f metadata.name=service-name --tui\n" +
+			"  kubefwd svc -n default -l \"app in (ws, api)\" --tui\n" +
+			"  kubefwd svc -n default -n the-project --tui\n" +
+			"  kubefwd svc -n the-project -m 80:8080 -m 443:1443 --tui\n" +
+			"  kubefwd svc -n the-project -z path/to/conf.yml --tui\n" +
+			"  kubefwd svc -n the-project -r svc.ns:127.3.3.1 --tui\n" +
+			"  kubefwd svc --all-namespaces --tui\n" +
+			"  kubefwd svc --hosts-path /etc/hosts --tui",
 
 		Long: globalUsage,
 	}
