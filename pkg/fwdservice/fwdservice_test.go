@@ -7,6 +7,8 @@ import (
 
 	"github.com/txn2/kubefwd/pkg/fwdnet"
 	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1436,5 +1438,180 @@ func TestForceReconnect_ClearsPortForwardsBeforeSync(t *testing.T) {
 
 	if !syncCalledWithForwardsCleared {
 		t.Errorf("Expected port forwards to be cleared before sync was called, found %d", forwardsAtSyncTime)
+	}
+}
+
+// ============================================================================
+// TUI Event Emission Tests
+// ============================================================================
+
+// TestAddServicePod_EmitsPodAdded verifies that AddServicePod emits a PodAdded event
+func TestAddServicePod_EmitsPodAdded(t *testing.T) {
+	// Enable TUI test mode with event collection
+	collector, cleanup := fwdtui.EnableTestMode()
+	defer cleanup()
+
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		Namespace:            "default",
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+	}
+
+	pfo := &fwdport.PortForwardOpts{
+		Service:   "test-svc",
+		PodName:   "test-pod-abc123",
+		Namespace: "default",
+		Context:   "test-context",
+		LocalPort: "8080",
+	}
+
+	// Add the pod
+	isNew := svcFwd.AddServicePod(pfo)
+
+	if !isNew {
+		t.Fatal("Expected AddServicePod to return true for new pod")
+	}
+
+	// Wait for event to be processed (async)
+	if !collector.WaitForEventType(events.PodAdded, 1, 500*time.Millisecond) {
+		t.Fatal("Expected PodAdded event to be emitted")
+	}
+
+	// Verify event details
+	podAddedEvents := collector.EventsOfType(events.PodAdded)
+	if len(podAddedEvents) != 1 {
+		t.Fatalf("Expected 1 PodAdded event, got %d", len(podAddedEvents))
+	}
+
+	event := podAddedEvents[0]
+	if event.Service != "test-svc" {
+		t.Errorf("Expected Service 'test-svc', got '%s'", event.Service)
+	}
+	if event.PodName != "test-pod-abc123" {
+		t.Errorf("Expected PodName 'test-pod-abc123', got '%s'", event.PodName)
+	}
+	if event.Namespace != "default" {
+		t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
+	}
+	if event.LocalPort != "8080" {
+		t.Errorf("Expected LocalPort '8080', got '%s'", event.LocalPort)
+	}
+}
+
+// TestAddServicePod_DuplicateDoesNotEmit verifies duplicate adds don't emit events
+func TestAddServicePod_DuplicateDoesNotEmit(t *testing.T) {
+	collector, cleanup := fwdtui.EnableTestMode()
+	defer cleanup()
+
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		Namespace:            "default",
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+	}
+
+	pfo1 := &fwdport.PortForwardOpts{
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		Namespace: "default",
+		Context:   "test-context",
+		LocalPort: "8080",
+	}
+
+	pfo2 := &fwdport.PortForwardOpts{
+		Service:   "test-svc",
+		PodName:   "test-pod",
+		Namespace: "default",
+		Context:   "test-context",
+		LocalPort: "8080",
+	}
+
+	// Add first pod
+	svcFwd.AddServicePod(pfo1)
+	// Try to add duplicate
+	isNew := svcFwd.AddServicePod(pfo2)
+
+	if isNew {
+		t.Error("Expected AddServicePod to return false for duplicate")
+	}
+
+	// Wait a bit for any events
+	time.Sleep(100 * time.Millisecond)
+
+	// Should only have 1 PodAdded event (from first add)
+	podAddedEvents := collector.EventsOfType(events.PodAdded)
+	if len(podAddedEvents) != 1 {
+		t.Errorf("Expected 1 PodAdded event (no duplicate), got %d", len(podAddedEvents))
+	}
+}
+
+// TestStopAllPortForwards_EmitsPodRemoved verifies that StopAllPortForwards emits
+// PodRemoved events for each stopped forward
+func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
+	collector, cleanup := fwdtui.EnableTestMode()
+	defer cleanup()
+
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		Namespace:            "default",
+		Context:              "test-context",
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		DoneChannel:          make(chan struct{}),
+	}
+
+	// Add multiple port forwards directly to the map
+	numForwards := 3
+	for i := 0; i < numForwards; i++ {
+		pfo := &fwdport.PortForwardOpts{
+			Service:        "test-svc",
+			PodName:        "pod-" + string(rune('a'+i)),
+			Namespace:      "default",
+			Context:        "test-context",
+			LocalPort:      "80",
+			ManualStopChan: make(chan struct{}),
+			DoneChan:       make(chan struct{}),
+		}
+		key := "test-svc.pod-" + string(rune('a'+i)) + ".80"
+		svcFwd.PortForwards[key] = pfo
+	}
+
+	// Stop all port forwards
+	svcFwd.StopAllPortForwards()
+
+	// Wait for events to be processed
+	if !collector.WaitForEventType(events.PodRemoved, numForwards, 500*time.Millisecond) {
+		t.Fatalf("Expected %d PodRemoved events, got %d", numForwards, collector.CountOfType(events.PodRemoved))
+	}
+
+	// Verify we got the right number of events
+	podRemovedEvents := collector.EventsOfType(events.PodRemoved)
+	if len(podRemovedEvents) != numForwards {
+		t.Errorf("Expected %d PodRemoved events, got %d", numForwards, len(podRemovedEvents))
+	}
+
+	// Verify each event has correct service info
+	for _, event := range podRemovedEvents {
+		if event.Service != "test-svc" {
+			t.Errorf("Expected Service 'test-svc', got '%s'", event.Service)
+		}
+		if event.Namespace != "default" {
+			t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
+		}
 	}
 }
