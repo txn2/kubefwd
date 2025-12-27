@@ -904,8 +904,8 @@ func TestGetRegisteredHostnames_ReturnsACopy(t *testing.T) {
 	hostnames := GetRegisteredHostnames()
 	originalLen := len(hostnames)
 
-	// Modify the returned slice
-	hostnames = append(hostnames, "host3")
+	// Modify the returned slice (intentionally discarding result to test immutability)
+	_ = append(hostnames, "host3")
 
 	// Original should be unchanged
 	hostnames2 := GetRegisteredHostnames()

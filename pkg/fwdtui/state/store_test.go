@@ -1041,9 +1041,9 @@ func TestRateHistory_GetAllHistory(t *testing.T) {
 		t.Errorf("Expected 5 rateOut samples, got %d", len(rateOut))
 	}
 
-	// Verify it returns a copy
+	// Verify it returns a copy (intentionally discarding result to test immutability)
 	originalLen := len(rateIn)
-	rateIn = append(rateIn, 999.0)
+	_ = append(rateIn, 999.0)
 
 	rateIn2, _ := h.GetAllHistory("fwd1")
 	if len(rateIn2) != originalLen {
