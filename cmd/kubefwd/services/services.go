@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bep/debounce"
+	"github.com/txn2/kubefwd/pkg/fwdapi"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
@@ -56,6 +57,7 @@ var purgeStaleIps bool
 var resyncInterval time.Duration
 var retryInterval time.Duration
 var tuiMode bool
+var apiMode bool
 var autoReconnect bool
 
 // Version is set by the main package
@@ -86,7 +88,8 @@ func init() {
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
-	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI mode.")
+	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://api.kubefwd.local/ for automation and monitoring")
+	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI/API mode.")
 }
 
 var Cmd = &cobra.Command{
@@ -203,8 +206,25 @@ Try:
 		}
 	}
 
-	// Only show instructions in non-TUI mode
-	if !tuiMode {
+	// Initialize API mode if enabled
+	if apiMode {
+		fwdapi.Enable()
+		// API mode also needs the TUI state store and event bus for data access
+		// Enable TUI components without actually running the TUI
+		if !tuiMode {
+			fwdtui.Version = Version
+			fwdtui.Enable()
+			fwdmetrics.GetRegistry().Start()
+		}
+
+		// In API mode, enable auto-reconnect by default unless user explicitly disabled it
+		if !cmd.Flags().Changed("auto-reconnect") {
+			autoReconnect = true
+		}
+	}
+
+	// Only show instructions in non-TUI mode (and non-API-only mode)
+	if !tuiMode && !apiMode {
 		log.Println("Press [Ctrl-C] to stop forwarding.")
 		log.Println("'cat " + hostsPath + "' to see all host entries.")
 	}
@@ -298,6 +318,7 @@ Try:
 
 	// Initialize TUI manager if in TUI mode
 	var tuiManager *fwdtui.Manager
+	var apiManager *fwdapi.Manager
 	var stopOnce sync.Once
 	triggerShutdown := func() {
 		stopOnce.Do(func() {
@@ -372,6 +393,21 @@ Try:
 		})
 	}
 
+	// Initialize API manager if in API mode
+	if fwdapi.IsEnabled() {
+		apiManager = fwdapi.Init(stopListenCh, triggerShutdown, Version)
+
+		// Set up adapters for API data access
+		stateReader, metricsProvider, serviceController, eventStreamer := fwdapi.CreateAPIAdapters()
+		apiManager.SetStateReader(stateReader)
+		apiManager.SetMetricsProvider(metricsProvider)
+		apiManager.SetServiceController(serviceController)
+		apiManager.SetEventStreamer(eventStreamer)
+		apiManager.SetNamespaces(namespaces)
+		apiManager.SetContexts(contexts)
+		apiManager.SetTUIEnabled(tuiMode)
+	}
+
 	// Listen for shutdown signal from user
 	go func() {
 		sigChan := make(chan os.Signal, 2)
@@ -406,6 +442,13 @@ Try:
 	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
 
 	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
+
+	// Set up API network (loopback IP and hosts entry) if API mode enabled
+	if fwdapi.IsEnabled() {
+		if err := fwdapi.SetupAPINetwork(hostFileWithLock); err != nil {
+			log.Fatalf("Failed to setup API network: %s", err)
+		}
+	}
 
 	for i, ctx := range contexts {
 		// k8s REST config
@@ -474,14 +517,28 @@ Try:
 		}
 	}
 
+	// Start API server in background if enabled
+	if apiManager != nil {
+		go func() {
+			if err := apiManager.Run(); err != nil {
+				log.Errorf("API server error: %s", err)
+			}
+		}()
+	}
+
 	// If TUI mode, run the TUI (blocks until user quits)
 	// Otherwise, block until shutdown signal is received
 	if tuiManager != nil {
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
+	} else if apiManager != nil && !tuiMode {
+		// API-only mode (no TUI): show info and block
+		log.Infof("API server running at http://%s/ (http://%s)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.APIHostname)
+		log.Println("Press [Ctrl-C] to stop forwarding.")
+		<-stopListenCh
 	} else {
-		// In non-TUI mode, block until shutdown signal (Ctrl+C)
+		// Standard mode: block until shutdown signal (Ctrl+C)
 		<-stopListenCh
 	}
 
@@ -515,6 +572,19 @@ Try:
 		case <-time.After(1 * time.Second):
 			log.Debugf("Timeout waiting for TUI cleanup")
 		}
+	}
+
+	// Wait for API cleanup if enabled
+	if apiManager != nil {
+		apiManager.Stop()
+		select {
+		case <-apiManager.Done():
+			log.Debugf("API server cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for API cleanup")
+		}
+		// Clean up API network configuration
+		fwdapi.CleanupAPINetwork(hostFile)
 	}
 
 	// Final safety net: ensure all hosts are cleaned up
