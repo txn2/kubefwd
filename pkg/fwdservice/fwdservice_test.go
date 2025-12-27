@@ -545,13 +545,19 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	// Lock before reading PortForwards to avoid race condition
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	_, foundDeleted := svcFwd.PortForwards["test-svc.deleted-pod"]
+	svcFwd.NamespaceServiceLock.Unlock()
+
 	// Should only have the running pod now
-	if len(svcFwd.PortForwards) != 1 {
-		t.Errorf("Expected 1 pod after sync, got %d", len(svcFwd.PortForwards))
+	if count != 1 {
+		t.Errorf("Expected 1 pod after sync, got %d", count)
 	}
 
 	// Should NOT have the deleted pod
-	if _, found := svcFwd.PortForwards["test-svc.deleted-pod"]; found {
+	if foundDeleted {
 		t.Error("Deleted pod should have been removed from PortForwards")
 	}
 }
