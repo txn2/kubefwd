@@ -690,8 +690,8 @@ func TestWaitUntilPodRunning_ChannelClose(t *testing.T) {
 
 	wg.Wait()
 
-	// Should return nil when cancelled
+	// Should return nil when canceled
 	if returnedPod != nil {
-		t.Error("Expected nil pod when context cancelled")
+		t.Error("Expected nil pod when context canceled")
 	}
 }

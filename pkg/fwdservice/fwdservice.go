@@ -351,7 +351,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 			// Stop forwarding others, should there be. In case none of the currently
 			// forwarded pods are good to keep, podNameToKeep will be the empty string,
-			// and the comparison will mean we will remove all pods, which is the desired behaviour.
+			// and the comparison will mean we will remove all pods, which is the desired behavior.
 			for _, podName := range svcFwd.ListServicePodNames() {
 				if podName != podNameToKeep {
 					svcFwd.RemoveServicePod(podName)
