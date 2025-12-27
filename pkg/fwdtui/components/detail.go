@@ -536,7 +536,8 @@ func (m *DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		m.SetSize(msg.Width, msg.Height)
 
 	case tea.MouseMsg:
-		if msg.Button == tea.MouseButtonWheelUp {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
 			if m.currentTab == TabHTTP && m.httpScrollOffset > 0 {
 				m.httpScrollOffset -= 3
 				if m.httpScrollOffset < 0 {
@@ -547,7 +548,7 @@ func (m *DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				// Let viewport handle the scroll, just set pause intent
 				m.logsAutoFollow = false // User scrolling up = pausing
 			}
-		} else if msg.Button == tea.MouseButtonWheelDown {
+		case tea.MouseButtonWheelDown:
 			if m.currentTab == TabHTTP {
 				maxScroll := m.getHTTPMaxScroll()
 				m.httpScrollOffset += 3

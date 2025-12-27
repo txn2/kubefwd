@@ -99,7 +99,7 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 				}
 
 				if newPod.DeletionTimestamp != nil {
-					log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", oldPod.ObjectMeta.Name, pfo.ServiceFwd)
+					log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", oldPod.Name, pfo.ServiceFwd)
 					pfo.Stop()
 					pfo.ServiceFwd.SyncPodForwards(false)
 					gpi.removePod(oldPod.UID)
@@ -118,11 +118,11 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 					return
 				}
 
-				log.Warnf("Pod %s deleted, resyncing the %s service pods.", deletedPod.ObjectMeta.Name, pfo.ServiceFwd)
+				log.Warnf("Pod %s deleted, resyncing the %s service pods.", deletedPod.Name, pfo.ServiceFwd)
 				pfo.Stop()
 				pfo.ServiceFwd.SyncPodForwards(false)
 				gpi.removePod(deletedPod.UID)
-				log.Debugf("After pod %s was deleted, the %s service pods have been resynced.", deletedPod.ObjectMeta.Name, pfo.ServiceFwd)
+				log.Debugf("After pod %s was deleted, the %s service pods have been resynced.", deletedPod.Name, pfo.ServiceFwd)
 			},
 		},
 	)

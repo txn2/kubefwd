@@ -123,11 +123,12 @@ func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 
 	case tea.MouseMsg:
 		// Handle mouse wheel scrolling
-		if msg.Button == tea.MouseButtonWheelUp {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
 			for range 3 {
 				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() - 1)
 			}
-		} else if msg.Button == tea.MouseButtonWheelDown {
+		case tea.MouseButtonWheelDown:
 			for range 3 {
 				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
 			}
