@@ -7,3 +7,4 @@ vendor
 dist/
 kubefwd
 RELEASE_*
+site/

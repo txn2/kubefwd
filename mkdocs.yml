@@ -1,0 +1,48 @@
+site_name: kubefwd
+site_url: https://txn2.github.io/kubefwd
+site_description: Bulk port forwarding Kubernetes services for local development
+repo_url: https://github.com/txn2/kubefwd
+repo_name: txn2/kubefwd
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - search.highlight
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - TUI Guide: tui-guide.md
+  - Configuration: configuration.md
+  - Advanced Usage: advanced-usage.md
+  - Architecture: architecture.md
+  - Troubleshooting: troubleshooting.md
+  - Comparison: comparison.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - admonition
+  - toc:
+      permalink: true
+
+plugins:
+  - search
