@@ -1630,10 +1630,14 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		t.Errorf("Expected %d PodRemoved events for 'test-svc', got %d", numForwards, len(podRemovedEvents))
 	}
 
-	// Verify each event has correct service info
+	// Verify each event has correct service info including LocalPort
 	for _, event := range podRemovedEvents {
 		if event.Namespace != "default" {
 			t.Errorf("Expected Namespace 'default', got '%s'", event.Namespace)
+		}
+		// Critical: LocalPort must be set for TUI to match the removal key
+		if event.LocalPort != "80" {
+			t.Errorf("Expected LocalPort '80', got '%s'", event.LocalPort)
 		}
 	}
 }
