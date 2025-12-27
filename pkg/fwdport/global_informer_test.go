@@ -32,6 +32,10 @@ func (m *mockServiceFWD) SyncPodForwards(_ bool) {
 	m.syncCalled = true
 }
 
+func (m *mockServiceFWD) ResetReconnectBackoff() {
+	// No-op for testing
+}
+
 func (m *mockServiceFWD) wasSyncCalled() bool {
 	m.syncMutex.Lock()
 	defer m.syncMutex.Unlock()
