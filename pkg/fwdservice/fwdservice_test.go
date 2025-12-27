@@ -425,7 +425,12 @@ func TestSyncPodForwards_ForceBypassesDebouncer(t *testing.T) {
 	// But sync should still have happened
 	time.Sleep(100 * time.Millisecond) // Give time for goroutine to start
 
-	if len(svcFwd.PortForwards) == 0 {
+	// Lock before reading PortForwards to avoid race condition
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if count == 0 {
 		t.Error("Expected pod to be forwarded with force=true")
 	}
 }
@@ -475,7 +480,12 @@ func TestSyncPodForwards_ForceSyncAfter5Minutes(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond) // Give time for goroutine
 
-	if len(svcFwd.PortForwards) == 0 {
+	// Lock before reading PortForwards to avoid race condition
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if count == 0 {
 		t.Error("Expected pod to be forwarded after 5 minute threshold")
 	}
 }
