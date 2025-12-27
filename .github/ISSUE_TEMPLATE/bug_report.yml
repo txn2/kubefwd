@@ -1,0 +1,93 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in kubefwd
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us diagnose and fix the issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: kubefwd version
+      description: Output of `kubefwd version`
+      placeholder: "1.24.0"
+    validations:
+      required: true
+
+  - type: input
+    id: k8s-version
+    attributes:
+      label: Kubernetes version
+      description: Output of `kubectl version --short` or `kubectl version`
+      placeholder: "Client: v1.28.0, Server: v1.27.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (Ubuntu/Debian)
+        - Linux (RHEL/CentOS/Fedora)
+        - Linux (Other)
+        - Windows
+        - Docker container
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened? What did you expect to happen?
+      placeholder: |
+        Expected behavior:
+        ...
+
+        Actual behavior:
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the bug
+      placeholder: |
+        1. Run `sudo -E kubefwd svc -n default --tui`
+        2. Wait for services to connect
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Verbose Logs
+      description: Output from running with `-v` flag (optional but very helpful)
+      render: shell
+      placeholder: |
+        Paste output from: sudo -E kubefwd svc -n <namespace> -v
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Any relevant configuration (fwdconf.yml, kubeconfig setup, etc.)
+      render: yaml
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't already been reported
+          required: true
+        - label: I am running kubefwd with `sudo -E` to preserve environment variables
+          required: false

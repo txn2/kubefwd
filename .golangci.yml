@@ -1,0 +1,39 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+  disable:
+    - depguard
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment  # Too noisy for existing codebase
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # Test files can be more relaxed
+    - path: _test\.go
+      linters:
+        - errcheck
+    # Ignore unused writes in test struct initializations
+    - path: _test\.go
+      text: "unusedwrite"
+
+  max-issues-per-linter: 50
+  max-same-issues: 10

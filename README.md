@@ -3,8 +3,12 @@
 ![kubefwd - kubernetes bulk port forwarding](kubefwd-mast2.jpg)
 
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
+[![CI](https://github.com/txn2/kubefwd/actions/workflows/ci.yml/badge.svg)](https://github.com/txn2/kubefwd/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/txn2/kubefwd/branch/master/graph/badge.svg)](https://codecov.io/gh/txn2/kubefwd)
 [![Go Report Card](https://goreportcard.com/badge/github.com/txn2/kubefwd)](https://goreportcard.com/report/github.com/txn2/kubefwd)
 [![GitHub release](https://img.shields.io/github/release/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/releases)
+[![Docker Pulls](https://img.shields.io/docker/pulls/txn2/kubefwd)](https://hub.docker.com/r/txn2/kubefwd)
+[![GitHub Downloads](https://img.shields.io/github/downloads/txn2/kubefwd/total)](https://github.com/txn2/kubefwd/releases)
 
 ## Develop Locally, Connect to Kubernetes
 
