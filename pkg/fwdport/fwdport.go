@@ -314,7 +314,13 @@ type pingingDialer struct {
 }
 
 func (p pingingDialer) stopPing() {
-	p.pingStopChan <- struct{}{}
+	select {
+	case p.pingStopChan <- struct{}{}:
+		// Signal sent successfully
+	case <-time.After(100 * time.Millisecond):
+		// Timeout - ping goroutine is blocked or dead, continue cleanup anyway
+		log.Debugf("Ping stop signal timed out for %s, continuing cleanup", p.pingTargetPodName)
+	}
 }
 
 func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
