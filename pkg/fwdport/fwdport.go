@@ -36,7 +36,7 @@ import (
 // GlobalPodInformer manages a single informer for all pods across all services
 type GlobalPodInformer struct {
 	mu          sync.RWMutex
-	activePods  map[types.UID]*PortForwardOpts
+	activePods  map[types.UID][]*PortForwardOpts // Multiple pfos per pod UID (same pod can be forwarded by multiple services)
 	clientSet   kubernetes.Interface
 	informers   map[string]informers.SharedInformerFactory
 	stopChannel chan struct{}
@@ -49,7 +49,7 @@ var globalPodInformerOnce sync.Once
 func GetGlobalPodInformer(clientSet kubernetes.Interface, namespace string) *GlobalPodInformer {
 	globalPodInformerOnce.Do(func() {
 		globalPodInformer = &GlobalPodInformer{
-			activePods:  make(map[types.UID]*PortForwardOpts),
+			activePods:  make(map[types.UID][]*PortForwardOpts),
 			clientSet:   clientSet,
 			informers:   make(map[string]informers.SharedInformerFactory),
 			stopChannel: make(chan struct{}),
@@ -93,15 +93,26 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 					return
 				}
 
-				pfo, exists := gpi.getPod(oldPod.UID)
+				pfos, exists := gpi.getPods(oldPod.UID)
 				if !exists {
 					return
 				}
 
 				if newPod.DeletionTimestamp != nil {
-					log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", oldPod.Name, pfo.ServiceFwd)
-					pfo.Stop()
-					pfo.ServiceFwd.SyncPodForwards(false)
+					// Track which services we've already synced to avoid duplicate syncs
+					syncedServices := make(map[string]bool)
+					for _, pfo := range pfos {
+						svcKey := pfo.ServiceFwd.String()
+						if !syncedServices[svcKey] {
+							log.Warnf("Pod %s marked for deletion, resyncing the %s service pods.", oldPod.Name, pfo.ServiceFwd)
+							pfo.Stop()
+							pfo.ServiceFwd.SyncPodForwards(false)
+							syncedServices[svcKey] = true
+						} else {
+							// Still need to stop this pfo even if service already synced
+							pfo.Stop()
+						}
+					}
 					gpi.removePod(oldPod.UID)
 				}
 			},
@@ -113,16 +124,27 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 					return
 				}
 
-				pfo, exists := gpi.getPod(deletedPod.UID)
+				pfos, exists := gpi.getPods(deletedPod.UID)
 				if !exists {
 					return
 				}
 
-				log.Warnf("Pod %s deleted, resyncing the %s service pods.", deletedPod.Name, pfo.ServiceFwd)
-				pfo.Stop()
-				pfo.ServiceFwd.SyncPodForwards(false)
+				// Track which services we've already synced to avoid duplicate syncs
+				syncedServices := make(map[string]bool)
+				for _, pfo := range pfos {
+					svcKey := pfo.ServiceFwd.String()
+					if !syncedServices[svcKey] {
+						log.Warnf("Pod %s deleted, resyncing the %s service pods.", deletedPod.Name, pfo.ServiceFwd)
+						pfo.Stop()
+						pfo.ServiceFwd.SyncPodForwards(false)
+						syncedServices[svcKey] = true
+						log.Debugf("After pod %s was deleted, the %s service pods have been resynced.", deletedPod.Name, pfo.ServiceFwd)
+					} else {
+						// Still need to stop this pfo even if service already synced
+						pfo.Stop()
+					}
+				}
 				gpi.removePod(deletedPod.UID)
-				log.Debugf("After pod %s was deleted, the %s service pods have been resynced.", deletedPod.Name, pfo.ServiceFwd)
 			},
 		},
 	)
@@ -135,33 +157,62 @@ func (gpi *GlobalPodInformer) startInformer(namespace string) cache.InformerSync
 	return podInformer.Informer().HasSynced
 }
 
-// addPod adds a pod to the active pods map
+// addPod adds a pod forward to the active pods map
+// Multiple port forwards can exist for the same pod UID (e.g., headless + non-headless services)
 func (gpi *GlobalPodInformer) addPod(pod *v1.Pod, pfo *PortForwardOpts) {
 	gpi.mu.Lock()
 	defer gpi.mu.Unlock()
-	gpi.activePods[pod.UID] = pfo
-	log.Debugf("Added pod %s (UID: %s) to global informer", pod.Name, pod.UID)
+	gpi.activePods[pod.UID] = append(gpi.activePods[pod.UID], pfo)
+	log.Debugf("Added pod %s (UID: %s) to global informer (total forwards for this pod: %d)", pod.Name, pod.UID, len(gpi.activePods[pod.UID]))
 }
 
-// getPod retrieves a pod from the active pods map
-func (gpi *GlobalPodInformer) getPod(podUID types.UID) (*PortForwardOpts, bool) {
+// getPods retrieves all port forwards for a pod UID
+func (gpi *GlobalPodInformer) getPods(podUID types.UID) ([]*PortForwardOpts, bool) {
 	gpi.mu.RLock()
 	defer gpi.mu.RUnlock()
-	pfo, exists := gpi.activePods[podUID]
-	return pfo, exists
+	pfos, exists := gpi.activePods[podUID]
+	return pfos, exists && len(pfos) > 0
 }
 
-// removePod removes a pod from the active pods map
+// removePod removes all port forwards for a pod UID from the active pods map
 func (gpi *GlobalPodInformer) removePod(podUID types.UID) {
 	gpi.mu.Lock()
 	defer gpi.mu.Unlock()
+	count := len(gpi.activePods[podUID])
 	delete(gpi.activePods, podUID)
-	log.Debugf("Removed pod (UID: %s) from global informer", podUID)
+	log.Debugf("Removed all %d forwards for pod (UID: %s) from global informer", count, podUID)
 }
 
-// RemovePodByUID removes a pod from the global informer by UID
+// removePfo removes a specific port forward from the active pods map
+func (gpi *GlobalPodInformer) removePfo(pfo *PortForwardOpts) {
+	if pfo.PodUID == "" {
+		return
+	}
+	gpi.mu.Lock()
+	defer gpi.mu.Unlock()
+	pfos := gpi.activePods[pfo.PodUID]
+	for i, p := range pfos {
+		if p == pfo {
+			// Remove this pfo from the slice
+			gpi.activePods[pfo.PodUID] = append(pfos[:i], pfos[i+1:]...)
+			break
+		}
+	}
+	// If no more forwards for this pod, remove the entry entirely
+	if len(gpi.activePods[pfo.PodUID]) == 0 {
+		delete(gpi.activePods, pfo.PodUID)
+	}
+	log.Debugf("Removed specific forward for pod (UID: %s) from global informer", pfo.PodUID)
+}
+
+// RemovePodByUID removes a pod from the global informer by UID (removes all forwards)
 func (gpi *GlobalPodInformer) RemovePodByUID(podUID types.UID) {
 	gpi.removePod(podUID)
+}
+
+// RemovePfo removes a specific port forward from the global informer
+func (gpi *GlobalPodInformer) RemovePfo(pfo *PortForwardOpts) {
+	gpi.removePfo(pfo)
 }
 
 // Stop stops the global pod informer
