@@ -126,9 +126,7 @@ Download from [releases](https://github.com/txn2/kubefwd/releases):
 
 ### Windows
 
-```batch
-scoop install kubefwd
-```
+Download from [releases](https://github.com/txn2/kubefwd/releases) - extract `kubefwd.exe` and run as Administrator.
 
 ### Docker
 
