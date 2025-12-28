@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,7 @@ func NewServicesHandler(state types.StateReader, controller types.ServiceControl
 }
 
 // List returns all services with their forwards
+// Supports query parameters: limit, offset, status, namespace, context, search
 func (h *ServicesHandler) List(c *gin.Context) {
 	if h.state == nil {
 		c.JSON(http.StatusServiceUnavailable, types.Response{
@@ -36,15 +38,41 @@ func (h *ServicesHandler) List(c *gin.Context) {
 		return
 	}
 
+	// Parse query parameters
+	var params types.ListParams
+	if err := c.ShouldBindQuery(&params); err != nil {
+		// Ignore binding errors, use defaults
+		params = types.ListParams{}
+	}
+
+	// Set defaults
+	if params.Limit <= 0 || params.Limit > 1000 {
+		params.Limit = 100
+	}
+
 	services := h.state.GetServices()
 	summary := h.state.GetSummary()
 
+	// Apply filters
+	filtered := filterServices(services, params)
+
+	// Apply pagination
+	start := params.Offset
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + params.Limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	paged := filtered[start:end]
+
 	response := types.ServiceListResponse{
-		Services: make([]types.ServiceResponse, len(services)),
+		Services: make([]types.ServiceResponse, len(paged)),
 		Summary:  mapSummary(summary),
 	}
 
-	for i, svc := range services {
+	for i, svc := range paged {
 		response.Services[i] = mapServiceSnapshot(svc)
 	}
 
@@ -52,10 +80,58 @@ func (h *ServicesHandler) List(c *gin.Context) {
 		Success: true,
 		Data:    response,
 		Meta: &types.MetaInfo{
-			Count:     len(services),
+			Count:     len(paged),
 			Timestamp: time.Now(),
 		},
 	})
+}
+
+// filterServices applies query parameter filters to services
+func filterServices(services []state.ServiceSnapshot, params types.ListParams) []state.ServiceSnapshot {
+	if params.Status == "" && params.Namespace == "" && params.Context == "" && params.Search == "" {
+		return services
+	}
+
+	result := make([]state.ServiceSnapshot, 0, len(services))
+	for _, svc := range services {
+		// Calculate status for filtering
+		status := "pending"
+		if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+			status = "active"
+		} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+			status = "error"
+		} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+			status = "partial"
+		}
+
+		// Apply status filter
+		if params.Status != "" && status != params.Status {
+			continue
+		}
+
+		// Apply namespace filter
+		if params.Namespace != "" && svc.Namespace != params.Namespace {
+			continue
+		}
+
+		// Apply context filter
+		if params.Context != "" && svc.Context != params.Context {
+			continue
+		}
+
+		// Apply search filter (case-insensitive)
+		if params.Search != "" {
+			search := strings.ToLower(params.Search)
+			if !strings.Contains(strings.ToLower(svc.ServiceName), search) &&
+				!strings.Contains(strings.ToLower(svc.Namespace), search) &&
+				!strings.Contains(strings.ToLower(svc.Context), search) {
+				continue
+			}
+		}
+
+		result = append(result, svc)
+	}
+	return result
 }
 
 // Get returns a single service by key
