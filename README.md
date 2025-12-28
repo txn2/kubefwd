@@ -140,6 +140,33 @@ docker run -it --rm --privileged \
 
 See [Advanced Usage](docs/advanced-usage.md#docker-integration) for Docker Compose examples and [Getting Started](docs/getting-started.md) for complete installation instructions.
 
+## Verifying Downloads
+
+All release artifacts are signed using [Cosign](https://github.com/sigstore/cosign) keyless signing with GitHub Actions OIDC.
+
+### Verify Checksums
+
+```bash
+# Download the checksum file and signature bundle
+curl -LO https://github.com/txn2/kubefwd/releases/latest/download/kubefwd_checksums.txt
+curl -LO https://github.com/txn2/kubefwd/releases/latest/download/kubefwd_checksums.txt.sigstore.json
+
+# Verify signature
+cosign verify-blob \
+  --bundle kubefwd_checksums.txt.sigstore.json \
+  --certificate-identity-regexp="https://github.com/txn2/kubefwd/.*" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  kubefwd_checksums.txt
+```
+
+### Verify Docker Images
+
+```bash
+cosign verify txn2/kubefwd:latest \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-identity-regexp="https://github.com/txn2/kubefwd/.*"
+```
+
 ## Usage
 
 ### Interactive Mode (Recommended)
