@@ -6,21 +6,18 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"reflect"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdapi"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
 	"github.com/txn2/kubefwd/pkg/fwdmcp"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdns"
 	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -33,14 +30,9 @@ import (
 	authorizationv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilRuntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 )
 
 // cmdline arguments
@@ -497,8 +489,6 @@ Try:
 
 	fwdsvcregistry.Init(stopListenCh)
 
-	nsWatchesDone := &sync.WaitGroup{} // We'll wait on this to exit the program. Done() indicates that all namespace watches have shutdown cleanly.
-
 	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
 
 	// Set up API network (loopback IP and hosts entry) if API mode enabled
@@ -508,14 +498,36 @@ Try:
 		}
 	}
 
-	for i, ctx := range contexts {
-		// k8s REST config
+	// Create the namespace manager for dynamic watcher management
+	nsManager := fwdns.NewManager(fwdns.ManagerConfig{
+		HostFile:        hostFileWithLock,
+		ConfigPath:      cfgFilePath,
+		Domain:          domain,
+		PortMapping:     mappings,
+		Timeout:         timeout,
+		FwdConfigPath:   fwdConfigurationPath,
+		FwdReservations: fwdReservations,
+		ResyncInterval:  resyncInterval,
+		RetryInterval:   retryInterval,
+		AutoReconnect:   autoReconnect,
+		LabelSelector:   listOptions.LabelSelector,
+		FieldSelector:   listOptions.FieldSelector,
+		GlobalStopCh:    stopListenCh,
+	})
+
+	// Register namespace manager with API if enabled
+	if apiManager != nil {
+		apiManager.SetNamespaceManager(nsManager)
+	}
+
+	// Start watchers for each context/namespace combination
+	for _, ctx := range contexts {
+		// Create clientSet for this context (for connectivity check and --all-namespaces)
 		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
 		if err != nil {
 			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
 		}
 
-		// create the k8s clientSet
 		clientSet, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
@@ -526,7 +538,7 @@ Try:
 		clientSets[ctx] = clientSet
 		clientSetsMu.Unlock()
 
-		// if use --all-namespace ,from v1 api get all ns.
+		// if use --all-namespace, from v1 api get all ns.
 		if isAllNs {
 			if len(namespaces) > 1 {
 				log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
@@ -540,38 +552,15 @@ Try:
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
 
-		// create the k8s RESTclient
-		restClient, err := configGetter.GetRESTClient()
-		if err != nil {
-			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
-		}
-
-		for ii, namespace := range namespaces {
-			nsWatchesDone.Add(1)
-
-			nameSpaceOpts := NamespaceOpts{
-				ClientSet: clientSet,
-				Context:   ctx,
-				Namespace: namespace,
-
-				// For parallelization of ip handout,
-				// each cluster and namespace has its own ip range
-				NamespaceIPLock:   &sync.Mutex{},
-				ListOptions:       listOptions,
-				HostFile:          hostFileWithLock,
-				ClientConfig:      *restConfig,
-				RESTClient:        restClient,
-				ClusterN:          i,
-				NamespaceN:        ii,
-				Domain:            domain,
-				ManualStopChannel: stopListenCh,
-				PortMapping:       mappings,
+		// Start a watcher for each namespace
+		for _, namespace := range namespaces {
+			_, err := nsManager.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
+				LabelSelector: listOptions.LabelSelector,
+				FieldSelector: listOptions.FieldSelector,
+			})
+			if err != nil {
+				log.Errorf("Failed to start watcher for %s.%s: %v", namespace, ctx, err)
 			}
-
-			go func(npo NamespaceOpts) {
-				nameSpaceOpts.watchServiceEvents(stopListenCh)
-				nsWatchesDone.Done()
-			}(nameSpaceOpts)
 		}
 	}
 
@@ -612,15 +601,10 @@ Try:
 		<-stopListenCh
 	}
 
-	// Wait for namespace watchers with timeout
-	watchersDone := make(chan struct{})
-	go func() {
-		nsWatchesDone.Wait()
-		close(watchersDone)
-	}()
-
+	// Stop namespace manager and wait for watchers
+	go nsManager.StopAll()
 	select {
-	case <-watchersDone:
+	case <-nsManager.Done():
 		log.Debugf("All namespace watchers are done")
 	case <-time.After(3 * time.Second):
 		log.Debugf("Timeout waiting for namespace watchers, forcing exit")
@@ -674,172 +658,4 @@ Try:
 	}
 
 	log.Infof("Clean exit")
-}
-
-type NamespaceOpts struct {
-	NamespaceIPLock *sync.Mutex
-	ListOptions     metav1.ListOptions
-	HostFile        *fwdport.HostFileWithLock
-
-	ClientSet    kubernetes.Interface
-	ClientConfig restclient.Config
-	RESTClient   *restclient.RESTClient
-
-	// Context is a unique key (string) in kubectl config representing
-	// a user/cluster combination. Kubefwd uses context as the
-	// cluster name when forwarding to more than one cluster.
-	Context string
-
-	// Namespace is the current Kubernetes Namespace to locate services
-	// and the pods that back them for port-forwarding
-	Namespace string
-
-	// ClusterN is the ordinal index of the cluster (from configuration)
-	// cluster 0 is considered local while > 0 is remote
-	ClusterN int
-
-	// NamespaceN is the ordinal index of the namespace from the
-	// perspective of the user. Namespace 0 is considered local
-	// while > 0 is an external namespace
-	NamespaceN int
-
-	// Domain is specified by the user and used in place of .local
-	Domain string
-	// meaning any source port maps to target port.
-	PortMapping []string
-
-	ManualStopChannel chan struct{}
-}
-
-// watchServiceEvents sets up event handlers to act on service-related events.
-func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
-	// Apply filtering
-	optionsModifier := func(options *metav1.ListOptions) {
-		options.FieldSelector = opts.ListOptions.FieldSelector
-		options.LabelSelector = opts.ListOptions.LabelSelector
-	}
-
-	// Construct the informer object which will query the api server,
-	// and send events to our handler functions
-	// https://engineering.bitnami.com/articles/kubewatch-an-example-of-kubernetes-custom-controller.html
-	_, controller := cache.NewInformerWithOptions(cache.InformerOptions{
-		ListerWatcher: &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).List(context.TODO(), options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.Watch = true
-				optionsModifier(&options)
-				return opts.ClientSet.CoreV1().Services(opts.Namespace).Watch(context.TODO(), options)
-			},
-		},
-		ObjectType:   &v1.Service{},
-		ResyncPeriod: 0,
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    opts.AddServiceHandler,
-			DeleteFunc: opts.DeleteServiceHandler,
-			UpdateFunc: opts.UpdateServiceHandler,
-		},
-	})
-
-	// Start the informer, blocking call until we receive a stop signal
-	controller.Run(stopListenCh)
-	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
-}
-
-// AddServiceHandler is the event handler for when a new service comes in from k8s
-// (the initial list of services will also be coming in using this event for each).
-func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
-	svc, ok := obj.(*v1.Service)
-	if !ok {
-		return
-	}
-
-	// Check if service has a valid config to do forwarding
-	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
-	if selector == "" {
-		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
-		return
-	}
-
-	// Define a service to forward
-	svcfwd := &fwdservice.ServiceFWD{
-		ClientSet:                opts.ClientSet,
-		Context:                  opts.Context,
-		Namespace:                opts.Namespace,
-		Timeout:                  timeout,
-		Hostfile:                 opts.HostFile,
-		ClientConfig:             opts.ClientConfig,
-		RESTClient:               opts.RESTClient,
-		NamespaceN:               opts.NamespaceN,
-		ClusterN:                 opts.ClusterN,
-		Domain:                   opts.Domain,
-		PodLabelSelector:         selector,
-		NamespaceServiceLock:     opts.NamespaceIPLock,
-		Svc:                      svc,
-		Headless:                 svc.Spec.ClusterIP == "None",
-		PortForwards:             make(map[string]*fwdport.PortForwardOpts),
-		SyncDebouncer:            debounce.New(5 * time.Second),
-		DoneChannel:              make(chan struct{}),
-		PortMap:                  opts.ParsePortMap(mappings),
-		ForwardConfigurationPath: fwdConfigurationPath,
-		ForwardIPReservations:    fwdReservations,
-		ResyncInterval:           resyncInterval,
-		RetryInterval:            retryInterval,
-		AutoReconnect:            autoReconnect,
-	}
-
-	// Add the service to the catalog of services being forwarded
-	fwdsvcregistry.Add(svcfwd)
-}
-
-// DeleteServiceHandler is the event handler for when a service gets deleted in k8s.
-func (opts *NamespaceOpts) DeleteServiceHandler(obj interface{}) {
-	svc, ok := obj.(*v1.Service)
-	if !ok {
-		return
-	}
-
-	// If we are currently forwarding this service, shut it down.
-	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace + "." + opts.Context)
-}
-
-// UpdateServiceHandler is the event handler to deal with service changes from k8s.
-// It triggers a resync when the service's selector or ports change.
-func (opts *NamespaceOpts) UpdateServiceHandler(oldObj interface{}, newObj interface{}) {
-	oldSvc, oldOk := oldObj.(*v1.Service)
-	newSvc, newOk := newObj.(*v1.Service)
-
-	if !oldOk || !newOk {
-		return
-	}
-
-	// Check if selector or ports changed
-	selectorChanged := !reflect.DeepEqual(oldSvc.Spec.Selector, newSvc.Spec.Selector)
-	portsChanged := !reflect.DeepEqual(oldSvc.Spec.Ports, newSvc.Spec.Ports)
-
-	if selectorChanged || portsChanged {
-		key := newSvc.Name + "." + newSvc.Namespace + "." + opts.Context
-		log.Infof("Service %s updated (selector=%v, ports=%v), triggering resync",
-			key, selectorChanged, portsChanged)
-
-		// Find and resync the service
-		if svcfwd := fwdsvcregistry.Get(key); svcfwd != nil {
-			svcfwd.SyncPodForwards(true) // force=true
-		}
-	}
-}
-
-// ParsePortMap parse string port to PortMap
-func (opts *NamespaceOpts) ParsePortMap(mappings []string) *[]fwdservice.PortMap {
-	var portList []fwdservice.PortMap
-	if mappings == nil {
-		return nil
-	}
-	for _, s := range mappings {
-		portInfo := strings.Split(s, ":")
-		portList = append(portList, fwdservice.PortMap{SourcePort: portInfo[0], TargetPort: portInfo[1]})
-	}
-	return &portList
 }
