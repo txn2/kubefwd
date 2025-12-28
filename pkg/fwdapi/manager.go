@@ -55,6 +55,11 @@ type Manager struct {
 	eventStreamer       EventStreamer
 	diagnosticsProvider types.DiagnosticsProvider
 
+	// CRUD controllers
+	namespaceController types.NamespaceController
+	serviceCRUD         types.ServiceCRUD
+	k8sDiscovery        types.KubernetesDiscovery
+
 	// Callbacks
 	triggerShutdown func()
 
@@ -129,6 +134,21 @@ func (m *Manager) SetEventStreamer(streamer EventStreamer) {
 // SetDiagnosticsProvider sets the diagnostics provider dependency
 func (m *Manager) SetDiagnosticsProvider(provider types.DiagnosticsProvider) {
 	m.diagnosticsProvider = provider
+}
+
+// SetNamespaceController sets the namespace controller for CRUD operations
+func (m *Manager) SetNamespaceController(controller types.NamespaceController) {
+	m.namespaceController = controller
+}
+
+// SetServiceCRUD sets the service CRUD controller for add/remove operations
+func (m *Manager) SetServiceCRUD(crud types.ServiceCRUD) {
+	m.serviceCRUD = crud
+}
+
+// SetKubernetesDiscovery sets the Kubernetes discovery provider
+func (m *Manager) SetKubernetesDiscovery(discovery types.KubernetesDiscovery) {
+	m.k8sDiscovery = discovery
 }
 
 // SetNamespaces sets the namespaces being forwarded (for info endpoint)
