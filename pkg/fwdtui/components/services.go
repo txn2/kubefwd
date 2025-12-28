@@ -329,7 +329,12 @@ func humanBytes(b uint64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+	// Bounds check: cap at exabytes (index 5)
+	units := "KMGTPE"
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), units[exp])
 }
 
 // humanRate formats bytes/sec to human-readable string
@@ -346,7 +351,12 @@ func humanRate(rate float64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB/s", rate/div, "KMGTPE"[exp])
+	// Bounds check: cap at exabytes (index 5)
+	units := "KMGTPE"
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	return fmt.Sprintf("%.1f %cB/s", rate/div, units[exp])
 }
 
 // formatPort formats the port mapping (local→pod)
