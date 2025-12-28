@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 )
 
 // MetricsHandler handles metrics-related endpoints
@@ -225,14 +226,23 @@ func (h *MetricsHandler) ServiceHistory(c *gin.Context) {
 }
 
 // mapPortForwardMetrics converts fwdmetrics port forward snapshots to API response
-func mapPortForwardMetrics(pfs interface{}) []types.PortForwardMetrics {
-	// Type switch to handle the slice
-	switch v := pfs.(type) {
-	case []interface{}:
-		result := make([]types.PortForwardMetrics, len(v))
-		// Each item would need individual handling
-		return result
-	default:
-		return nil
+func mapPortForwardMetrics(pfs []fwdmetrics.PortForwardSnapshot) []types.PortForwardMetrics {
+	result := make([]types.PortForwardMetrics, len(pfs))
+	for i, pf := range pfs {
+		result[i] = types.PortForwardMetrics{
+			PodName:        pf.PodName,
+			LocalIP:        pf.LocalIP,
+			LocalPort:      pf.LocalPort,
+			PodPort:        pf.PodPort,
+			BytesIn:        pf.BytesIn,
+			BytesOut:       pf.BytesOut,
+			RateIn:         pf.RateIn,
+			RateOut:        pf.RateOut,
+			AvgRateIn:      pf.AvgRateIn,
+			AvgRateOut:     pf.AvgRateOut,
+			ConnectedAt:    pf.ConnectedAt,
+			LastActivityAt: pf.LastActivityAt,
+		}
 	}
+	return result
 }
