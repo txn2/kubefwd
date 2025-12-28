@@ -18,11 +18,15 @@ import (
 
 // mockServiceFWD implements the ServiceFWD interface for testing
 type mockServiceFWD struct {
+	name       string
 	syncCalled bool
 	syncMutex  sync.Mutex
 }
 
 func (m *mockServiceFWD) String() string {
+	if m.name != "" {
+		return m.name
+	}
 	return "mock-service"
 }
 
@@ -94,7 +98,7 @@ func TestGlobalPodInformerManager_AddPod(t *testing.T) {
 
 	// Create a global informer manager directly for testing
 	globalInformer := &GlobalPodInformer{
-		activePods: make(map[types.UID]*PortForwardOpts),
+		activePods: make(map[types.UID][]*PortForwardOpts),
 	}
 
 	// Test adding a pod
@@ -102,15 +106,15 @@ func TestGlobalPodInformerManager_AddPod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[("test-uid-123")]
+	pfos, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
-	if !exists {
+	if !exists || len(pfos) == 0 {
 		t.Error("Pod should be in the active pods map")
 	}
 }
 
-func TestGlobalPodInformerManager_GetPod(t *testing.T) {
+func TestGlobalPodInformerManager_GetPods(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create a test pod
 	pod := &v1.Pod{
@@ -132,25 +136,25 @@ func TestGlobalPodInformerManager_GetPod(t *testing.T) {
 
 	// Create a global informer manager directly for testing
 	globalInformer := &GlobalPodInformer{
-		activePods: make(map[types.UID]*PortForwardOpts),
+		activePods: make(map[types.UID][]*PortForwardOpts),
 	}
 
 	// Add the pod
 	globalInformer.addPod(pod, pfo)
 
 	// Test getting the pod
-	retrievedPfo, exists := globalInformer.getPod("test-uid-123")
+	retrievedPfos, exists := globalInformer.getPods("test-uid-123")
 
 	if !exists {
 		t.Error("Pod should exist in the map")
 	}
 
-	if retrievedPfo != pfo {
+	if len(retrievedPfos) != 1 || retrievedPfos[0] != pfo {
 		t.Error("Retrieved PortForwardOpts should match the original")
 	}
 
 	// Test getting a non-existent pod
-	_, exists = globalInformer.getPod("non-existent-uid")
+	_, exists = globalInformer.getPods("non-existent-uid")
 	if exists {
 		t.Error("Non-existent pod should not exist in the map")
 	}
@@ -179,7 +183,7 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 
 	// Create a global informer manager directly for testing
 	globalInformer := &GlobalPodInformer{
-		activePods: make(map[types.UID]*PortForwardOpts),
+		activePods: make(map[types.UID][]*PortForwardOpts),
 	}
 
 	// Add the pod
@@ -187,10 +191,10 @@ func TestGlobalPodInformerManager_RemovePod(t *testing.T) {
 
 	// Verify the pod was added
 	globalInformer.mu.RLock()
-	_, exists := globalInformer.activePods[("test-uid-123")]
+	pfos, exists := globalInformer.activePods[("test-uid-123")]
 	globalInformer.mu.RUnlock()
 
-	if !exists {
+	if !exists || len(pfos) == 0 {
 		t.Error("Pod should be in the active pods map")
 	}
 
@@ -211,7 +215,7 @@ func TestGlobalPodInformerManager_ConcurrentAccess(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create a global informer manager directly for testing
 	globalInformer := &GlobalPodInformer{
-		activePods: make(map[types.UID]*PortForwardOpts),
+		activePods: make(map[types.UID][]*PortForwardOpts),
 	}
 
 	// Test concurrent access
@@ -260,7 +264,7 @@ func TestGlobalPodInformerManager_Stop(t *testing.T) {
 	t.Cleanup(ResetGlobalPodInformer)
 	// Create a global informer manager directly for testing
 	globalInformer := &GlobalPodInformer{
-		activePods:  make(map[types.UID]*PortForwardOpts),
+		activePods:  make(map[types.UID][]*PortForwardOpts),
 		stopChannel: make(chan struct{}),
 	}
 
@@ -466,5 +470,133 @@ func TestGlobalPodInformer_MultipleNamespaces(t *testing.T) {
 		if !mockSvcs[i].wasSyncCalled() {
 			t.Errorf("Expected SyncPodForwards to be called for pod %d", i)
 		}
+	}
+}
+
+// TestGlobalPodInformer_MultipleServicesPerPod tests that when multiple services forward
+// the same pod, all services get notified when the pod is deleted
+func TestGlobalPodInformer_MultipleServicesPerPod(t *testing.T) {
+	t.Cleanup(ResetGlobalPodInformer)
+
+	// Create test pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-pod",
+			Namespace: "default",
+			UID:       types.UID("shared-pod-uid"),
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
+	}
+
+	// Create two mock services that both forward to the same pod
+	mockSvc1 := &mockServiceFWD{name: "api-gateway"}
+	mockSvc2 := &mockServiceFWD{name: "api-gateway-headless"}
+
+	pfo1 := &PortForwardOpts{
+		PodName:    "shared-pod",
+		PodUID:     types.UID("shared-pod-uid"),
+		ServiceFwd: mockSvc1,
+	}
+	pfo2 := &PortForwardOpts{
+		PodName:    "shared-pod",
+		PodUID:     types.UID("shared-pod-uid"),
+		ServiceFwd: mockSvc2,
+	}
+
+	// Create global informer
+	globalInformer := &GlobalPodInformer{
+		activePods: make(map[types.UID][]*PortForwardOpts),
+	}
+
+	// Add both pfos for the same pod
+	globalInformer.addPod(pod, pfo1)
+	globalInformer.addPod(pod, pfo2)
+
+	// Verify both were added
+	pfos, exists := globalInformer.getPods(pod.UID)
+	if !exists || len(pfos) != 2 {
+		t.Fatalf("Expected 2 pfos for pod, got %d", len(pfos))
+	}
+
+	// Simulate pod deletion notification by calling the same logic as DeleteFunc
+	syncedServices := make(map[string]bool)
+	for _, pfo := range pfos {
+		svcKey := pfo.ServiceFwd.String()
+		if !syncedServices[svcKey] {
+			pfo.ServiceFwd.SyncPodForwards(false)
+			syncedServices[svcKey] = true
+		}
+	}
+	globalInformer.removePod(pod.UID)
+
+	// Both services should have been synced
+	if !mockSvc1.wasSyncCalled() {
+		t.Error("Expected SyncPodForwards to be called for api-gateway service")
+	}
+	if !mockSvc2.wasSyncCalled() {
+		t.Error("Expected SyncPodForwards to be called for api-gateway-headless service")
+	}
+
+	// Verify pod was removed
+	_, exists = globalInformer.getPods(pod.UID)
+	if exists {
+		t.Error("Pod should have been removed from informer")
+	}
+}
+
+// TestGlobalPodInformer_RemovePfo tests that removing a specific pfo leaves others intact
+func TestGlobalPodInformer_RemovePfo(t *testing.T) {
+	t.Cleanup(ResetGlobalPodInformer)
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shared-pod",
+			Namespace: "default",
+			UID:       types.UID("shared-pod-uid"),
+		},
+	}
+
+	pfo1 := &PortForwardOpts{
+		PodName: "shared-pod",
+		PodUID:  types.UID("shared-pod-uid"),
+		Service: "svc1",
+	}
+	pfo2 := &PortForwardOpts{
+		PodName: "shared-pod",
+		PodUID:  types.UID("shared-pod-uid"),
+		Service: "svc2",
+	}
+
+	globalInformer := &GlobalPodInformer{
+		activePods: make(map[types.UID][]*PortForwardOpts),
+	}
+
+	globalInformer.addPod(pod, pfo1)
+	globalInformer.addPod(pod, pfo2)
+
+	// Remove just pfo1
+	globalInformer.RemovePfo(pfo1)
+
+	// pfo2 should still be there
+	pfos, exists := globalInformer.getPods(pod.UID)
+	if !exists {
+		t.Fatal("Pod should still exist after removing one pfo")
+	}
+	if len(pfos) != 1 {
+		t.Errorf("Expected 1 pfo remaining, got %d", len(pfos))
+	}
+	if pfos[0] != pfo2 {
+		t.Error("Remaining pfo should be pfo2")
+	}
+
+	// Remove pfo2
+	globalInformer.RemovePfo(pfo2)
+
+	// Now pod entry should be completely gone
+	_, exists = globalInformer.getPods(pod.UID)
+	if exists {
+		t.Error("Pod should be removed after all pfos are removed")
 	}
 }
