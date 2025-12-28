@@ -136,7 +136,7 @@ docker_signs:
 nfpms:
   - id: default
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    homepage: https://github.com/txn2/kubefwd
+    homepage: https://kubefwd.com
     description: Kubernetes bulk port forwarding utility.
     maintainer: Craig Johnston <cj@imti.co>
     license: Apache 2.0
@@ -165,7 +165,7 @@ brews:
       name: Craig Johnston
       email: cj@imti.co
     directory: Formula
-    homepage: https://github.com/txn2/kubefwd
+    homepage: https://kubefwd.com
     description: "Kubernetes bulk port forwarding utility."
     license: "Apache-2.0"
     dependencies:
