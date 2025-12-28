@@ -73,3 +73,21 @@ type ManagerInfo interface {
 	Contexts() []string
 	TUIEnabled() bool
 }
+
+// DiagnosticsProvider provides system and service diagnostics
+type DiagnosticsProvider interface {
+	// GetSummary returns system-wide diagnostic summary
+	GetSummary() DiagnosticSummary
+
+	// GetServiceDiagnostic returns diagnostics for a specific service
+	GetServiceDiagnostic(key string) (*ServiceDiagnostic, error)
+
+	// GetForwardDiagnostic returns diagnostics for a specific forward
+	GetForwardDiagnostic(key string) (*ForwardDiagnostic, error)
+
+	// GetNetworkStatus returns network interface status
+	GetNetworkStatus() NetworkStatus
+
+	// GetErrors returns recent errors across all services
+	GetErrors(count int) []ErrorDetail
+}
