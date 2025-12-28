@@ -115,6 +115,7 @@ type ServiceMetricsResponse struct {
 // PortForwardMetrics provides metrics for a single port forward
 type PortForwardMetrics struct {
 	PodName        string            `json:"podName"`
+	LocalIP        string            `json:"localIP"`
 	LocalPort      string            `json:"localPort"`
 	PodPort        string            `json:"podPort"`
 	BytesIn        uint64            `json:"bytesIn"`
@@ -157,6 +158,32 @@ type LogEntryResponse struct {
 // LogsResponse contains a list of log entries
 type LogsResponse struct {
 	Logs []LogEntryResponse `json:"logs"`
+}
+
+// === Query Parameters ===
+
+// ListParams provides common query parameters for list endpoints
+type ListParams struct {
+	Limit     int    `form:"limit"`     // max items to return (default: 100)
+	Offset    int    `form:"offset"`    // pagination offset
+	Status    string `form:"status"`    // filter by status: active|error|partial|pending
+	Namespace string `form:"namespace"` // filter by namespace
+	Context   string `form:"context"`   // filter by context
+	Search    string `form:"search"`    // text search in service/pod names
+}
+
+// PagedResponse wraps list responses with pagination info
+type PagedResponse struct {
+	Items      interface{} `json:"items"`
+	Pagination Pagination  `json:"pagination"`
+}
+
+// Pagination provides pagination metadata
+type Pagination struct {
+	Total   int  `json:"total"`
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	HasMore bool `json:"hasMore"`
 }
 
 // === Summary Types ===
@@ -218,4 +245,37 @@ type ReconnectResponse struct {
 type SyncResponse struct {
 	Service string `json:"service"`
 	Force   bool   `json:"force"`
+}
+
+// === HTTP Traffic Types ===
+
+// HTTPTrafficResponse provides HTTP traffic logs for a forward
+type HTTPTrafficResponse struct {
+	ForwardKey string              `json:"forwardKey"`
+	PodName    string              `json:"podName"`
+	LocalIP    string              `json:"localIP"`
+	LocalPort  string              `json:"localPort"`
+	Summary    HTTPActivitySummary `json:"summary"`
+	Logs       []HTTPLogResponse   `json:"logs"`
+}
+
+// HTTPActivitySummary provides summary of HTTP activity
+type HTTPActivitySummary struct {
+	TotalRequests int            `json:"totalRequests"`
+	LastRequest   time.Time      `json:"lastRequest,omitempty"`
+	StatusCodes   map[string]int `json:"statusCodes"` // "2xx", "3xx", "4xx", "5xx"
+	TopPaths      []PathCount    `json:"topPaths,omitempty"`
+}
+
+// PathCount provides request count for a path
+type PathCount struct {
+	Path  string `json:"path"`
+	Count int    `json:"count"`
+}
+
+// ServiceHTTPTrafficResponse provides HTTP traffic for all forwards of a service
+type ServiceHTTPTrafficResponse struct {
+	ServiceKey string                `json:"serviceKey"`
+	Summary    HTTPActivitySummary   `json:"summary"`
+	Forwards   []HTTPTrafficResponse `json:"forwards"`
 }
