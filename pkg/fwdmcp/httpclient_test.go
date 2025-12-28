@@ -674,3 +674,654 @@ func TestMetricsProviderHTTP_PortForwardCount(t *testing.T) {
 		t.Errorf("Expected count 3, got %d", count)
 	}
 }
+
+// ============================================================================
+// Tests for new CRUD HTTP clients
+// ============================================================================
+
+// TestHTTPClient_PostJSON tests the PostJSON method
+func TestHTTPClient_PostJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type application/json")
+		}
+
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["name"] != "test" {
+			t.Errorf("Expected body name 'test', got '%s'", body["name"])
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"result": "created"})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	var result struct {
+		Result string `json:"result"`
+	}
+	err := client.PostJSON("/create", map[string]string{"name": "test"}, &result)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Result != "created" {
+		t.Errorf("Expected result 'created', got '%s'", result.Result)
+	}
+}
+
+// TestHTTPClient_Delete tests the Delete method
+func TestHTTPClient_Delete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("Expected DELETE method, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/items/123" {
+			t.Errorf("Expected path /v1/items/123, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	var result struct {
+		Success bool `json:"success"`
+	}
+	err := client.Delete("/v1/items/123", &result)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Error("Expected success to be true")
+	}
+}
+
+// TestHTTPClient_Delete_NoContent tests Delete with 204 No Content
+func TestHTTPClient_Delete_NoContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL)
+	err := client.Delete("/v1/items/123", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+// TestNamespaceControllerHTTP_AddNamespace tests adding a namespace
+func TestNamespaceControllerHTTP_AddNamespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/namespaces" {
+			t.Errorf("Expected path /v1/namespaces, got %s", r.URL.Path)
+		}
+
+		var req types.AddNamespaceRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Namespace != "staging" {
+			t.Errorf("Expected namespace 'staging', got '%s'", req.Namespace)
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                       `json:"success"`
+			Data    types.AddNamespaceResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.AddNamespaceResponse{
+				Key:       "staging.minikube",
+				Namespace: "staging",
+				Context:   "minikube",
+				Services:  []string{"api", "db", "cache"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	controller := NewNamespaceControllerHTTP(server.URL)
+	result, err := controller.AddNamespace("minikube", "staging", types.AddNamespaceOpts{})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Key != "staging.minikube" {
+		t.Errorf("Expected key 'staging.minikube', got '%s'", result.Key)
+	}
+	if result.ServiceCount != 3 {
+		t.Errorf("Expected 3 services, got %d", result.ServiceCount)
+	}
+}
+
+// TestNamespaceControllerHTTP_RemoveNamespace tests removing a namespace
+func TestNamespaceControllerHTTP_RemoveNamespace(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("Expected DELETE method, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/namespaces/staging.minikube" {
+			t.Errorf("Expected path /v1/namespaces/staging.minikube, got %s", r.URL.Path)
+		}
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool `json:"success"`
+		}{Success: true})
+	}))
+	defer server.Close()
+
+	controller := NewNamespaceControllerHTTP(server.URL)
+	err := controller.RemoveNamespace("minikube", "staging")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("Expected delete endpoint to be called")
+	}
+}
+
+// TestNamespaceControllerHTTP_ListNamespaces tests listing namespaces
+func TestNamespaceControllerHTTP_ListNamespaces(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                        `json:"success"`
+			Data    types.NamespaceListResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.NamespaceListResponse{
+				Namespaces: []types.NamespaceInfoResponse{
+					{Key: "default.minikube", Namespace: "default", Context: "minikube", ServiceCount: 5},
+					{Key: "staging.minikube", Namespace: "staging", Context: "minikube", ServiceCount: 3},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	controller := NewNamespaceControllerHTTP(server.URL)
+	namespaces := controller.ListNamespaces()
+	if len(namespaces) != 2 {
+		t.Fatalf("Expected 2 namespaces, got %d", len(namespaces))
+	}
+	if namespaces[0].Namespace != "default" {
+		t.Errorf("Expected first namespace 'default', got '%s'", namespaces[0].Namespace)
+	}
+}
+
+// TestNamespaceControllerHTTP_GetNamespace tests getting a single namespace
+func TestNamespaceControllerHTTP_GetNamespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/namespaces/staging.minikube" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(struct {
+				Success bool             `json:"success"`
+				Error   *types.ErrorInfo `json:"error"`
+			}{
+				Success: false,
+				Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "not found"},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                        `json:"success"`
+			Data    types.NamespaceInfoResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.NamespaceInfoResponse{
+				Key:          "staging.minikube",
+				Namespace:    "staging",
+				Context:      "minikube",
+				ServiceCount: 3,
+			},
+		})
+	}))
+	defer server.Close()
+
+	controller := NewNamespaceControllerHTTP(server.URL)
+	ns, err := controller.GetNamespace("minikube", "staging")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if ns.Namespace != "staging" {
+		t.Errorf("Expected namespace 'staging', got '%s'", ns.Namespace)
+	}
+}
+
+// TestServiceCRUDHTTP_AddService tests adding a service
+func TestServiceCRUDHTTP_AddService(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+
+		var req types.AddServiceRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.ServiceName != "postgres" {
+			t.Errorf("Expected service name 'postgres', got '%s'", req.ServiceName)
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                     `json:"success"`
+			Data    types.AddServiceResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.AddServiceResponse{
+				Key:         "postgres.staging.minikube",
+				ServiceName: "postgres",
+				Namespace:   "staging",
+				Context:     "minikube",
+				LocalIP:     "127.1.2.3",
+				Hostnames:   []string{"postgres", "postgres.staging"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	crud := NewServiceCRUDHTTP(server.URL)
+	result, err := crud.AddService(types.AddServiceRequest{
+		Namespace:   "staging",
+		ServiceName: "postgres",
+		Context:     "minikube",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.LocalIP != "127.1.2.3" {
+		t.Errorf("Expected LocalIP '127.1.2.3', got '%s'", result.LocalIP)
+	}
+}
+
+// TestServiceCRUDHTTP_RemoveService tests removing a service
+func TestServiceCRUDHTTP_RemoveService(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("Expected DELETE method, got %s", r.Method)
+		}
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool `json:"success"`
+		}{Success: true})
+	}))
+	defer server.Close()
+
+	crud := NewServiceCRUDHTTP(server.URL)
+	err := crud.RemoveService("postgres.staging.minikube")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("Expected delete endpoint to be called")
+	}
+}
+
+// TestKubernetesDiscoveryHTTP_ListNamespaces tests listing K8s namespaces
+func TestKubernetesDiscoveryHTTP_ListNamespaces(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/kubernetes/namespaces" {
+			t.Errorf("Expected path /v1/kubernetes/namespaces, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                        `json:"success"`
+			Data    types.K8sNamespacesResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sNamespacesResponse{
+				Namespaces: []types.K8sNamespace{
+					{Name: "default", Status: "Active", Forwarded: true},
+					{Name: "kube-system", Status: "Active", Forwarded: false},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	namespaces, err := discovery.ListNamespaces("")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(namespaces) != 2 {
+		t.Fatalf("Expected 2 namespaces, got %d", len(namespaces))
+	}
+	if !namespaces[0].Forwarded {
+		t.Error("Expected first namespace to be forwarded")
+	}
+}
+
+// TestKubernetesDiscoveryHTTP_ListServices tests listing K8s services
+func TestKubernetesDiscoveryHTTP_ListServices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("namespace") != "staging" {
+			t.Errorf("Expected namespace query 'staging', got '%s'", r.URL.Query().Get("namespace"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                      `json:"success"`
+			Data    types.K8sServicesResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sServicesResponse{
+				Services: []types.K8sService{
+					{Name: "api", Namespace: "staging", Type: "ClusterIP", ClusterIP: "10.0.0.1"},
+					{Name: "db", Namespace: "staging", Type: "ClusterIP", ClusterIP: "10.0.0.2"},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	services, err := discovery.ListServices("", "staging")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(services) != 2 {
+		t.Fatalf("Expected 2 services, got %d", len(services))
+	}
+}
+
+// TestKubernetesDiscoveryHTTP_GetService tests getting a K8s service
+func TestKubernetesDiscoveryHTTP_GetService(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/kubernetes/services/staging/api" {
+			t.Errorf("Unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Data    types.K8sService `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sService{
+				Name:      "api",
+				Namespace: "staging",
+				Type:      "ClusterIP",
+				ClusterIP: "10.0.0.1",
+				Ports: []types.K8sServicePort{
+					{Port: 80, TargetPort: "8080", Protocol: "TCP"},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	svc, err := discovery.GetService("", "staging", "api")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if svc.Name != "api" {
+		t.Errorf("Expected name 'api', got '%s'", svc.Name)
+	}
+	if len(svc.Ports) != 1 {
+		t.Errorf("Expected 1 port, got %d", len(svc.Ports))
+	}
+}
+
+// TestKubernetesDiscoveryHTTP_ListContexts tests listing K8s contexts
+func TestKubernetesDiscoveryHTTP_ListContexts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                      `json:"success"`
+			Data    types.K8sContextsResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sContextsResponse{
+				Contexts: []types.K8sContext{
+					{Name: "minikube", Cluster: "minikube", Active: true},
+					{Name: "prod", Cluster: "prod-cluster", Active: false},
+				},
+				CurrentContext: "minikube",
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	result, err := discovery.ListContexts()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(result.Contexts) != 2 {
+		t.Fatalf("Expected 2 contexts, got %d", len(result.Contexts))
+	}
+	if result.CurrentContext != "minikube" {
+		t.Errorf("Expected current context 'minikube', got '%s'", result.CurrentContext)
+	}
+}
+
+// TestConnectionInfoProviderHTTP_GetConnectionInfo tests getting connection info
+func TestConnectionInfoProviderHTTP_GetConnectionInfo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                  `json:"success"`
+			Data    types.ServiceResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceResponse{
+				Key:         "postgres.staging.minikube",
+				ServiceName: "postgres",
+				Namespace:   "staging",
+				Context:     "minikube",
+				Status:      "active",
+				Forwards: []types.ForwardResponse{
+					{
+						LocalIP:   "127.1.2.3",
+						LocalPort: "5432",
+						PodPort:   "5432",
+						Hostnames: []string{"postgres", "postgres.staging"},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewConnectionInfoProviderHTTP(server.URL)
+	info, err := provider.GetConnectionInfo("postgres.staging.minikube")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if info.Service != "postgres" {
+		t.Errorf("Expected service 'postgres', got '%s'", info.Service)
+	}
+	if info.LocalIP != "127.1.2.3" {
+		t.Errorf("Expected LocalIP '127.1.2.3', got '%s'", info.LocalIP)
+	}
+	if len(info.Hostnames) != 2 {
+		t.Errorf("Expected 2 hostnames, got %d", len(info.Hostnames))
+	}
+	// Check env vars are generated
+	if info.EnvVars["POSTGRES_HOST"] != "postgres" {
+		t.Errorf("Expected POSTGRES_HOST 'postgres', got '%s'", info.EnvVars["POSTGRES_HOST"])
+	}
+	if info.EnvVars["DATABASE_URL"] != "postgresql://postgres:5432" {
+		t.Errorf("Expected DATABASE_URL, got '%s'", info.EnvVars["DATABASE_URL"])
+	}
+}
+
+// TestConnectionInfoProviderHTTP_ListHostnames tests listing hostnames
+func TestConnectionInfoProviderHTTP_ListHostnames(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                      `json:"success"`
+			Data    types.ServiceListResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceListResponse{
+				Services: []types.ServiceResponse{
+					{
+						ServiceName: "api",
+						Namespace:   "default",
+						Context:     "minikube",
+						Forwards: []types.ForwardResponse{
+							{LocalIP: "127.1.0.1", Hostnames: []string{"api", "api.default"}},
+						},
+					},
+					{
+						ServiceName: "db",
+						Namespace:   "default",
+						Context:     "minikube",
+						Forwards: []types.ForwardResponse{
+							{LocalIP: "127.1.0.2", Hostnames: []string{"db"}},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewConnectionInfoProviderHTTP(server.URL)
+	result, err := provider.ListHostnames()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Total != 3 {
+		t.Errorf("Expected 3 hostnames, got %d", result.Total)
+	}
+}
+
+// TestConnectionInfoProviderHTTP_FindServices tests finding services
+func TestConnectionInfoProviderHTTP_FindServices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                      `json:"success"`
+			Data    types.ServiceListResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceListResponse{
+				Services: []types.ServiceResponse{
+					{
+						ServiceName: "postgres",
+						Namespace:   "staging",
+						Context:     "minikube",
+						Status:      "active",
+						Forwards: []types.ForwardResponse{
+							{LocalIP: "127.1.0.1", LocalPort: "5432", PodPort: "5432", Hostnames: []string{"postgres"}},
+						},
+					},
+					{
+						ServiceName: "mysql",
+						Namespace:   "staging",
+						Context:     "minikube",
+						Status:      "active",
+						Forwards: []types.ForwardResponse{
+							{LocalIP: "127.1.0.2", LocalPort: "3306", PodPort: "3306", Hostnames: []string{"mysql"}},
+						},
+					},
+					{
+						ServiceName: "api",
+						Namespace:   "default",
+						Context:     "minikube",
+						Status:      "active",
+						Forwards: []types.ForwardResponse{
+							{LocalIP: "127.1.0.3", LocalPort: "8080", PodPort: "8080", Hostnames: []string{"api"}},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewConnectionInfoProviderHTTP(server.URL)
+
+	// Test find by query
+	results, err := provider.FindServices("postgres", 0, "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 result for query 'postgres', got %d", len(results))
+	}
+
+	// Test find by port
+	results, err = provider.FindServices("", 5432, "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 result for port 5432, got %d", len(results))
+	}
+
+	// Test find by namespace
+	results, err = provider.FindServices("", 0, "staging")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("Expected 2 results for namespace 'staging', got %d", len(results))
+	}
+}
+
+// TestGenerateEnvVars tests environment variable generation
+func TestGenerateEnvVars(t *testing.T) {
+	testCases := []struct {
+		name        string
+		serviceName string
+		localIP     string
+		ports       []types.PortInfo
+		expectKeys  []string
+	}{
+		{
+			name:        "PostgreSQL",
+			serviceName: "postgres",
+			localIP:     "127.1.0.1",
+			ports:       []types.PortInfo{{LocalPort: 5432}},
+			expectKeys:  []string{"POSTGRES_HOST", "POSTGRES_PORT", "DATABASE_URL"},
+		},
+		{
+			name:        "MySQL",
+			serviceName: "mysql-db",
+			localIP:     "127.1.0.2",
+			ports:       []types.PortInfo{{LocalPort: 3306}},
+			expectKeys:  []string{"MYSQL_DB_HOST", "MYSQL_DB_PORT", "DATABASE_URL"},
+		},
+		{
+			name:        "Redis",
+			serviceName: "redis",
+			localIP:     "127.1.0.3",
+			ports:       []types.PortInfo{{LocalPort: 6379}},
+			expectKeys:  []string{"REDIS_HOST", "REDIS_PORT", "REDIS_URL"},
+		},
+		{
+			name:        "HTTP service",
+			serviceName: "api",
+			localIP:     "127.1.0.4",
+			ports:       []types.PortInfo{{LocalPort: 8080}},
+			expectKeys:  []string{"API_HOST", "API_PORT", "API_URL"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			envVars := generateEnvVars(tc.serviceName, tc.localIP, tc.ports)
+			for _, key := range tc.expectKeys {
+				if _, ok := envVars[key]; !ok {
+					t.Errorf("Expected env var %s to be present", key)
+				}
+			}
+		})
+	}
+}
