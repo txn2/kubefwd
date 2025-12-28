@@ -350,16 +350,29 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 		// Check if the pods currently being forwarded still exist in k8s and if
 		// they are not in a (pre-)running state, if not: remove them
-		for _, podName := range svcFwd.ListServicePodNames() {
+		// NOTE: We must iterate over the map values (PortForwardOpts) to get the actual pod names,
+		// because the map keys are in format "service.podname.port", not just pod names.
+		type forwardInfo struct {
+			key     string
+			podName string
+		}
+		svcFwd.NamespaceServiceLock.Lock()
+		forwards := make([]forwardInfo, 0, len(svcFwd.PortForwards))
+		for key, pfo := range svcFwd.PortForwards {
+			forwards = append(forwards, forwardInfo{key: key, podName: pfo.PodName})
+		}
+		svcFwd.NamespaceServiceLock.Unlock()
+
+		for _, fwd := range forwards {
 			keep := false
 			for _, pod := range k8sPods {
-				if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
+				if fwd.podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
 					keep = true
 					break
 				}
 			}
 			if !keep {
-				svcFwd.RemoveServicePod(podName)
+				svcFwd.RemoveServicePod(fwd.key)
 			}
 		}
 
@@ -377,30 +390,38 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 			}
 
 			// Check if currently we are forwarding a pod which is good to keep using
-			podNameToKeep := ""
-			for _, podName := range svcFwd.ListServicePodNames() {
-				if podNameToKeep != "" {
+			// NOTE: We must get the actual pod names from PortForwardOpts, not from map keys
+			keyToKeep := ""
+			svcFwd.NamespaceServiceLock.Lock()
+			currentForwards := make([]forwardInfo, 0, len(svcFwd.PortForwards))
+			for key, pfo := range svcFwd.PortForwards {
+				currentForwards = append(currentForwards, forwardInfo{key: key, podName: pfo.PodName})
+			}
+			svcFwd.NamespaceServiceLock.Unlock()
+
+			for _, fwd := range currentForwards {
+				if keyToKeep != "" {
 					break
 				}
 				for _, pod := range k8sPods {
-					if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
-						podNameToKeep = pod.Name
+					if fwd.podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
+						keyToKeep = fwd.key
 						break
 					}
 				}
 			}
 
 			// Stop forwarding others, should there be. In case none of the currently
-			// forwarded pods are good to keep, podNameToKeep will be the empty string,
+			// forwarded pods are good to keep, keyToKeep will be the empty string,
 			// and the comparison will mean we will remove all pods, which is the desired behavior.
-			for _, podName := range svcFwd.ListServicePodNames() {
-				if podName != podNameToKeep {
-					svcFwd.RemoveServicePod(podName)
+			for _, fwd := range currentForwards {
+				if fwd.key != keyToKeep {
+					svcFwd.RemoveServicePod(fwd.key)
 				}
 			}
 
 			// If no good pod was being forwarded already, start one
-			if podNameToKeep == "" {
+			if keyToKeep == "" {
 				svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
 			}
 		}
@@ -560,6 +581,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
+
 				// AddServicePod returns false if this forward was already registered
 				// (race condition with another goroutine). Exit early to prevent duplicates.
 				if !svcFwd.AddServicePod(pfo) {
@@ -670,10 +692,11 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 	svcFwd.NamespaceServiceLock.Unlock()
 
 	if found {
-		// Remove from global informer if UID is set
+		// Remove this specific pfo from global informer (not all pfos for this pod UID,
+		// as other services may still be forwarding to the same pod)
 		if pod.PodUID != "" {
 			globalInformer := fwdport.GetGlobalPodInformer(svcFwd.ClientSet, svcFwd.Namespace)
-			globalInformer.RemovePodByUID(pod.PodUID)
+			globalInformer.RemovePfo(pod)
 		}
 		pod.Stop()
 		<-pod.DoneChan
