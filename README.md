@@ -10,6 +10,8 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/txn2/kubefwd)](https://hub.docker.com/r/txn2/kubefwd)
 [![GitHub Downloads](https://img.shields.io/github/downloads/txn2/kubefwd/total)](https://github.com/txn2/kubefwd/releases)
 
+**[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[TUI Guide](https://kubefwd.com/tui-guide/)**
+
 ## Develop Locally, Connect to Kubernetes
 
 **kubefwd** enables developers to work on their local machine while seamlessly accessing services running in a Kubernetes cluster. If you're building a new API that needs to connect to a database at `db:5432`, an auth service at `auth:443`, and a cache at `redis:6379`, all running in your development cluster, kubefwd makes them available locally by their service names, exactly as they would appear in-cluster. No environment-specific configuration, no local service setup, no Docker Compose files. Just run `kubefwd` and your application's existing connection strings work.
@@ -126,9 +128,7 @@ Download from [releases](https://github.com/txn2/kubefwd/releases):
 
 ### Windows
 
-```batch
-scoop install kubefwd
-```
+Download from [releases](https://github.com/txn2/kubefwd/releases) - extract `kubefwd.exe` and run as Administrator.
 
 ### Docker
 

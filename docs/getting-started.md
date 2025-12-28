@@ -52,17 +52,13 @@ sudo mv kubefwd /usr/local/bin/
 
 ### Windows
 
-Using [Scoop](https://scoop.sh/):
+Download the Windows executable from [GitHub Releases](https://github.com/txn2/kubefwd/releases/latest):
 
-```batch
-scoop install kubefwd
-```
+1. Download `kubefwd_Windows_x86_64.zip`
+2. Extract `kubefwd.exe`
+3. Add to your PATH or run directly
 
-To upgrade:
-
-```batch
-scoop update kubefwd
-```
+Run as Administrator (required for hosts file access).
 
 ### Docker
 
