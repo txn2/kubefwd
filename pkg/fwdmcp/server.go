@@ -185,3 +185,9 @@ func (s *Server) getManager() types.ManagerInfo {
 	}
 	return nil
 }
+
+// ServeStdio starts the MCP server on stdio transport and blocks until done.
+// This is a convenience wrapper around Run for use with HTTP client mode.
+func (s *Server) ServeStdio() error {
+	return s.Run(context.Background())
+}
