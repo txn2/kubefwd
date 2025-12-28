@@ -14,8 +14,10 @@ import (
 
 	"github.com/bep/debounce"
 	"github.com/txn2/kubefwd/pkg/fwdapi"
+	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
+	"github.com/txn2/kubefwd/pkg/fwdmcp"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
@@ -58,6 +60,7 @@ var resyncInterval time.Duration
 var retryInterval time.Duration
 var tuiMode bool
 var apiMode bool
+var mcpMode bool
 var autoReconnect bool
 
 // Version is set by the main package
@@ -89,6 +92,7 @@ func init() {
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
 	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://api.kubefwd.local/ for automation and monitoring")
+	Cmd.Flags().BoolVar(&mcpMode, "mcp", false, "Enable MCP (Model Context Protocol) server on stdio for AI assistant integration")
 	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI/API mode.")
 }
 
@@ -223,6 +227,22 @@ Try:
 		}
 	}
 
+	// Initialize MCP mode if enabled
+	if mcpMode {
+		fwdmcp.Enable()
+		// MCP mode needs the TUI state store for data access
+		if !tuiMode && !apiMode {
+			fwdtui.Version = Version
+			fwdtui.Enable()
+			fwdmetrics.GetRegistry().Start()
+		}
+
+		// In MCP mode, enable auto-reconnect by default unless user explicitly disabled it
+		if !cmd.Flags().Changed("auto-reconnect") {
+			autoReconnect = true
+		}
+	}
+
 	// Only show instructions in non-TUI mode (and non-API-only mode)
 	if !tuiMode && !apiMode {
 		log.Println("Press [Ctrl-C] to stop forwarding.")
@@ -319,6 +339,7 @@ Try:
 	// Initialize TUI manager if in TUI mode
 	var tuiManager *fwdtui.Manager
 	var apiManager *fwdapi.Manager
+	var mcpServer *fwdmcp.Server
 	var stopOnce sync.Once
 	triggerShutdown := func() {
 		stopOnce.Do(func() {
@@ -406,6 +427,43 @@ Try:
 		apiManager.SetNamespaces(namespaces)
 		apiManager.SetContexts(contexts)
 		apiManager.SetTUIEnabled(tuiMode)
+
+		// Set up diagnostics adapter
+		diagnosticsProvider := fwdapi.CreateDiagnosticsAdapter(func() types.ManagerInfo {
+			if mgr := fwdapi.GetManager(); mgr != nil {
+				return mgr
+			}
+			return nil
+		})
+		apiManager.SetDiagnosticsProvider(diagnosticsProvider)
+	}
+
+	// Initialize MCP server if in MCP mode
+	if fwdmcp.IsEnabled() {
+		mcpServer = fwdmcp.Init(Version)
+
+		// Set up adapters for MCP data access (reuse API adapters)
+		stateReader, metricsProvider, serviceController, _ := fwdapi.CreateAPIAdapters()
+		mcpServer.SetStateReader(stateReader)
+		mcpServer.SetMetricsProvider(metricsProvider)
+		mcpServer.SetServiceController(serviceController)
+
+		// Set up diagnostics adapter
+		diagnosticsProvider := fwdapi.CreateDiagnosticsAdapter(func() types.ManagerInfo {
+			if mgr := fwdapi.GetManager(); mgr != nil {
+				return mgr
+			}
+			return nil
+		})
+		mcpServer.SetDiagnosticsProvider(diagnosticsProvider)
+
+		// Set up manager info
+		mcpServer.SetManagerInfo(func() types.ManagerInfo {
+			if mgr := fwdapi.GetManager(); mgr != nil {
+				return mgr
+			}
+			return nil
+		})
 	}
 
 	// Listen for shutdown signal from user
@@ -526,12 +584,24 @@ Try:
 		}()
 	}
 
+	// Start MCP server in background if enabled
+	if mcpServer != nil {
+		go func() {
+			if err := mcpServer.Run(context.Background()); err != nil {
+				log.Errorf("MCP server error: %s", err)
+			}
+		}()
+	}
+
 	// If TUI mode, run the TUI (blocks until user quits)
 	// Otherwise, block until shutdown signal is received
 	if tuiManager != nil {
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
+	} else if mcpServer != nil && !tuiMode && apiManager == nil {
+		// MCP-only mode (no TUI, no API): block silently on stdio
+		<-stopListenCh
 	} else if apiManager != nil && !tuiMode {
 		// API-only mode (no TUI): show info and block
 		log.Infof("API server running at http://%s/ (http://%s)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.APIHostname)
@@ -585,6 +655,17 @@ Try:
 		}
 		// Clean up API network configuration
 		fwdapi.CleanupAPINetwork(hostFile)
+	}
+
+	// Wait for MCP cleanup if enabled
+	if mcpServer != nil {
+		mcpServer.Stop()
+		select {
+		case <-mcpServer.Done():
+			log.Debugf("MCP server cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for MCP cleanup")
+		}
 	}
 
 	// Final safety net: ensure all hosts are cleaned up
