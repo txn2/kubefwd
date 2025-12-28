@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/txn2/kubefwd/cmd/kubefwd/mcp"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
 	"k8s.io/klog/v2"
 )
@@ -105,7 +106,10 @@ func newRootCmd() *cobra.Command {
 	// Pass version to services package for TUI header
 	services.Version = Version
 
-	cmd.AddCommand(versionCmd, services.Cmd)
+	// Pass version to mcp package
+	mcp.Version = Version
+
+	cmd.AddCommand(versionCmd, services.Cmd, mcp.Cmd)
 
 	return cmd
 }
