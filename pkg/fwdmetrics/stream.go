@@ -1,8 +1,10 @@
 package fwdmetrics
 
 import (
+	"fmt"
 	"net/http"
 
+	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 )
 
@@ -30,6 +32,17 @@ func NewMetricsStream(stream httpstream.Stream, metrics *PortForwardMetrics) *Me
 
 // Read reads data from the stream and tracks bytes received
 func (ms *MetricsStream) Read(p []byte) (n int, err error) {
+	// Panic recovery to prevent metrics/sniffing issues from crashing the stream
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("MetricsStream Read panic recovered: %v", r)
+			// If we panicked after reading, return what we read with an error
+			if n == 0 {
+				err = fmt.Errorf("metrics stream panic: %v", r)
+			}
+		}
+	}()
+
 	n, err = ms.stream.Read(p)
 	if n > 0 && ms.metrics != nil {
 		ms.metrics.AddBytesIn(uint64(n))
@@ -43,6 +56,17 @@ func (ms *MetricsStream) Read(p []byte) (n int, err error) {
 
 // Write writes data to the stream and tracks bytes sent
 func (ms *MetricsStream) Write(p []byte) (n int, err error) {
+	// Panic recovery to prevent metrics/sniffing issues from crashing the stream
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("MetricsStream Write panic recovered: %v", r)
+			// If we panicked after writing, return what we wrote with an error
+			if n == 0 {
+				err = fmt.Errorf("metrics stream panic: %v", r)
+			}
+		}
+	}()
+
 	n, err = ms.stream.Write(p)
 	if n > 0 && ms.metrics != nil {
 		ms.metrics.AddBytesOut(uint64(n))
