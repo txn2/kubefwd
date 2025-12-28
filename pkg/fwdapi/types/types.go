@@ -279,3 +279,164 @@ type ServiceHTTPTrafficResponse struct {
 	Summary    HTTPActivitySummary   `json:"summary"`
 	Forwards   []HTTPTrafficResponse `json:"forwards"`
 }
+
+// === CRUD Request/Response Types ===
+
+// AddNamespaceRequest is the request to start watching a namespace
+type AddNamespaceRequest struct {
+	Namespace string `json:"namespace" binding:"required"`
+	Context   string `json:"context,omitempty"`  // default: current context
+	Selector  string `json:"selector,omitempty"` // label selector to filter services
+}
+
+// AddNamespaceResponse is the response after starting to watch a namespace
+type AddNamespaceResponse struct {
+	Key       string   `json:"key"` // "namespace.context"
+	Namespace string   `json:"namespace"`
+	Context   string   `json:"context"`
+	Services  []string `json:"services"` // services discovered
+}
+
+// NamespaceListResponse contains a list of watched namespaces
+type NamespaceListResponse struct {
+	Namespaces []NamespaceInfoResponse `json:"namespaces"`
+}
+
+// NamespaceInfoResponse provides information about a watched namespace
+type NamespaceInfoResponse struct {
+	Key           string `json:"key"`
+	Namespace     string `json:"namespace"`
+	Context       string `json:"context"`
+	ServiceCount  int    `json:"serviceCount"`
+	ActiveCount   int    `json:"activeCount"`
+	ErrorCount    int    `json:"errorCount"`
+	Running       bool   `json:"running"`
+	LabelSelector string `json:"labelSelector,omitempty"`
+	FieldSelector string `json:"fieldSelector,omitempty"`
+}
+
+// AddServiceRequest is the request to forward a specific service
+type AddServiceRequest struct {
+	Namespace   string   `json:"namespace" binding:"required"`
+	ServiceName string   `json:"serviceName" binding:"required"`
+	Context     string   `json:"context,omitempty"` // default: current context
+	Ports       []string `json:"ports,omitempty"`   // specific ports to forward (optional)
+	LocalIP     string   `json:"localIP,omitempty"` // reserve specific IP (optional)
+}
+
+// AddServiceResponse is the response after forwarding a service
+type AddServiceResponse struct {
+	Key         string        `json:"key"`
+	ServiceName string        `json:"serviceName"`
+	Namespace   string        `json:"namespace"`
+	Context     string        `json:"context"`
+	LocalIP     string        `json:"localIP"`
+	Hostnames   []string      `json:"hostnames"`
+	Ports       []PortMapping `json:"ports"`
+}
+
+// PortMapping represents a port mapping for a forwarded service
+type PortMapping struct {
+	LocalPort  string `json:"localPort"`
+	RemotePort string `json:"remotePort"`
+	Protocol   string `json:"protocol,omitempty"`
+}
+
+// RemoveResponse is a generic response for remove operations
+type RemoveResponse struct {
+	Removed bool   `json:"removed"`
+	Key     string `json:"key"`
+	Message string `json:"message,omitempty"`
+}
+
+// === Kubernetes Discovery Types ===
+
+// K8sNamespacesResponse contains a list of available K8s namespaces
+type K8sNamespacesResponse struct {
+	Namespaces []K8sNamespace `json:"namespaces"`
+}
+
+// K8sNamespace represents a Kubernetes namespace
+type K8sNamespace struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"`    // Active, Terminating
+	Forwarded bool   `json:"forwarded"` // true if currently being watched
+}
+
+// K8sServicesResponse contains a list of available K8s services
+type K8sServicesResponse struct {
+	Services []K8sService `json:"services"`
+}
+
+// K8sService represents a Kubernetes service available for forwarding
+type K8sService struct {
+	Name       string            `json:"name"`
+	Namespace  string            `json:"namespace"`
+	Type       string            `json:"type"` // ClusterIP, NodePort, LoadBalancer, ExternalName
+	ClusterIP  string            `json:"clusterIP"`
+	Ports      []K8sServicePort  `json:"ports"`
+	Selector   map[string]string `json:"selector,omitempty"`
+	Forwarded  bool              `json:"forwarded"`            // true if currently being forwarded
+	ForwardKey string            `json:"forwardKey,omitempty"` // key in registry if forwarded
+}
+
+// K8sServicePort represents a port on a Kubernetes service
+type K8sServicePort struct {
+	Name       string `json:"name,omitempty"`
+	Port       int32  `json:"port"`
+	TargetPort string `json:"targetPort"`
+	Protocol   string `json:"protocol"` // TCP, UDP
+}
+
+// K8sContextsResponse contains a list of available Kubernetes contexts
+type K8sContextsResponse struct {
+	Contexts       []K8sContext `json:"contexts"`
+	CurrentContext string       `json:"currentContext"`
+}
+
+// K8sContext represents a Kubernetes context
+type K8sContext struct {
+	Name      string `json:"name"`
+	Cluster   string `json:"cluster"`
+	User      string `json:"user,omitempty"`
+	Namespace string `json:"namespace,omitempty"` // default namespace for this context
+	Active    bool   `json:"active"`              // true if this is the current context
+}
+
+// === Connection Info Types (for developer-focused MCP) ===
+
+// ConnectionInfoResponse provides connection information for a forwarded service
+type ConnectionInfoResponse struct {
+	Service          string            `json:"service"`
+	Namespace        string            `json:"namespace"`
+	Context          string            `json:"context"`
+	LocalIP          string            `json:"localIP"`
+	Hostnames        []string          `json:"hostnames"`
+	Ports            []PortInfo        `json:"ports"`
+	ConnectionString string            `json:"connectionString,omitempty"` // e.g., postgresql://127.1.2.3:5432
+	EnvVars          map[string]string `json:"envVars,omitempty"`          // suggested environment variables
+	Status           string            `json:"status"`
+}
+
+// PortInfo provides detailed port information
+type PortInfo struct {
+	LocalPort  int    `json:"localPort"`
+	RemotePort int    `json:"remotePort"`
+	Protocol   string `json:"protocol"`
+	Name       string `json:"name,omitempty"`
+}
+
+// HostnameListResponse provides a list of all hostnames added to /etc/hosts
+type HostnameListResponse struct {
+	Hostnames []HostnameEntry `json:"hostnames"`
+	Total     int             `json:"total"`
+}
+
+// HostnameEntry represents a hostname entry in /etc/hosts
+type HostnameEntry struct {
+	Hostname  string `json:"hostname"`
+	IP        string `json:"ip"`
+	Service   string `json:"service"`
+	Namespace string `json:"namespace"`
+	Context   string `json:"context"`
+}
