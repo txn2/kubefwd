@@ -636,6 +636,92 @@ func TestSyncPodForwards_RemovesStoppedPods(t *testing.T) {
 	}
 }
 
+// TestSyncPodForwards_RemovesStoppedPods_FullKeyFormat is a regression test for the bug
+// where stale forwards were not being cleaned up because the cleanup logic incorrectly
+// compared map keys (format: "service.podname.port") against pod names ("podname").
+// This test verifies that forwards with the full key format are properly cleaned up.
+//
+//goland:noinspection DuplicatedCode
+func TestSyncPodForwards_RemovesStoppedPods_FullKeyFormat(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	// Only have running-pod in k8s (deleted-pod is gone)
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
+	}, false)
+
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	debouncer := &mockDebouncer{immediate: true}
+
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Headless:             false,
+		Context:              "test-context",
+		Namespace:            namespace,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		SyncDebouncer:        debouncer.debounce,
+		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
+	}
+
+	// Add a mock pod forward entry with FULL KEY FORMAT (service.podname.port)
+	// for a pod that no longer exists in k8s
+	mockPfo := &fwdport.PortForwardOpts{
+		PodName:        "deleted-pod",
+		Service:        "test-svc",
+		LocalPort:      "80",
+		ManualStopChan: make(chan struct{}),
+		DoneChan:       make(chan struct{}),
+	}
+	close(mockPfo.DoneChan) // Already stopped
+
+	// Use the full key format: service.podname.port
+	fullKey := "test-svc.deleted-pod.80"
+	svcFwd.PortForwards[fullKey] = mockPfo
+
+	// Sync should remove the deleted pod (even with full key format)
+	svcFwd.SyncPodForwards(true)
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Lock before reading PortForwards
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	_, foundDeletedByFullKey := svcFwd.PortForwards[fullKey]
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	// Should only have the running pod now (1 forward)
+	if count != 1 {
+		t.Errorf("Expected 1 pod after sync, got %d", count)
+	}
+
+	// Should NOT have the deleted pod entry (with full key format)
+	if foundDeletedByFullKey {
+		t.Errorf("Deleted pod with key '%s' should have been removed from PortForwards. "+
+			"This is a regression of the bug where cleanup compared map keys against pod names instead of "+
+			"extracting the actual pod name from PortForwardOpts.", fullKey)
+	}
+}
+
 // TestAddServicePod tests adding a pod to the PortForwards map
 func TestAddServicePod(t *testing.T) {
 	svcFwd := &ServiceFWD{
