@@ -165,3 +165,36 @@ func TestMiddlewareChain(t *testing.T) {
 		t.Error("Expected Cache-Control header to be set")
 	}
 }
+
+func TestRequestLogger_WithQueryString(t *testing.T) {
+	r := setupRouter()
+	r.Use(RequestLogger())
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	// Perform request with query string
+	req := httptest.NewRequest("GET", "/test?foo=bar&baz=qux", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestErrorHandler_DefaultsTo500(t *testing.T) {
+	r := setupRouter()
+	r.Use(ErrorHandler())
+	r.GET("/error-default", func(c *gin.Context) {
+		// Add error without changing status (will default to 500)
+		_ = c.Error(http.ErrBodyNotAllowed)
+	})
+
+	w := performRequest(r, "GET", "/error-default")
+
+	// Status should be 500 since we didn't set one explicitly
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}

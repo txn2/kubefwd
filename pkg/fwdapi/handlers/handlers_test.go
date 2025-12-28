@@ -1061,7 +1061,7 @@ func TestAnalyzeHandler_AnalyzeWithErrors(t *testing.T) {
 				Key:         "svc1.default.ctx",
 				ServiceName: "svc1",
 				ErrorCount:  1,
-				PortForwards: []state.PortForwardInfo{
+				PortForwards: []state.ForwardSnapshot{
 					{
 						PodName: "pod1",
 						Error:   "connection refused",
@@ -1072,7 +1072,7 @@ func TestAnalyzeHandler_AnalyzeWithErrors(t *testing.T) {
 				Key:         "svc2.default.ctx",
 				ServiceName: "svc2",
 				ErrorCount:  1,
-				PortForwards: []state.PortForwardInfo{
+				PortForwards: []state.ForwardSnapshot{
 					{
 						PodName: "pod2",
 						Error:   "timeout error",
@@ -1453,5 +1453,1113 @@ func TestBuildHTTPTrafficResponse(t *testing.T) {
 	}
 	if response.Logs[0].Method != "GET" {
 		t.Errorf("Expected method 'GET', got '%s'", response.Logs[0].Method)
+	}
+}
+
+// Additional Metrics Handler Tests
+
+func TestMetricsHandler_SummaryNilState(t *testing.T) {
+	r := setupRouter()
+	h := NewMetricsHandler(nil, nil, nil)
+	r.GET("/v1/metrics", h.Summary)
+
+	w := performRequest(r, "GET", "/v1/metrics")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestMetricsHandler_ByServiceNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewMetricsHandler(nil, nil, nil)
+	r.GET("/v1/metrics/services", h.ByService)
+
+	w := performRequest(r, "GET", "/v1/metrics/services")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceDetail(t *testing.T) {
+	r := setupRouter()
+	mock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName:   "svc1",
+				Namespace:     "default",
+				Context:       "ctx",
+				TotalBytesIn:  1024,
+				TotalBytesOut: 2048,
+			},
+		},
+	}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key", h.ServiceDetail)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/svc1.default.ctx")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceDetailNotFound(t *testing.T) {
+	r := setupRouter()
+	mock := &mockMetricsProvider{snapshots: []fwdmetrics.ServiceSnapshot{}}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key", h.ServiceDetail)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/nonexistent")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceDetailNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewMetricsHandler(nil, nil, nil)
+	r.GET("/v1/metrics/services/:key", h.ServiceDetail)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/test")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceHistory(t *testing.T) {
+	r := setupRouter()
+	now := time.Now()
+	mock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName: "pod1",
+						History: []fwdmetrics.RateSample{
+							{Timestamp: now, BytesIn: 100, BytesOut: 200},
+							{Timestamp: now.Add(time.Second), BytesIn: 150, BytesOut: 250},
+						},
+					},
+				},
+			},
+		},
+	}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/svc1.default.ctx/history")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceHistoryWithPoints(t *testing.T) {
+	r := setupRouter()
+	now := time.Now()
+	mock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName: "pod1",
+						History: []fwdmetrics.RateSample{
+							{Timestamp: now, BytesIn: 100, BytesOut: 200},
+						},
+					},
+				},
+			},
+		},
+	}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/svc1.default.ctx/history?points=30")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceHistoryNotFound(t *testing.T) {
+	r := setupRouter()
+	mock := &mockMetricsProvider{snapshots: []fwdmetrics.ServiceSnapshot{}}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/nonexistent/history")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceHistoryNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewMetricsHandler(nil, nil, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/test/history")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+// Additional Services Handler Tests
+
+func TestServicesHandler_Sync(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceController{}
+	h := NewServicesHandler(nil, mock)
+	r.POST("/v1/services/:key/sync", h.Sync)
+
+	w := performRequest(r, "POST", "/v1/services/svc1.default.ctx/sync")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestServicesHandler_SyncNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesHandler(nil, nil)
+	r.POST("/v1/services/:key/sync", h.Sync)
+
+	w := performRequest(r, "POST", "/v1/services/svc1.default.ctx/sync")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestServicesHandler_SyncWithError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceController{syncErr: fmt.Errorf("sync failed")}
+	h := NewServicesHandler(nil, mock)
+	r.POST("/v1/services/:key/sync", h.Sync)
+
+	w := performRequest(r, "POST", "/v1/services/svc1.default.ctx/sync")
+
+	// Handler returns 404 for errors (treating them as "not found")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestServicesHandler_ReconnectNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesHandler(nil, nil)
+	r.POST("/v1/services/:key/reconnect", h.Reconnect)
+
+	w := performRequest(r, "POST", "/v1/services/svc1/reconnect")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestServicesHandler_ReconnectWithError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceController{reconnectErr: fmt.Errorf("reconnect failed")}
+	h := NewServicesHandler(nil, mock)
+	r.POST("/v1/services/:key/reconnect", h.Reconnect)
+
+	w := performRequest(r, "POST", "/v1/services/svc1/reconnect")
+
+	// Handler returns 404 for errors (treating them as "not found")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestServicesHandler_ReconnectAll(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceController{reconnected: []string{"svc1", "svc2"}}
+	h := NewServicesHandler(nil, mock)
+	r.POST("/v1/services/reconnect", h.ReconnectAll)
+
+	w := performRequest(r, "POST", "/v1/services/reconnect")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestServicesHandler_ReconnectAllNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesHandler(nil, nil)
+	r.POST("/v1/services/reconnect", h.ReconnectAll)
+
+	w := performRequest(r, "POST", "/v1/services/reconnect")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestServicesHandler_GetNilStateReader(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesHandler(nil, nil)
+	r.GET("/v1/services/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/services/test")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+// Additional Forwards Handler Tests
+
+func TestForwardsHandler_ListNilState(t *testing.T) {
+	r := setupRouter()
+	h := NewForwardsHandler(nil)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestForwardsHandler_GetNilState(t *testing.T) {
+	r := setupRouter()
+	h := NewForwardsHandler(nil)
+	r.GET("/v1/forwards/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/forwards/test")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+// Additional Logs Handler Tests
+
+func TestLogsHandler_RecentNilState(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil)
+	r.GET("/v1/logs", h.Recent)
+
+	w := performRequest(r, "GET", "/v1/logs")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestLogsHandler_RecentInvalidCount(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{logs: []state.LogEntry{}}
+	h := NewLogsHandler(mock)
+	r.GET("/v1/logs", h.Recent)
+
+	w := performRequest(r, "GET", "/v1/logs?count=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Additional Diagnostics Handler Tests
+
+func TestDiagnosticsHandler_ServiceDiagnosticNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewDiagnosticsHandler(nil)
+	r.GET("/v1/diagnostics/services/:key", h.ServiceDiagnostic)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/services/test")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestDiagnosticsHandler_ForwardDiagnosticNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewDiagnosticsHandler(nil)
+	r.GET("/v1/diagnostics/forwards/:key", h.ForwardDiagnostic)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/forwards/test")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestDiagnosticsHandler_NetworkNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewDiagnosticsHandler(nil)
+	r.GET("/v1/diagnostics/network", h.Network)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/network")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestDiagnosticsHandler_ErrorsNilProvider(t *testing.T) {
+	r := setupRouter()
+	h := NewDiagnosticsHandler(nil)
+	r.GET("/v1/diagnostics/errors", h.Errors)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/errors")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestDiagnosticsHandler_ErrorsInvalidCount(t *testing.T) {
+	r := setupRouter()
+	mock := &mockDiagnosticsProvider{errors: []types.ErrorDetail{}}
+	h := NewDiagnosticsHandler(mock)
+	r.GET("/v1/diagnostics/errors", h.Errors)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/errors?count=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestDiagnosticsHandler_ErrorsMaxCount(t *testing.T) {
+	r := setupRouter()
+	mock := &mockDiagnosticsProvider{errors: []types.ErrorDetail{}}
+	h := NewDiagnosticsHandler(mock)
+	r.GET("/v1/diagnostics/errors", h.Errors)
+
+	w := performRequest(r, "GET", "/v1/diagnostics/errors?count=1000")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Test mapPortForwardMetrics helper
+
+func TestMapPortForwardMetrics(t *testing.T) {
+	now := time.Now()
+	pfs := []fwdmetrics.PortForwardSnapshot{
+		{
+			PodName:        "pod1",
+			LocalIP:        "127.1.0.1",
+			LocalPort:      "8080",
+			PodPort:        "80",
+			BytesIn:        1024,
+			BytesOut:       2048,
+			RateIn:         100.0,
+			RateOut:        200.0,
+			AvgRateIn:      50.0,
+			AvgRateOut:     100.0,
+			ConnectedAt:    now,
+			LastActivityAt: now,
+		},
+	}
+
+	result := mapPortForwardMetrics(pfs)
+
+	if len(result) != 1 {
+		t.Errorf("Expected 1 result, got %d", len(result))
+	}
+	if result[0].PodName != "pod1" {
+		t.Errorf("Expected PodName 'pod1', got '%s'", result[0].PodName)
+	}
+	if result[0].BytesIn != 1024 {
+		t.Errorf("Expected BytesIn 1024, got %d", result[0].BytesIn)
+	}
+}
+
+func TestMapPortForwardMetricsEmpty(t *testing.T) {
+	result := mapPortForwardMetrics(nil)
+	if len(result) != 0 {
+		t.Errorf("Expected 0 results, got %d", len(result))
+	}
+}
+
+// More Analyze handler edge cases
+
+func TestAnalyzeHandler_AnalyzeNoServices(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{},
+		summary:  state.SummaryStats{},
+	}
+	h := NewAnalyzeHandler(mock, nil, nil)
+	r.GET("/v1/analyze", h.Analyze)
+
+	w := performRequest(r, "GET", "/v1/analyze")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be a map")
+	}
+	if data["status"] != "healthy" {
+		t.Errorf("Expected status 'healthy', got '%v'", data["status"])
+	}
+}
+
+func TestAnalyzeHandler_StatusNoServices(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		summary: state.SummaryStats{
+			TotalServices:  0,
+			ActiveServices: 0,
+			ErrorCount:     0,
+		},
+	}
+	h := NewAnalyzeHandler(mock, nil, nil)
+	r.GET("/v1/status", h.Status)
+
+	w := performRequest(r, "GET", "/v1/status")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be a map")
+	}
+	if data["status"] != "ok" {
+		t.Errorf("Expected status 'ok', got '%v'", data["status"])
+	}
+}
+
+// Services List Filtering Tests
+
+func TestServicesHandler_ListWithStatusFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx", ServiceName: "svc1", Namespace: "default", Context: "ctx", ActiveCount: 1, ErrorCount: 0},
+			{Key: "svc2.default.ctx", ServiceName: "svc2", Namespace: "default", Context: "ctx", ActiveCount: 0, ErrorCount: 1},
+			{Key: "svc3.default.ctx", ServiceName: "svc3", Namespace: "default", Context: "ctx", ActiveCount: 1, ErrorCount: 1},
+		},
+		summary: state.SummaryStats{TotalServices: 3},
+	}
+	h := NewServicesHandler(mock, nil)
+	r.GET("/v1/services", h.List)
+
+	w := performRequest(r, "GET", "/v1/services?status=active")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Meta == nil || response.Meta.Count != 1 {
+		t.Errorf("Expected meta count 1 for active status filter, got %v", response.Meta)
+	}
+}
+
+func TestServicesHandler_ListWithNamespaceFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx", ServiceName: "svc1", Namespace: "default", Context: "ctx", ActiveCount: 1},
+			{Key: "svc2.kube-system.ctx", ServiceName: "svc2", Namespace: "kube-system", Context: "ctx", ActiveCount: 1},
+		},
+		summary: state.SummaryStats{TotalServices: 2},
+	}
+	h := NewServicesHandler(mock, nil)
+	r.GET("/v1/services", h.List)
+
+	w := performRequest(r, "GET", "/v1/services?namespace=default")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Meta == nil || response.Meta.Count != 1 {
+		t.Errorf("Expected meta count 1 for namespace filter, got %v", response.Meta)
+	}
+}
+
+func TestServicesHandler_ListWithContextFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx1", ServiceName: "svc1", Namespace: "default", Context: "ctx1", ActiveCount: 1},
+			{Key: "svc2.default.ctx2", ServiceName: "svc2", Namespace: "default", Context: "ctx2", ActiveCount: 1},
+		},
+		summary: state.SummaryStats{TotalServices: 2},
+	}
+	h := NewServicesHandler(mock, nil)
+	r.GET("/v1/services", h.List)
+
+	w := performRequest(r, "GET", "/v1/services?context=ctx1")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Meta == nil || response.Meta.Count != 1 {
+		t.Errorf("Expected meta count 1 for context filter, got %v", response.Meta)
+	}
+}
+
+func TestServicesHandler_ListWithSearchFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "api-gateway.default.ctx", ServiceName: "api-gateway", Namespace: "default", Context: "ctx", ActiveCount: 1},
+			{Key: "database.default.ctx", ServiceName: "database", Namespace: "default", Context: "ctx", ActiveCount: 1},
+		},
+		summary: state.SummaryStats{TotalServices: 2},
+	}
+	h := NewServicesHandler(mock, nil)
+	r.GET("/v1/services", h.List)
+
+	w := performRequest(r, "GET", "/v1/services?search=api")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Meta == nil || response.Meta.Count != 1 {
+		t.Errorf("Expected meta count 1 for search filter, got %v", response.Meta)
+	}
+}
+
+func TestServicesHandler_ListWithPagination(t *testing.T) {
+	r := setupRouter()
+	services := make([]state.ServiceSnapshot, 20)
+	for i := 0; i < 20; i++ {
+		services[i] = state.ServiceSnapshot{
+			Key:         fmt.Sprintf("svc%d.default.ctx", i),
+			ServiceName: fmt.Sprintf("svc%d", i),
+			Namespace:   "default",
+			Context:     "ctx",
+			ActiveCount: 1,
+		}
+	}
+	mock := &mockStateReader{
+		services: services,
+		summary:  state.SummaryStats{TotalServices: 20},
+	}
+	h := NewServicesHandler(mock, nil)
+	r.GET("/v1/services", h.List)
+
+	w := performRequest(r, "GET", "/v1/services?limit=5&offset=5")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Meta == nil || response.Meta.Count != 5 {
+		t.Errorf("Expected meta count 5 for pagination, got %v", response.Meta)
+	}
+}
+
+// Services status mapping tests
+
+func TestMapServiceSnapshot_PendingStatus(t *testing.T) {
+	svc := state.ServiceSnapshot{
+		Key:         "svc.ns.ctx",
+		ActiveCount: 0,
+		ErrorCount:  0,
+	}
+
+	result := mapServiceSnapshot(svc)
+
+	if result.Status != "pending" {
+		t.Errorf("Expected status 'pending', got '%s'", result.Status)
+	}
+}
+
+// History handler edge cases
+
+func TestHistoryHandler_EventsInvalidCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/history/events", h.Events)
+
+	w := performRequest(r, "GET", "/v1/history/events?count=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHistoryHandler_EventsMaxCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/history/events", h.Events)
+
+	w := performRequest(r, "GET", "/v1/history/events?count=5000")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHistoryHandler_ReconnectionsWithCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/services/:key/history/reconnections", h.Reconnections)
+
+	w := performRequest(r, "GET", "/v1/services/svc1/history/reconnections?count=10")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHistoryHandler_ReconnectionsMaxCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/services/:key/history/reconnections", h.Reconnections)
+
+	w := performRequest(r, "GET", "/v1/services/svc1/history/reconnections?count=500")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHistoryHandler_AllReconnectionsMaxCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/history/reconnections", h.AllReconnections)
+
+	w := performRequest(r, "GET", "/v1/history/reconnections?count=500")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHistoryHandler_ErrorsMaxCount(t *testing.T) {
+	r := setupRouter()
+	h := NewHistoryHandler()
+	r.GET("/v1/history/errors", h.Errors)
+
+	w := performRequest(r, "GET", "/v1/history/errors?count=1000")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// HTTP traffic handler edge cases
+
+func TestHTTPTrafficHandler_ForwardHTTPWithCount(t *testing.T) {
+	r := setupRouter()
+	now := time.Now()
+	mockState := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "pod1.svc1.default.ctx", ServiceKey: "svc1.default.ctx", PodName: "pod1"},
+		},
+	}
+	mockMetrics := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName: "pod1",
+						HTTPLogs: []fwdmetrics.HTTPLogEntry{
+							{Timestamp: now, Method: "GET", Path: "/test", StatusCode: 200},
+						},
+					},
+				},
+			},
+		},
+	}
+	h := NewHTTPTrafficHandler(mockMetrics, mockState)
+	r.GET("/v1/forwards/:key/http", h.ForwardHTTP)
+
+	w := performRequest(r, "GET", "/v1/forwards/pod1.svc1.default.ctx/http?count=25")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHTTPTrafficHandler_ForwardHTTPInvalidCount(t *testing.T) {
+	r := setupRouter()
+	mockState := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "pod1.svc1.default.ctx", ServiceKey: "svc1.default.ctx", PodName: "pod1"},
+		},
+	}
+	mockMetrics := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName:  "svc1",
+				Namespace:    "default",
+				Context:      "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{{PodName: "pod1"}},
+			},
+		},
+	}
+	h := NewHTTPTrafficHandler(mockMetrics, mockState)
+	r.GET("/v1/forwards/:key/http", h.ForwardHTTP)
+
+	w := performRequest(r, "GET", "/v1/forwards/pod1.svc1.default.ctx/http?count=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestHTTPTrafficHandler_ServiceHTTPWithCount(t *testing.T) {
+	r := setupRouter()
+	mockMetrics := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName:  "svc1",
+				Namespace:    "default",
+				Context:      "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{{PodName: "pod1"}},
+			},
+		},
+	}
+	h := NewHTTPTrafficHandler(mockMetrics, nil)
+	r.GET("/v1/services/:key/http", h.ServiceHTTP)
+
+	w := performRequest(r, "GET", "/v1/services/svc1.default.ctx/http?count=25")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Metrics handler edge cases
+
+func TestMetricsHandler_ServiceHistoryInvalidPoints(t *testing.T) {
+	r := setupRouter()
+	mock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{ServiceName: "svc1", Namespace: "default", Context: "ctx"},
+		},
+	}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/svc1.default.ctx/history?points=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestMetricsHandler_ServiceHistoryMaxPoints(t *testing.T) {
+	r := setupRouter()
+	mock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{ServiceName: "svc1", Namespace: "default", Context: "ctx"},
+		},
+	}
+	h := NewMetricsHandler(nil, mock, nil)
+	r.GET("/v1/metrics/services/:key/history", h.ServiceHistory)
+
+	w := performRequest(r, "GET", "/v1/metrics/services/svc1.default.ctx/history?points=500")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Forwards filtering tests
+
+func TestForwardsHandler_ListWithStatusFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "fwd1", ServiceName: "svc1", Namespace: "default", Context: "ctx", Status: state.StatusActive},
+			{Key: "fwd2", ServiceName: "svc2", Namespace: "default", Context: "ctx", Status: state.StatusError},
+		},
+		summary: state.SummaryStats{TotalForwards: 2},
+	}
+	h := NewForwardsHandler(mock)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards?status=active")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestForwardsHandler_ListWithNamespaceFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "fwd1", ServiceName: "svc1", Namespace: "default", Context: "ctx"},
+			{Key: "fwd2", ServiceName: "svc2", Namespace: "kube-system", Context: "ctx"},
+		},
+		summary: state.SummaryStats{TotalForwards: 2},
+	}
+	h := NewForwardsHandler(mock)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards?namespace=default")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestForwardsHandler_ListWithContextFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "fwd1", ServiceName: "svc1", Namespace: "default", Context: "ctx1"},
+			{Key: "fwd2", ServiceName: "svc2", Namespace: "default", Context: "ctx2"},
+		},
+		summary: state.SummaryStats{TotalForwards: 2},
+	}
+	h := NewForwardsHandler(mock)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards?context=ctx1")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestForwardsHandler_ListWithSearchFilter(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "api-pod.svc", ServiceName: "api", Namespace: "default", Context: "ctx"},
+			{Key: "db-pod.svc", ServiceName: "database", Namespace: "default", Context: "ctx"},
+		},
+		summary: state.SummaryStats{TotalForwards: 2},
+	}
+	h := NewForwardsHandler(mock)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards?search=api")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestForwardsHandler_ListWithPagination(t *testing.T) {
+	r := setupRouter()
+	forwards := make([]state.ForwardSnapshot, 20)
+	for i := 0; i < 20; i++ {
+		forwards[i] = state.ForwardSnapshot{
+			Key:         fmt.Sprintf("fwd%d", i),
+			ServiceName: fmt.Sprintf("svc%d", i),
+			Namespace:   "default",
+			Context:     "ctx",
+		}
+	}
+	mock := &mockStateReader{
+		forwards: forwards,
+		summary:  state.SummaryStats{TotalForwards: 20},
+	}
+	h := NewForwardsHandler(mock)
+	r.GET("/v1/forwards", h.List)
+
+	w := performRequest(r, "GET", "/v1/forwards?limit=5&offset=5")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+// Events handler tests
+
+func TestNewEventsHandler(t *testing.T) {
+	h := NewEventsHandler(nil)
+	if h == nil {
+		t.Error("Expected non-nil handler")
+	}
+}
+
+// Additional Analyze handler tests for error type branches
+
+func TestAnalyzeHandler_AnalyzeAllErrorTypes(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{
+				Key:         "svc1.default.ctx",
+				ServiceName: "svc1",
+				ErrorCount:  4,
+				PortForwards: []state.ForwardSnapshot{
+					{PodName: "pod1", Error: "connection refused"},
+					{PodName: "pod2", Error: "request timeout"},
+					{PodName: "pod3", Error: "pod not found"},
+					{PodName: "pod4", Error: "broken pipe error"},
+				},
+			},
+		},
+		summary: state.SummaryStats{
+			TotalServices:  1,
+			ActiveServices: 0,
+			ErrorCount:     4,
+		},
+	}
+	h := NewAnalyzeHandler(mock, nil, nil)
+	r.GET("/v1/analyze", h.Analyze)
+
+	w := performRequest(r, "GET", "/v1/analyze")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be a map")
+	}
+	if data["status"] != "unhealthy" {
+		t.Errorf("Expected status 'unhealthy', got '%v'", data["status"])
+	}
+}
+
+func TestAnalyzeHandler_AnalyzeDegraded(t *testing.T) {
+	r := setupRouter()
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx", ServiceName: "svc1", ActiveCount: 1, ErrorCount: 0},
+			{Key: "svc2.default.ctx", ServiceName: "svc2", ActiveCount: 0, ErrorCount: 1,
+				PortForwards: []state.ForwardSnapshot{{PodName: "pod1", Error: "unknown error type"}}},
+		},
+		summary: state.SummaryStats{
+			TotalServices:  2,
+			ActiveServices: 1,
+			ErrorCount:     1,
+		},
+	}
+	h := NewAnalyzeHandler(mock, nil, nil)
+	r.GET("/v1/analyze", h.Analyze)
+
+	w := performRequest(r, "GET", "/v1/analyze")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	data, ok := response.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data to be a map")
+	}
+	// Status should be "degraded" because ErrorCount (1) <= ActiveServices (1)
+	if data["status"] != "degraded" {
+		t.Errorf("Expected status 'degraded', got '%v'", data["status"])
+	}
+}
+
+// HTTPTrafficHandler edge case tests
+
+func TestHTTPTrafficHandler_ForwardHTTPMetricsNotFound(t *testing.T) {
+	r := setupRouter()
+	stateMock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "fwd1.svc.ns.ctx", ServiceKey: "svc.ns.ctx", PodName: "pod1"},
+		},
+	}
+	metricsMock := &mockMetricsProvider{
+		// No snapshots - service metrics not found
+	}
+	h := NewHTTPTrafficHandler(metricsMock, stateMock)
+	r.GET("/v1/forwards/:key/http", h.ForwardHTTP)
+
+	w := performRequest(r, "GET", "/v1/forwards/fwd1.svc.ns.ctx/http")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestHTTPTrafficHandler_ForwardHTTPPortForwardNotFound(t *testing.T) {
+	r := setupRouter()
+	stateMock := &mockStateReader{
+		forwards: []state.ForwardSnapshot{
+			{Key: "fwd1.svc.ns.ctx", ServiceKey: "svc.ns.ctx", PodName: "pod1"},
+		},
+	}
+	metricsMock := &mockMetricsProvider{
+		snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc",
+				Namespace:   "ns",
+				Context:     "ctx",
+				// No PortForwards matching the key
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{PodName: "other-pod"},
+				},
+			},
+		},
+	}
+	h := NewHTTPTrafficHandler(metricsMock, stateMock)
+	r.GET("/v1/forwards/:key/http", h.ForwardHTTP)
+
+	w := performRequest(r, "GET", "/v1/forwards/fwd1.svc.ns.ctx/http")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
 }
