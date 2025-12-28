@@ -49,10 +49,11 @@ type Manager struct {
 	startTime time.Time
 
 	// Dependencies (interfaces for testability)
-	stateReader       StateReader
-	metricsProvider   MetricsProvider
-	serviceController ServiceController
-	eventStreamer     EventStreamer
+	stateReader         StateReader
+	metricsProvider     MetricsProvider
+	serviceController   ServiceController
+	eventStreamer       EventStreamer
+	diagnosticsProvider types.DiagnosticsProvider
 
 	// Callbacks
 	triggerShutdown func()
@@ -123,6 +124,11 @@ func (m *Manager) SetServiceController(controller ServiceController) {
 // SetEventStreamer sets the event streamer dependency
 func (m *Manager) SetEventStreamer(streamer EventStreamer) {
 	m.eventStreamer = streamer
+}
+
+// SetDiagnosticsProvider sets the diagnostics provider dependency
+func (m *Manager) SetDiagnosticsProvider(provider types.DiagnosticsProvider) {
+	m.diagnosticsProvider = provider
 }
 
 // SetNamespaces sets the namespaces being forwarded (for info endpoint)
