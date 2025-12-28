@@ -5,12 +5,14 @@
 package fwdmcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
@@ -68,6 +70,64 @@ func (c *HTTPClient) Post(path string, result interface{}) error {
 	}
 
 	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// PostJSON performs a POST request with JSON body and decodes JSON response
+func (c *HTTPClient) PostJSON(path string, body interface{}, result interface{}) error {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	resp, err := c.client.Post(c.baseURL+path, "application/json", bodyReader)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Delete performs a DELETE request and decodes JSON response
+func (c *HTTPClient) Delete(path string, result interface{}) error {
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	if result != nil && resp.StatusCode != http.StatusNoContent {
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
@@ -605,4 +665,482 @@ func parseForwardStatus(s string) state.ForwardStatus {
 func parsePort(s string) int {
 	p, _ := strconv.Atoi(s)
 	return p
+}
+
+// ============================================================================
+// NamespaceControllerHTTP implements types.NamespaceController via REST API
+// ============================================================================
+
+type NamespaceControllerHTTP struct {
+	client *HTTPClient
+}
+
+// NewNamespaceControllerHTTP creates a new HTTP-based NamespaceController
+func NewNamespaceControllerHTTP(baseURL string) *NamespaceControllerHTTP {
+	return &NamespaceControllerHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+func (n *NamespaceControllerHTTP) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+	req := types.AddNamespaceRequest{
+		Namespace: namespace,
+		Context:   ctx,
+		Selector:  opts.LabelSelector,
+	}
+
+	var resp struct {
+		Success bool                       `json:"success"`
+		Data    types.AddNamespaceResponse `json:"data"`
+		Error   *types.ErrorInfo           `json:"error"`
+	}
+
+	if err := n.client.PostJSON("/v1/namespaces", req, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &types.NamespaceInfoResponse{
+		Key:          resp.Data.Key,
+		Namespace:    resp.Data.Namespace,
+		Context:      resp.Data.Context,
+		ServiceCount: len(resp.Data.Services),
+	}, nil
+}
+
+func (n *NamespaceControllerHTTP) RemoveNamespace(ctx, namespace string) error {
+	key := namespace
+	if ctx != "" {
+		key = namespace + "." + ctx
+	}
+
+	var resp struct {
+		Success bool             `json:"success"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := n.client.Delete("/v1/namespaces/"+url.PathEscape(key), &resp); err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return nil
+}
+
+func (n *NamespaceControllerHTTP) ListNamespaces() []types.NamespaceInfoResponse {
+	var resp struct {
+		Success bool                        `json:"success"`
+		Data    types.NamespaceListResponse `json:"data"`
+	}
+
+	if err := n.client.Get("/v1/namespaces", &resp); err != nil {
+		return nil
+	}
+
+	return resp.Data.Namespaces
+}
+
+func (n *NamespaceControllerHTTP) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+	key := namespace
+	if ctx != "" {
+		key = namespace + "." + ctx
+	}
+
+	var resp struct {
+		Success bool                        `json:"success"`
+		Data    types.NamespaceInfoResponse `json:"data"`
+		Error   *types.ErrorInfo            `json:"error"`
+	}
+
+	if err := n.client.Get("/v1/namespaces/"+url.PathEscape(key), &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// ============================================================================
+// ServiceCRUDHTTP implements types.ServiceCRUD via REST API
+// ============================================================================
+
+type ServiceCRUDHTTP struct {
+	*ServiceControllerHTTP
+}
+
+// NewServiceCRUDHTTP creates a new HTTP-based ServiceCRUD
+func NewServiceCRUDHTTP(baseURL string) *ServiceCRUDHTTP {
+	return &ServiceCRUDHTTP{
+		ServiceControllerHTTP: NewServiceControllerHTTP(baseURL),
+	}
+}
+
+func (s *ServiceCRUDHTTP) AddService(req types.AddServiceRequest) (*types.AddServiceResponse, error) {
+	var resp struct {
+		Success bool                     `json:"success"`
+		Data    types.AddServiceResponse `json:"data"`
+		Error   *types.ErrorInfo         `json:"error"`
+	}
+
+	if err := s.client.PostJSON("/v1/services", req, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+func (s *ServiceCRUDHTTP) RemoveService(key string) error {
+	var resp struct {
+		Success bool             `json:"success"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := s.client.Delete("/v1/services/"+url.PathEscape(key), &resp); err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return nil
+}
+
+// ============================================================================
+// KubernetesDiscoveryHTTP implements types.KubernetesDiscovery via REST API
+// ============================================================================
+
+type KubernetesDiscoveryHTTP struct {
+	client *HTTPClient
+}
+
+// NewKubernetesDiscoveryHTTP creates a new HTTP-based KubernetesDiscovery
+func NewKubernetesDiscoveryHTTP(baseURL string) *KubernetesDiscoveryHTTP {
+	return &KubernetesDiscoveryHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+func (k *KubernetesDiscoveryHTTP) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	path := "/v1/kubernetes/namespaces"
+	if ctx != "" {
+		path += "?context=" + url.QueryEscape(ctx)
+	}
+
+	var resp struct {
+		Success bool                        `json:"success"`
+		Data    types.K8sNamespacesResponse `json:"data"`
+		Error   *types.ErrorInfo            `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data.Namespaces, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	path := "/v1/kubernetes/services"
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+	if namespace != "" {
+		params.Set("namespace", namespace)
+	}
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool                      `json:"success"`
+		Data    types.K8sServicesResponse `json:"data"`
+		Error   *types.ErrorInfo          `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data.Services, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) ListContexts() (*types.K8sContextsResponse, error) {
+	var resp struct {
+		Success bool                      `json:"success"`
+		Data    types.K8sContextsResponse `json:"data"`
+		Error   *types.ErrorInfo          `json:"error"`
+	}
+
+	if err := k.client.Get("/v1/kubernetes/contexts", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+	path := fmt.Sprintf("/v1/kubernetes/services/%s/%s", url.PathEscape(namespace), url.PathEscape(name))
+	if ctx != "" {
+		path += "?context=" + url.QueryEscape(ctx)
+	}
+
+	var resp struct {
+		Success bool             `json:"success"`
+		Data    types.K8sService `json:"data"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// ============================================================================
+// ConnectionInfoProviderHTTP implements types.ConnectionInfoProvider via REST API
+// ============================================================================
+
+type ConnectionInfoProviderHTTP struct {
+	client *HTTPClient
+}
+
+// NewConnectionInfoProviderHTTP creates a new HTTP-based ConnectionInfoProvider
+func NewConnectionInfoProviderHTTP(baseURL string) *ConnectionInfoProviderHTTP {
+	return &ConnectionInfoProviderHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+func (c *ConnectionInfoProviderHTTP) GetConnectionInfo(key string) (*types.ConnectionInfoResponse, error) {
+	// The connection info is derived from the service details
+	var resp struct {
+		Success bool                  `json:"success"`
+		Data    types.ServiceResponse `json:"data"`
+		Error   *types.ErrorInfo      `json:"error"`
+	}
+
+	if err := c.client.Get("/v1/services/"+url.PathEscape(key), &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	svc := resp.Data
+
+	// Build connection info from service data
+	info := &types.ConnectionInfoResponse{
+		Service:   svc.ServiceName,
+		Namespace: svc.Namespace,
+		Context:   svc.Context,
+		Status:    svc.Status,
+	}
+
+	// Get hostnames and ports from forwards
+	hostnamesSet := make(map[string]bool)
+	var ports []types.PortInfo
+	for _, fwd := range svc.Forwards {
+		info.LocalIP = fwd.LocalIP
+		for _, h := range fwd.Hostnames {
+			hostnamesSet[h] = true
+		}
+		localPort := parsePort(fwd.LocalPort)
+		remotePort := parsePort(fwd.PodPort)
+		ports = append(ports, types.PortInfo{
+			LocalPort:  localPort,
+			RemotePort: remotePort,
+		})
+	}
+
+	for h := range hostnamesSet {
+		info.Hostnames = append(info.Hostnames, h)
+	}
+	info.Ports = ports
+
+	// Generate env vars
+	info.EnvVars = generateEnvVars(svc.ServiceName, info.LocalIP, ports)
+
+	return info, nil
+}
+
+func (c *ConnectionInfoProviderHTTP) ListHostnames() (*types.HostnameListResponse, error) {
+	var resp struct {
+		Success bool                      `json:"success"`
+		Data    types.ServiceListResponse `json:"data"`
+		Error   *types.ErrorInfo          `json:"error"`
+	}
+
+	if err := c.client.Get("/v1/services", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	// Collect all hostnames from all services
+	var entries []types.HostnameEntry
+	for _, svc := range resp.Data.Services {
+		for _, fwd := range svc.Forwards {
+			for _, hostname := range fwd.Hostnames {
+				entries = append(entries, types.HostnameEntry{
+					Hostname:  hostname,
+					IP:        fwd.LocalIP,
+					Service:   svc.ServiceName,
+					Namespace: svc.Namespace,
+					Context:   svc.Context,
+				})
+			}
+		}
+	}
+
+	return &types.HostnameListResponse{
+		Hostnames: entries,
+		Total:     len(entries),
+	}, nil
+}
+
+func (c *ConnectionInfoProviderHTTP) FindServices(query string, port int, namespace string) ([]types.ConnectionInfoResponse, error) {
+	var resp struct {
+		Success bool                      `json:"success"`
+		Data    types.ServiceListResponse `json:"data"`
+		Error   *types.ErrorInfo          `json:"error"`
+	}
+
+	if err := c.client.Get("/v1/services", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	var results []types.ConnectionInfoResponse
+	for _, svc := range resp.Data.Services {
+		// Filter by namespace
+		if namespace != "" && svc.Namespace != namespace {
+			continue
+		}
+
+		// Filter by query (match service name)
+		if query != "" && !strings.Contains(strings.ToLower(svc.ServiceName), strings.ToLower(query)) {
+			continue
+		}
+
+		// Filter by port
+		matchesPort := port == 0
+		var ports []types.PortInfo
+		hostnamesSet := make(map[string]bool)
+		var localIP string
+
+		for _, fwd := range svc.Forwards {
+			localIP = fwd.LocalIP
+			for _, h := range fwd.Hostnames {
+				hostnamesSet[h] = true
+			}
+			localPort := parsePort(fwd.LocalPort)
+			remotePort := parsePort(fwd.PodPort)
+			if port == 0 || localPort == port || remotePort == port {
+				matchesPort = true
+				ports = append(ports, types.PortInfo{
+					LocalPort:  localPort,
+					RemotePort: remotePort,
+				})
+			}
+		}
+
+		if !matchesPort {
+			continue
+		}
+
+		var hostnames []string
+		for h := range hostnamesSet {
+			hostnames = append(hostnames, h)
+		}
+
+		results = append(results, types.ConnectionInfoResponse{
+			Service:   svc.ServiceName,
+			Namespace: svc.Namespace,
+			Context:   svc.Context,
+			LocalIP:   localIP,
+			Hostnames: hostnames,
+			Ports:     ports,
+			EnvVars:   generateEnvVars(svc.ServiceName, localIP, ports),
+			Status:    svc.Status,
+		})
+	}
+
+	return results, nil
+}
+
+// generateEnvVars creates environment variable suggestions for a service
+func generateEnvVars(serviceName, localIP string, ports []types.PortInfo) map[string]string {
+	envVars := make(map[string]string)
+	upperName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+
+	envVars[upperName+"_HOST"] = serviceName
+	if localIP != "" {
+		envVars[upperName+"_IP"] = localIP
+	}
+
+	if len(ports) > 0 {
+		envVars[upperName+"_PORT"] = strconv.Itoa(ports[0].LocalPort)
+
+		// Generate connection URL based on common port patterns
+		port := ports[0].LocalPort
+		host := serviceName
+		switch port {
+		case 5432:
+			envVars["DATABASE_URL"] = fmt.Sprintf("postgresql://%s:%d", host, port)
+		case 3306:
+			envVars["DATABASE_URL"] = fmt.Sprintf("mysql://%s:%d", host, port)
+		case 27017:
+			envVars["MONGODB_URI"] = fmt.Sprintf("mongodb://%s:%d", host, port)
+		case 6379:
+			envVars["REDIS_URL"] = fmt.Sprintf("redis://%s:%d", host, port)
+		case 9092:
+			envVars["KAFKA_BROKERS"] = fmt.Sprintf("%s:%d", host, port)
+		case 80, 8080, 443, 8443:
+			protocol := "http"
+			if port == 443 || port == 8443 {
+				protocol = "https"
+			}
+			envVars[upperName+"_URL"] = fmt.Sprintf("%s://%s:%d", protocol, host, port)
+		}
+	}
+
+	return envVars
 }
