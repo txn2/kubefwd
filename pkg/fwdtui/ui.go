@@ -786,8 +786,9 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 func (m *RootModel) handleKubefwdEvent(e events.Event) {
 	switch e.Type {
 	case events.PodAdded:
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
 		snapshot := state.ForwardSnapshot{
-			Key:           e.ServiceKey + "." + e.PodName + "." + e.LocalPort,
+			Key:           key,
 			ServiceKey:    e.ServiceKey,
 			RegistryKey:   e.RegistryKey, // for reconnection lookup
 			ServiceName:   e.Service,
