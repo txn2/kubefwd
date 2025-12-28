@@ -9,6 +9,71 @@ import (
 
 // registerPrompts registers all MCP prompt templates
 func (s *Server) registerPrompts() {
+	// === Developer-focused prompts (primary use cases) ===
+
+	// setup_local_dev - Help set up local development environment
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "setup_local_dev",
+		Description: "Help set up local development environment with forwarded Kubernetes services",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "namespace",
+				Description: "Kubernetes namespace to forward services from",
+				Required:    false,
+			},
+			{
+				Name:        "context",
+				Description: "Kubernetes context to use (optional)",
+				Required:    false,
+			},
+		},
+	}, s.handleSetupLocalDevPrompt)
+
+	// connection_guide - How to connect to a service
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "connection_guide",
+		Description: "Get connection information and code examples for a forwarded service",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "service_name",
+				Description: "Name of the service to connect to",
+				Required:    true,
+			},
+			{
+				Name:        "language",
+				Description: "Programming language for code examples (e.g., 'go', 'python', 'node')",
+				Required:    false,
+			},
+		},
+	}, s.handleConnectionGuidePrompt)
+
+	// forward_namespace - Forward all services in a namespace
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "forward_namespace",
+		Description: "Forward all services from a Kubernetes namespace for local development",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "namespace",
+				Description: "Kubernetes namespace to forward",
+				Required:    true,
+			},
+			{
+				Name:        "selector",
+				Description: "Label selector to filter services (e.g., 'app=api')",
+				Required:    false,
+			},
+		},
+	}, s.handleForwardNamespacePrompt)
+
+	// === Utility prompts ===
+
+	// explain_status - Non-technical status explanation
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "explain_status",
+		Description: "Provide a clear, non-technical explanation of kubefwd's current state",
+		Arguments:   []*mcp.PromptArgument{},
+	}, s.handleExplainStatusPrompt)
+
 	// troubleshoot - Systematic debugging guide
 	s.mcpServer.AddPrompt(&mcp.Prompt{
 		Name:        "troubleshoot",
@@ -26,13 +91,6 @@ func (s *Server) registerPrompts() {
 			},
 		},
 	}, s.handleTroubleshootPrompt)
-
-	// explain_status - Non-technical status explanation
-	s.mcpServer.AddPrompt(&mcp.Prompt{
-		Name:        "explain_status",
-		Description: "Provide a clear, non-technical explanation of kubefwd's current state",
-		Arguments:   []*mcp.PromptArgument{},
-	}, s.handleExplainStatusPrompt)
 
 	// fix_errors - Step-by-step error resolution
 	s.mcpServer.AddPrompt(&mcp.Prompt{
@@ -56,6 +114,248 @@ func (s *Server) registerPrompts() {
 }
 
 // Prompt handlers
+
+// === Developer-focused prompt handlers ===
+
+func (s *Server) handleSetupLocalDevPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	namespace := ""
+	k8sContext := ""
+
+	if req.Params.Arguments != nil {
+		if v, ok := req.Params.Arguments["namespace"]; ok {
+			namespace = v
+		}
+		if v, ok := req.Params.Arguments["context"]; ok {
+			k8sContext = v
+		}
+	}
+
+	content := `You are helping a developer set up their local development environment with kubefwd.
+
+`
+	if namespace != "" {
+		content += fmt.Sprintf("The user wants to work with namespace: %s\n", namespace)
+	}
+	if k8sContext != "" {
+		content += fmt.Sprintf("Using Kubernetes context: %s\n", k8sContext)
+	}
+
+	content += `
+## Your Goal
+Help the user forward Kubernetes services to their local machine so they can develop against real cluster services.
+
+## Steps to Follow
+
+1. **Discover Available Services**
+   - Use 'list_k8s_namespaces' to show available namespaces
+   - Use 'list_k8s_services' with the target namespace to show available services
+   - Explain what services are available and their ports
+
+2. **Start Forwarding**
+   - Use 'add_namespace' to forward all services in the namespace, OR
+   - Use 'add_service' to forward specific services the user needs
+   - Confirm successful forwarding with 'list_services'
+
+3. **Provide Connection Information**
+   - Use 'get_connection_info' for each forwarded service
+   - Show the user:
+     - Local IP address (e.g., 127.1.2.3)
+     - Hostnames (e.g., postgres, postgres.default, postgres.default.svc)
+     - Available ports
+   - Provide environment variable examples:
+     ` + "```bash" + `
+     export DATABASE_HOST=postgres
+     export DATABASE_PORT=5432
+     ` + "```" + `
+
+4. **Verify Setup**
+   - Use 'get_health' to confirm everything is working
+   - Mention how to check if services are accessible (e.g., curl, psql, redis-cli)
+
+5. **Best Practices**
+   - Recommend using service hostnames (e.g., 'postgres') for easier configuration
+   - Suggest adding environment variables to their .env file
+   - Explain that services will auto-reconnect if pods restart
+
+Be friendly and helpful. Remember the user may not be familiar with Kubernetes internals.`
+
+	return &mcp.GetPromptResult{
+		Description: "Set up local development environment with kubefwd",
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+func (s *Server) handleConnectionGuidePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	serviceName := ""
+	language := ""
+
+	if req.Params.Arguments != nil {
+		if v, ok := req.Params.Arguments["service_name"]; ok {
+			serviceName = v
+		}
+		if v, ok := req.Params.Arguments["language"]; ok {
+			language = v
+		}
+	}
+
+	content := fmt.Sprintf(`You are helping a developer connect to a forwarded Kubernetes service.
+
+**Target Service**: %s
+`, serviceName)
+
+	if language != "" {
+		content += fmt.Sprintf("**Preferred Language**: %s\n", language)
+	}
+
+	content += `
+## Your Goal
+Provide clear, actionable connection information and code examples.
+
+## Steps
+
+1. **Get Connection Details**
+   - Use 'get_connection_info' for the service
+   - If not found, use 'find_services' to search by name
+   - If not forwarded, suggest using 'add_service' first
+
+2. **Provide Connection Information**
+   Present the connection details clearly:
+   - **Host**: Service hostname (e.g., postgres, redis)
+   - **IP**: Local IP address (e.g., 127.1.2.3)
+   - **Port**: Service port(s)
+   - **Connection String**: Ready-to-use connection string
+
+3. **Code Examples**
+   Provide code examples appropriate to the service type:
+
+   **For Databases (PostgreSQL, MySQL, MongoDB):**
+   - Connection string format
+   - Driver initialization code
+   - Environment variable setup
+
+   **For Redis/Cache:**
+   - Client connection code
+   - Cluster configuration if applicable
+
+   **For HTTP APIs:**
+   - Base URL
+   - Example HTTP request
+   - Health check endpoint
+
+4. **Environment Variables**
+   Suggest environment variables to add to .env:
+   ` + "```bash" + `
+   SERVICE_HOST=<hostname>
+   SERVICE_PORT=<port>
+   SERVICE_URL=<connection_string>
+   ` + "```" + `
+
+5. **Testing Connection**
+   Provide a simple command to test the connection:
+   - For databases: simple query
+   - For Redis: PING command
+   - For HTTP: curl command
+
+Be specific to the service type and programming language requested.`
+
+	return &mcp.GetPromptResult{
+		Description: fmt.Sprintf("Connection guide for %s", serviceName),
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+func (s *Server) handleForwardNamespacePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	namespace := ""
+	selector := ""
+
+	if req.Params.Arguments != nil {
+		if v, ok := req.Params.Arguments["namespace"]; ok {
+			namespace = v
+		}
+		if v, ok := req.Params.Arguments["selector"]; ok {
+			selector = v
+		}
+	}
+
+	content := fmt.Sprintf(`You are helping a developer forward all services from a Kubernetes namespace.
+
+**Target Namespace**: %s
+`, namespace)
+
+	if selector != "" {
+		content += fmt.Sprintf("**Label Selector**: %s\n", selector)
+	}
+
+	content += `
+## Your Goal
+Forward the requested namespace and provide a summary of available services.
+
+## Steps
+
+1. **Preview Services**
+   - Use 'list_k8s_services' with namespace='` + namespace + `' to show what will be forwarded
+   - List each service with its type and ports
+   - Warn about any services without pod selectors (won't be forwarded)
+
+2. **Start Forwarding**
+   - Use 'add_namespace' with the specified namespace
+   - If a selector was provided, include it to filter services
+   - Wait for forwarding to start
+
+3. **Confirm Success**
+   - Use 'list_services' to verify services are forwarding
+   - Report any errors or services that failed to forward
+
+4. **Provide Connection Summary**
+   Create a table or list of all forwarded services:
+   | Service | Hostname | IP | Port |
+   |---------|----------|----|----|
+   | postgres | postgres.` + namespace + ` | 127.1.x.x | 5432 |
+   | redis | redis.` + namespace + ` | 127.1.x.x | 6379 |
+   ...
+
+5. **Quick Start Commands**
+   Provide ready-to-use commands for common services:
+   ` + "```bash" + `
+   # PostgreSQL
+   psql -h postgres -U postgres
+
+   # Redis
+   redis-cli -h redis
+
+   # HTTP API
+   curl http://api.` + namespace + `/health
+   ` + "```" + `
+
+6. **Next Steps**
+   - Explain how to use 'get_connection_info' for specific services
+   - Mention that services will auto-reconnect if pods restart
+   - Suggest using 'list_hostnames' to see all DNS entries
+
+Be concise and focus on actionable information the developer needs.`
+
+	return &mcp.GetPromptResult{
+		Description: fmt.Sprintf("Forward all services from namespace %s", namespace),
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+// === Utility prompt handlers ===
 
 func (s *Server) handleTroubleshootPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	serviceName := ""

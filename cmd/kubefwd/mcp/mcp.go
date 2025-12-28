@@ -51,7 +51,12 @@ Prerequisites:
        }
      }
 
-The MCP server provides tools for:
+The MCP server provides developer-focused tools for:
+  - Adding/removing namespaces to forward dynamically
+  - Adding/removing individual services to forward
+  - Discovering available Kubernetes namespaces and services
+  - Getting connection info (hostnames, IPs, ports, env vars)
+  - Finding forwarded services by name or port
   - Listing and inspecting forwarded services
   - Viewing metrics and logs
   - Triggering reconnections and syncs
@@ -96,6 +101,12 @@ func runMCP(cmd *cobra.Command, args []string) {
 	diagnosticsProvider := fwdmcp.NewDiagnosticsProviderHTTP(apiURL)
 	managerInfo := fwdmcp.NewManagerInfoHTTP(apiURL)
 
+	// Create CRUD HTTP adapters for developer-focused tools
+	namespaceController := fwdmcp.NewNamespaceControllerHTTP(apiURL)
+	serviceCRUD := fwdmcp.NewServiceCRUDHTTP(apiURL)
+	k8sDiscovery := fwdmcp.NewKubernetesDiscoveryHTTP(apiURL)
+	connectionInfo := fwdmcp.NewConnectionInfoProviderHTTP(apiURL)
+
 	// Initialize MCP server
 	server := fwdmcp.Init(Version)
 	server.SetStateReader(stateReader)
@@ -105,6 +116,12 @@ func runMCP(cmd *cobra.Command, args []string) {
 	server.SetManagerInfo(func() types.ManagerInfo {
 		return managerInfo
 	})
+
+	// Set CRUD controllers for developer-focused tools
+	server.SetNamespaceController(namespaceController)
+	server.SetServiceCRUD(serviceCRUD)
+	server.SetKubernetesDiscovery(k8sDiscovery)
+	server.SetConnectionInfoProvider(connectionInfo)
 
 	log.Info("MCP server initialized, starting stdio transport...")
 

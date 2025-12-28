@@ -30,6 +30,12 @@ type Server struct {
 	diagnostics    types.DiagnosticsProvider
 	getManagerInfo func() types.ManagerInfo
 
+	// CRUD controllers for developer-focused tools
+	namespaceController types.NamespaceController
+	serviceCRUD         types.ServiceCRUD
+	k8sDiscovery        types.KubernetesDiscovery
+	connectionInfo      types.ConnectionInfoProvider
+
 	stopCh chan struct{}
 	doneCh chan struct{}
 	mu     sync.RWMutex
@@ -99,6 +105,34 @@ func (s *Server) SetDiagnosticsProvider(dp types.DiagnosticsProvider) {
 func (s *Server) SetManagerInfo(getter func() types.ManagerInfo) {
 	s.mu.Lock()
 	s.getManagerInfo = getter
+	s.mu.Unlock()
+}
+
+// SetNamespaceController sets the namespace controller for CRUD operations
+func (s *Server) SetNamespaceController(controller types.NamespaceController) {
+	s.mu.Lock()
+	s.namespaceController = controller
+	s.mu.Unlock()
+}
+
+// SetServiceCRUD sets the service CRUD controller for add/remove operations
+func (s *Server) SetServiceCRUD(crud types.ServiceCRUD) {
+	s.mu.Lock()
+	s.serviceCRUD = crud
+	s.mu.Unlock()
+}
+
+// SetKubernetesDiscovery sets the Kubernetes discovery provider
+func (s *Server) SetKubernetesDiscovery(discovery types.KubernetesDiscovery) {
+	s.mu.Lock()
+	s.k8sDiscovery = discovery
+	s.mu.Unlock()
+}
+
+// SetConnectionInfoProvider sets the connection info provider
+func (s *Server) SetConnectionInfoProvider(provider types.ConnectionInfoProvider) {
+	s.mu.Lock()
+	s.connectionInfo = provider
 	s.mu.Unlock()
 }
 
@@ -184,6 +218,34 @@ func (s *Server) getManager() types.ManagerInfo {
 		return getter()
 	}
 	return nil
+}
+
+// getNamespaceController safely gets the namespace controller
+func (s *Server) getNamespaceController() types.NamespaceController {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.namespaceController
+}
+
+// getServiceCRUD safely gets the service CRUD controller
+func (s *Server) getServiceCRUD() types.ServiceCRUD {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.serviceCRUD
+}
+
+// getK8sDiscovery safely gets the Kubernetes discovery provider
+func (s *Server) getK8sDiscovery() types.KubernetesDiscovery {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.k8sDiscovery
+}
+
+// getConnectionInfo safely gets the connection info provider
+func (s *Server) getConnectionInfo() types.ConnectionInfoProvider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.connectionInfo
 }
 
 // ServeStdio starts the MCP server on stdio transport and blocks until done.
