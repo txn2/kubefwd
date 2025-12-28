@@ -299,7 +299,17 @@ func (m *RootModel) Init() tea.Cmd {
 }
 
 // Update handles messages
-func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
+	// Panic recovery to prevent TUI crash from leaving terminal in broken state
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("TUI Update panic recovered: %v", r)
+			// Return model unchanged, no command - TUI continues working
+			model = m
+			cmd = nil
+		}
+	}()
+
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
