@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -2562,4 +2563,756 @@ func TestHTTPTrafficHandler_ForwardHTTPPortForwardNotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
+}
+
+// Mock implementations for CRUD handlers
+
+type mockNamespaceController struct {
+	namespaces []types.NamespaceInfoResponse
+	addErr     error
+	removeErr  error
+	getErr     error
+}
+
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+	if m.addErr != nil {
+		return nil, m.addErr
+	}
+	return &types.NamespaceInfoResponse{
+		Key:       namespace + "." + ctx,
+		Namespace: namespace,
+		Context:   ctx,
+	}, nil
+}
+
+func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+	return m.removeErr
+}
+
+func (m *mockNamespaceController) ListNamespaces() []types.NamespaceInfoResponse {
+	return m.namespaces
+}
+
+func (m *mockNamespaceController) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	for i := range m.namespaces {
+		if m.namespaces[i].Namespace == namespace && m.namespaces[i].Context == ctx {
+			return &m.namespaces[i], nil
+		}
+	}
+	return nil, fmt.Errorf("namespace not found")
+}
+
+type mockServiceCRUD struct {
+	addErr    error
+	removeErr error
+}
+
+func (m *mockServiceCRUD) Reconnect(key string) error {
+	return nil
+}
+
+func (m *mockServiceCRUD) ReconnectAll() int {
+	return 0
+}
+
+func (m *mockServiceCRUD) Sync(key string, force bool) error {
+	return nil
+}
+
+func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddServiceResponse, error) {
+	if m.addErr != nil {
+		return nil, m.addErr
+	}
+	return &types.AddServiceResponse{
+		Key:         req.ServiceName + "." + req.Namespace + ".default",
+		ServiceName: req.ServiceName,
+		Namespace:   req.Namespace,
+		Context:     "default",
+		LocalIP:     "127.1.0.1",
+	}, nil
+}
+
+func (m *mockServiceCRUD) RemoveService(key string) error {
+	return m.removeErr
+}
+
+type mockKubernetesDiscovery struct {
+	namespaces []types.K8sNamespace
+	services   []types.K8sService
+	contexts   *types.K8sContextsResponse
+	listNsErr  error
+	listSvcErr error
+	getErr     error
+	listCtxErr error
+}
+
+func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	if m.listNsErr != nil {
+		return nil, m.listNsErr
+	}
+	return m.namespaces, nil
+}
+
+func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	if m.listSvcErr != nil {
+		return nil, m.listSvcErr
+	}
+	return m.services, nil
+}
+
+func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	for i := range m.services {
+		if m.services[i].Name == name && m.services[i].Namespace == namespace {
+			return &m.services[i], nil
+		}
+	}
+	return nil, fmt.Errorf("service not found")
+}
+
+func (m *mockKubernetesDiscovery) ListContexts() (*types.K8sContextsResponse, error) {
+	if m.listCtxErr != nil {
+		return nil, m.listCtxErr
+	}
+	return m.contexts, nil
+}
+
+// Namespaces Handler Tests
+
+func TestNamespacesHandler_List(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{
+		namespaces: []types.NamespaceInfoResponse{
+			{Key: "default.minikube", Namespace: "default", Context: "minikube", ServiceCount: 5},
+			{Key: "kube-system.minikube", Namespace: "kube-system", Context: "minikube", ServiceCount: 10},
+		},
+	}
+	h := NewNamespacesHandler(mock)
+	r.GET("/v1/namespaces", h.List)
+
+	w := performRequest(r, "GET", "/v1/namespaces")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+	if response.Meta == nil || response.Meta.Count != 2 {
+		t.Errorf("Expected meta count 2, got %v", response.Meta)
+	}
+}
+
+func TestNamespacesHandler_ListNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewNamespacesHandler(nil)
+	r.GET("/v1/namespaces", h.List)
+
+	w := performRequest(r, "GET", "/v1/namespaces")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestNamespacesHandler_Get(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{
+		namespaces: []types.NamespaceInfoResponse{
+			{Key: "default.minikube", Namespace: "default", Context: "minikube", ServiceCount: 5},
+		},
+	}
+	h := NewNamespacesHandler(mock)
+	r.GET("/v1/namespaces/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/namespaces/default.minikube")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestNamespacesHandler_GetNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewNamespacesHandler(nil)
+	r.GET("/v1/namespaces/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/namespaces/default.minikube")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestNamespacesHandler_GetInvalidKey(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.GET("/v1/namespaces/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/namespaces/invalidkey")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestNamespacesHandler_GetNotFound(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{
+		getErr: fmt.Errorf("namespace not found"),
+	}
+	h := NewNamespacesHandler(mock)
+	r.GET("/v1/namespaces/:key", h.Get)
+
+	w := performRequest(r, "GET", "/v1/namespaces/nonexistent.ctx")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestNamespacesHandler_Add(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.POST("/v1/namespaces", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/namespaces", `{"namespace":"default"}`)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestNamespacesHandler_AddWithContext(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.POST("/v1/namespaces", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/namespaces", `{"namespace":"staging","context":"prod-cluster"}`)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+}
+
+func TestNamespacesHandler_AddNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewNamespacesHandler(nil)
+	r.POST("/v1/namespaces", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/namespaces", `{"namespace":"default"}`)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestNamespacesHandler_AddInvalidRequest(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.POST("/v1/namespaces", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/namespaces", `invalid json`)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestNamespacesHandler_AddError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{
+		addErr: fmt.Errorf("namespace already exists"),
+	}
+	h := NewNamespacesHandler(mock)
+	r.POST("/v1/namespaces", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/namespaces", `{"namespace":"default"}`)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
+	}
+}
+
+func TestNamespacesHandler_Remove(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.DELETE("/v1/namespaces/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/namespaces/default.minikube")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestNamespacesHandler_RemoveNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewNamespacesHandler(nil)
+	r.DELETE("/v1/namespaces/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/namespaces/default.minikube")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestNamespacesHandler_RemoveInvalidKey(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{}
+	h := NewNamespacesHandler(mock)
+	r.DELETE("/v1/namespaces/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/namespaces/invalidkey")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestNamespacesHandler_RemoveError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockNamespaceController{
+		removeErr: fmt.Errorf("namespace not found"),
+	}
+	h := NewNamespacesHandler(mock)
+	r.DELETE("/v1/namespaces/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/namespaces/nonexistent.ctx")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+// Services CRUD Handler Tests
+
+func TestServicesCRUDHandler_Add(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{}
+	h := NewServicesCRUDHandler(mock)
+	r.POST("/v1/services", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/services", `{"namespace":"default","serviceName":"postgres"}`)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestServicesCRUDHandler_AddNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesCRUDHandler(nil)
+	r.POST("/v1/services", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/services", `{"namespace":"default","serviceName":"postgres"}`)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_AddInvalidRequest(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{}
+	h := NewServicesCRUDHandler(mock)
+	r.POST("/v1/services", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/services", `invalid json`)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_AddError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{
+		addErr: fmt.Errorf("service already exists"),
+	}
+	h := NewServicesCRUDHandler(mock)
+	r.POST("/v1/services", h.Add)
+
+	w := performRequestWithBody(r, "POST", "/v1/services", `{"namespace":"default","serviceName":"postgres"}`)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_Remove(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{}
+	h := NewServicesCRUDHandler(mock)
+	r.DELETE("/v1/services/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/services/postgres.default.minikube")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestServicesCRUDHandler_RemoveNilController(t *testing.T) {
+	r := setupRouter()
+	h := NewServicesCRUDHandler(nil)
+	r.DELETE("/v1/services/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/services/postgres.default.minikube")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_RemoveError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{
+		removeErr: fmt.Errorf("service not found"),
+	}
+	h := NewServicesCRUDHandler(mock)
+	r.DELETE("/v1/services/:key", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/services/nonexistent")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+// Kubernetes Handler Tests
+
+func TestKubernetesHandler_ListNamespaces(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		namespaces: []types.K8sNamespace{
+			{Name: "default", Status: "Active", Forwarded: true},
+			{Name: "kube-system", Status: "Active", Forwarded: false},
+		},
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/namespaces", h.ListNamespaces)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/namespaces")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+	if response.Meta == nil || response.Meta.Count != 2 {
+		t.Errorf("Expected meta count 2, got %v", response.Meta)
+	}
+}
+
+func TestKubernetesHandler_ListNamespacesNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/namespaces", h.ListNamespaces)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/namespaces")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListNamespacesWithContext(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		namespaces: []types.K8sNamespace{
+			{Name: "default", Status: "Active"},
+		},
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/namespaces", h.ListNamespaces)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/namespaces?context=prod-cluster")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListNamespacesError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		listNsErr: fmt.Errorf("connection refused"),
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/namespaces", h.ListNamespaces)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/namespaces")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListServices(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		services: []types.K8sService{
+			{Name: "postgres", Namespace: "default", Type: "ClusterIP", Forwarded: true},
+			{Name: "redis", Namespace: "default", Type: "ClusterIP", Forwarded: false},
+		},
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/services", h.ListServices)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services?namespace=default")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+	if response.Meta == nil || response.Meta.Count != 2 {
+		t.Errorf("Expected meta count 2, got %v", response.Meta)
+	}
+}
+
+func TestKubernetesHandler_ListServicesNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/services", h.ListServices)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services?namespace=default")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListServicesMissingNamespace(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/services", h.ListServices)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListServicesError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		listSvcErr: fmt.Errorf("permission denied"),
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/services", h.ListServices)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services?namespace=default")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetService(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		services: []types.K8sService{
+			{Name: "postgres", Namespace: "default", Type: "ClusterIP"},
+		},
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/services/:namespace/:name", h.GetService)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services/default/postgres")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetServiceNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/services/:namespace/:name", h.GetService)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services/default/postgres")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetServiceNotFound(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		getErr: fmt.Errorf("service not found"),
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/services/:namespace/:name", h.GetService)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/services/default/nonexistent")
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListContexts(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		contexts: &types.K8sContextsResponse{
+			CurrentContext: "minikube",
+			Contexts: []types.K8sContext{
+				{Name: "minikube", Cluster: "minikube", Active: true},
+				{Name: "prod-cluster", Cluster: "prod", Active: false},
+			},
+		},
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/contexts", h.ListContexts)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/contexts")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+	if response.Meta == nil || response.Meta.Count != 2 {
+		t.Errorf("Expected meta count 2, got %v", response.Meta)
+	}
+}
+
+func TestKubernetesHandler_ListContextsNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/contexts", h.ListContexts)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/contexts")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListContextsError(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{
+		listCtxErr: fmt.Errorf("kubeconfig not found"),
+	}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/contexts", h.ListContexts)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/contexts")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+// Test parseNamespaceKey function
+
+func TestParseNamespaceKey(t *testing.T) {
+	tests := []struct {
+		key       string
+		namespace string
+		context   string
+	}{
+		{"default.minikube", "default", "minikube"},
+		{"kube-system.prod-cluster", "kube-system", "prod-cluster"},
+		{"my-ns.my-context", "my-ns", "my-context"},
+		{"invalidkey", "", ""},
+		{"", "", ""},
+	}
+
+	for _, tt := range tests {
+		ns, ctx := parseNamespaceKey(tt.key)
+		if ns != tt.namespace || ctx != tt.context {
+			t.Errorf("parseNamespaceKey(%q) = (%q, %q), want (%q, %q)",
+				tt.key, ns, ctx, tt.namespace, tt.context)
+		}
+	}
+}
+
+// Helper function for requests with body
+
+func performRequestWithBody(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
 }
