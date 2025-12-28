@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdns"
 )
 
 // Re-export interface types for external use
@@ -59,6 +60,9 @@ type Manager struct {
 	namespaceController types.NamespaceController
 	serviceCRUD         types.ServiceCRUD
 	k8sDiscovery        types.KubernetesDiscovery
+
+	// Direct reference to namespace manager (for dynamic namespace operations)
+	nsManager *fwdns.NamespaceManager
 
 	// Callbacks
 	triggerShutdown func()
@@ -149,6 +153,78 @@ func (m *Manager) SetServiceCRUD(crud types.ServiceCRUD) {
 // SetKubernetesDiscovery sets the Kubernetes discovery provider
 func (m *Manager) SetKubernetesDiscovery(discovery types.KubernetesDiscovery) {
 	m.k8sDiscovery = discovery
+}
+
+// SetNamespaceManager sets the namespace manager for dynamic namespace operations
+// This automatically creates and sets a NamespaceController adapter
+func (m *Manager) SetNamespaceManager(nsManager *fwdns.NamespaceManager) {
+	m.nsManager = nsManager
+	// Create an adapter that implements NamespaceController using the manager
+	m.namespaceController = &namespaceManagerAdapter{mgr: nsManager}
+}
+
+// GetNamespaceManager returns the namespace manager
+func (m *Manager) GetNamespaceManager() *fwdns.NamespaceManager {
+	return m.nsManager
+}
+
+// namespaceManagerAdapter adapts fwdns.NamespaceManager to types.NamespaceController
+type namespaceManagerAdapter struct {
+	mgr *fwdns.NamespaceManager
+}
+
+func (a *namespaceManagerAdapter) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+	info, err := a.mgr.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
+		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &types.NamespaceInfoResponse{
+		Key:          info.Key,
+		Namespace:    info.Namespace,
+		Context:      info.Context,
+		ServiceCount: info.ServiceCount,
+		ActiveCount:  info.ActiveCount,
+		ErrorCount:   info.ErrorCount,
+	}, nil
+}
+
+func (a *namespaceManagerAdapter) RemoveNamespace(ctx, namespace string) error {
+	return a.mgr.StopWatcher(ctx, namespace)
+}
+
+func (a *namespaceManagerAdapter) ListNamespaces() []types.NamespaceInfoResponse {
+	watchers := a.mgr.ListWatchers()
+	result := make([]types.NamespaceInfoResponse, len(watchers))
+	for i, w := range watchers {
+		result[i] = types.NamespaceInfoResponse{
+			Key:          w.Key,
+			Namespace:    w.Namespace,
+			Context:      w.Context,
+			ServiceCount: w.ServiceCount,
+			ActiveCount:  w.ActiveCount,
+			ErrorCount:   w.ErrorCount,
+		}
+	}
+	return result
+}
+
+func (a *namespaceManagerAdapter) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+	w := a.mgr.GetWatcher(ctx, namespace)
+	if w == nil {
+		return nil, fmt.Errorf("namespace %s.%s not found", namespace, ctx)
+	}
+	info := w.Info()
+	return &types.NamespaceInfoResponse{
+		Key:          info.Key,
+		Namespace:    info.Namespace,
+		Context:      info.Context,
+		ServiceCount: info.ServiceCount,
+		ActiveCount:  info.ActiveCount,
+		ErrorCount:   info.ErrorCount,
+	}, nil
 }
 
 // SetNamespaces sets the namespaces being forwarded (for info endpoint)
