@@ -89,6 +89,25 @@ func (m *Manager) setupRouter() *gin.Engine {
 		v1.GET("/history/reconnections", historyHandler.AllReconnections)
 		v1.GET("/history/stats", historyHandler.Stats)
 		v1.GET("/services/:key/history/reconnections", historyHandler.Reconnections)
+
+		// Namespace CRUD endpoints
+		nsHandler := handlers.NewNamespacesHandler(m.namespaceController)
+		v1.GET("/namespaces", nsHandler.List)
+		v1.GET("/namespaces/:key", nsHandler.Get)
+		v1.POST("/namespaces", nsHandler.Add)
+		v1.DELETE("/namespaces/:key", nsHandler.Remove)
+
+		// Service CRUD endpoints (add/remove)
+		svcCRUDHandler := handlers.NewServicesCRUDHandler(m.serviceCRUD)
+		v1.POST("/services", svcCRUDHandler.Add)
+		v1.DELETE("/services/:key", svcCRUDHandler.Remove)
+
+		// Kubernetes discovery endpoints
+		k8sHandler := handlers.NewKubernetesHandler(m.k8sDiscovery)
+		v1.GET("/kubernetes/namespaces", k8sHandler.ListNamespaces)
+		v1.GET("/kubernetes/services", k8sHandler.ListServices)
+		v1.GET("/kubernetes/services/:namespace/:name", k8sHandler.GetService)
+		v1.GET("/kubernetes/contexts", k8sHandler.ListContexts)
 	}
 
 	return r
