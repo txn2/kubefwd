@@ -63,6 +63,32 @@ func (m *Manager) setupRouter() *gin.Engine {
 		// Events endpoint (SSE)
 		eventsHandler := handlers.NewEventsHandler(m.eventStreamer)
 		v1.GET("/events", eventsHandler.Stream)
+
+		// Diagnostics endpoints
+		diagnosticsHandler := handlers.NewDiagnosticsHandler(m.diagnosticsProvider)
+		v1.GET("/diagnostics", diagnosticsHandler.Summary)
+		v1.GET("/diagnostics/services/:key", diagnosticsHandler.ServiceDiagnostic)
+		v1.GET("/diagnostics/forwards/:key", diagnosticsHandler.ForwardDiagnostic)
+		v1.GET("/diagnostics/network", diagnosticsHandler.Network)
+		v1.GET("/diagnostics/errors", diagnosticsHandler.Errors)
+
+		// HTTP Traffic endpoints
+		httpTrafficHandler := handlers.NewHTTPTrafficHandler(m.metricsProvider, m.stateReader)
+		v1.GET("/forwards/:key/http", httpTrafficHandler.ForwardHTTP)
+		v1.GET("/services/:key/http", httpTrafficHandler.ServiceHTTP)
+
+		// AI-optimized analysis endpoints
+		analyzeHandler := handlers.NewAnalyzeHandler(m.stateReader, m.diagnosticsProvider, getManagerInfo)
+		v1.GET("/status", analyzeHandler.Status)
+		v1.GET("/analyze", analyzeHandler.Analyze)
+
+		// History endpoints
+		historyHandler := handlers.NewHistoryHandler()
+		v1.GET("/history/events", historyHandler.Events)
+		v1.GET("/history/errors", historyHandler.Errors)
+		v1.GET("/history/reconnections", historyHandler.AllReconnections)
+		v1.GET("/history/stats", historyHandler.Stats)
+		v1.GET("/services/:key/history/reconnections", historyHandler.Reconnections)
 	}
 
 	return r
