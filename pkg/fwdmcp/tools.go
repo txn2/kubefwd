@@ -721,16 +721,19 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
-	context := input.Context
-	if context == "" {
-		context = "default"
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
 	}
 
 	opts := types.AddNamespaceOpts{
 		LabelSelector: input.Selector,
 	}
 
-	info, err := nsController.AddNamespace(context, input.Namespace, opts)
+	info, err := nsController.AddNamespace(k8sContext, input.Namespace, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to add namespace: %w", err)
 	}
@@ -762,19 +765,22 @@ func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolReq
 		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
-	context := input.Context
-	if context == "" {
-		context = "default"
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
 	}
 
-	if err := nsController.RemoveNamespace(context, input.Namespace); err != nil {
+	if err := nsController.RemoveNamespace(k8sContext, input.Namespace); err != nil {
 		return nil, nil, fmt.Errorf("failed to remove namespace: %w", err)
 	}
 
 	result := map[string]interface{}{
 		"success":   true,
 		"namespace": input.Namespace,
-		"context":   context,
+		"context":   k8sContext,
 		"message":   "Namespace watcher stopped and services removed",
 	}
 
@@ -799,15 +805,18 @@ func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest,
 		return nil, nil, NewInvalidInputError("service_name", "", "service name is required")
 	}
 
-	context := input.Context
-	if context == "" {
-		context = "default"
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
 	}
 
 	addReq := types.AddServiceRequest{
 		Namespace:   input.Namespace,
 		ServiceName: input.ServiceName,
-		Context:     context,
+		Context:     k8sContext,
 		Ports:       input.Ports,
 	}
 

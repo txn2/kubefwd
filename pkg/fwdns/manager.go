@@ -368,12 +368,20 @@ func (m *NamespaceManager) getNamespaceIndex(key string) int {
 func (m *NamespaceManager) removeNamespaceServices(namespace, ctx string) {
 	// Get all service keys for this namespace
 	services := fwdsvcregistry.GetAll()
+	removedCount := 0
+	log.Debugf("removeNamespaceServices: looking for services in namespace=%s, context=%s (total services: %d)",
+		namespace, ctx, len(services))
+
 	for _, svc := range services {
 		if svc.Namespace == namespace && svc.Context == ctx {
 			key := svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
+			log.Debugf("removeNamespaceServices: removing service %s", key)
 			fwdsvcregistry.RemoveByName(key)
+			removedCount++
 		}
 	}
+
+	log.Debugf("removeNamespaceServices: removed %d services for %s.%s", removedCount, namespace, ctx)
 }
 
 // GetOrCreateClient gets or creates kubernetes clients for a context (public wrapper)
