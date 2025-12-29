@@ -10,6 +10,7 @@ copyright: Copyright &copy; 2018 - 2025 Craig Johnston / Deasil Works, Inc.
 
 theme:
   name: material
+  custom_dir: docs/overrides
   logo: images/logo_icon.png
   favicon: images/logo_icon.png
   palette:

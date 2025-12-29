@@ -1,0 +1,23 @@
+{% extends "main.html" %}
+
+{% block content %}
+<div class="md-content" data-md-component="content">
+  <article class="md-content__inner md-typeset">
+    <h1>Page Not Found</h1>
+    <p>The page you're looking for doesn't exist or has been moved.</p>
+
+    <h2>Quick Links</h2>
+    <ul>
+      <li><a href="{{ config.site_url }}">Home</a></li>
+      <li><a href="{{ config.site_url }}getting-started/">Getting Started</a></li>
+      <li><a href="{{ config.site_url }}tui-guide/">TUI Guide</a></li>
+      <li><a href="{{ config.site_url }}api-reference/">REST API</a></li>
+      <li><a href="{{ config.site_url }}mcp-integration/">MCP Integration</a></li>
+    </ul>
+
+    <p>Or use the search box above to find what you're looking for.</p>
+
+    <p><a href="https://github.com/txn2/kubefwd" class="md-button md-button--primary">View on GitHub</a></p>
+  </article>
+</div>
+{% endblock %}
