@@ -115,6 +115,14 @@ func IsEnabled() bool {
 	return tuiEnabled
 }
 
+// EventsEnabled returns true if the event infrastructure is available.
+// This is true when either TUI is enabled OR API-only mode initialized events.
+func EventsEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return tuiManager != nil || standaloneEventBus != nil
+}
+
 // InitEventInfrastructure initializes the event bus and state store for API-only mode.
 // This allows events to be published and consumed without the full TUI.
 // Safe to call multiple times - only initializes once.
