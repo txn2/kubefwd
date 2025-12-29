@@ -68,6 +68,10 @@ type NamespaceManager struct {
 
 	// Done channel signals all watchers stopped
 	doneCh chan struct{}
+
+	// Ad-hoc IP locks for services added without namespace watchers
+	adHocIPLocks   map[string]*sync.Mutex // key: namespace.context -> lock
+	adHocIPLocksMu sync.RWMutex
 }
 
 // NamespaceInfo provides information about a watched namespace
@@ -131,6 +135,7 @@ func NewManager(cfg ManagerConfig) *NamespaceManager {
 		namespaceIndex:  make(map[string]int),
 		globalStopCh:    cfg.GlobalStopCh,
 		doneCh:          make(chan struct{}),
+		adHocIPLocks:    make(map[string]*sync.Mutex),
 	}
 }
 
@@ -369,6 +374,139 @@ func (m *NamespaceManager) removeNamespaceServices(namespace, ctx string) {
 			fwdsvcregistry.RemoveByName(key)
 		}
 	}
+}
+
+// GetOrCreateClient gets or creates kubernetes clients for a context (public wrapper)
+func (m *NamespaceManager) GetOrCreateClient(ctx string) (kubernetes.Interface, *restclient.Config, *restclient.RESTClient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getOrCreateClient(ctx)
+}
+
+// GetContextIndex returns a unique index for a context (for IP allocation)
+func (m *NamespaceManager) GetContextIndex(ctx string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getContextIndex(ctx)
+}
+
+// GetNamespaceIndex returns a unique index for a namespace.context key (for IP allocation)
+func (m *NamespaceManager) GetNamespaceIndex(key string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getNamespaceIndex(key)
+}
+
+// GetOrCreateIPLock returns an IP lock for the given namespace/context.
+// If a watcher exists for this namespace, returns its lock.
+// Otherwise, creates/returns an ad-hoc lock for services added without watchers.
+func (m *NamespaceManager) GetOrCreateIPLock(ctx, namespace string) *sync.Mutex {
+	key := WatcherKey(namespace, ctx)
+
+	// Check if watcher exists
+	m.mu.RLock()
+	if watcher, ok := m.watchers[key]; ok {
+		m.mu.RUnlock()
+		return watcher.ipLock
+	}
+	m.mu.RUnlock()
+
+	// Create/get ad-hoc lock
+	m.adHocIPLocksMu.Lock()
+	defer m.adHocIPLocksMu.Unlock()
+
+	if lock, ok := m.adHocIPLocks[key]; ok {
+		return lock
+	}
+
+	lock := &sync.Mutex{}
+	m.adHocIPLocks[key] = lock
+	return lock
+}
+
+// GetCurrentContext returns the current kubernetes context
+func (m *NamespaceManager) GetCurrentContext() (string, error) {
+	return m.configGetter.GetCurrentContext(m.configPath)
+}
+
+// CreateServiceFWD creates a ServiceFWD for a specific service without a namespace watcher.
+// The caller must add it to fwdsvcregistry.Add() to start forwarding.
+func (m *NamespaceManager) CreateServiceFWD(ctx, namespace string, svc *v1.Service) (*fwdservice.ServiceFWD, error) {
+	// Validate selector
+	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
+	if selector == "" {
+		return nil, fmt.Errorf("service %s.%s has no pod selector", svc.Name, namespace)
+	}
+
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := m.configGetter.GetCurrentContext(m.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	// Get or create K8s clients for context
+	clientSet, restConfig, restClient, err := m.GetOrCreateClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes client for context %s: %w", ctx, err)
+	}
+
+	// Get indices for IP allocation
+	key := WatcherKey(namespace, ctx)
+	clusterN := m.GetContextIndex(ctx)
+	namespaceN := m.GetNamespaceIndex(key)
+
+	// Get or create IP lock for this namespace
+	ipLock := m.GetOrCreateIPLock(ctx, namespace)
+
+	// Create ServiceFWD
+	svcfwd := &fwdservice.ServiceFWD{
+		ClientSet:                clientSet,
+		Context:                  ctx,
+		Namespace:                namespace,
+		Timeout:                  m.timeout,
+		Hostfile:                 m.hostFile,
+		ClientConfig:             *restConfig,
+		RESTClient:               restClient,
+		NamespaceN:               namespaceN,
+		ClusterN:                 clusterN,
+		Domain:                   m.domain,
+		PodLabelSelector:         selector,
+		NamespaceServiceLock:     ipLock,
+		Svc:                      svc,
+		Headless:                 svc.Spec.ClusterIP == "None",
+		PortForwards:             make(map[string]*fwdport.PortForwardOpts),
+		SyncDebouncer:            debounce.New(5 * time.Second),
+		DoneChannel:              make(chan struct{}),
+		PortMap:                  parsePortMapPublic(m.portMapping),
+		ForwardConfigurationPath: m.fwdConfigPath,
+		ForwardIPReservations:    m.fwdReservations,
+		ResyncInterval:           m.resyncInterval,
+		RetryInterval:            m.retryInterval,
+		AutoReconnect:            m.autoReconnect,
+	}
+
+	return svcfwd, nil
+}
+
+// parsePortMapPublic converts string mappings to PortMap slice (package-level helper)
+func parsePortMapPublic(mappings []string) *[]fwdservice.PortMap {
+	if mappings == nil || len(mappings) == 0 {
+		return nil
+	}
+	var portList []fwdservice.PortMap
+	for _, s := range mappings {
+		parts := splitPortMapping(s)
+		if len(parts) == 2 {
+			portList = append(portList, fwdservice.PortMap{
+				SourcePort: parts[0],
+				TargetPort: parts[1],
+			})
+		}
+	}
+	return &portList
 }
 
 // NamespaceWatcher watches a single namespace for service events
