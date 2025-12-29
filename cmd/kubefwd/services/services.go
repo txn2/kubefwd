@@ -83,7 +83,7 @@ func init() {
 	Cmd.Flags().DurationVar(&resyncInterval, "resync-interval", 5*time.Minute, "Interval for forced service resync (e.g., 1m, 5m, 30s)")
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
-	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://api.kubefwd.local/ for automation and monitoring")
+	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://kubefwd.internal/api for automation and monitoring")
 	Cmd.Flags().BoolVar(&mcpMode, "mcp", false, "Enable MCP (Model Context Protocol) server on stdio for AI assistant integration")
 	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI/API mode.")
 }
@@ -408,6 +408,9 @@ Try:
 
 	// Initialize API manager if in API mode
 	if fwdapi.IsEnabled() {
+		// Initialize event infrastructure for API mode (allows events without TUI)
+		fwdtui.InitEventInfrastructure()
+
 		apiManager = fwdapi.Init(stopListenCh, triggerShutdown, Version)
 
 		// Set up adapters for API data access
@@ -518,6 +521,13 @@ Try:
 	// Register namespace manager with API if enabled
 	if apiManager != nil {
 		apiManager.SetNamespaceManager(nsManager)
+
+		// Set up Kubernetes discovery adapter
+		k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(
+			apiManager.GetNamespaceManager,
+			cfgFilePath,
+		)
+		apiManager.SetKubernetesDiscovery(k8sDiscovery)
 	}
 
 	// Start watchers for each context/namespace combination
@@ -593,7 +603,7 @@ Try:
 		<-stopListenCh
 	} else if apiManager != nil && !tuiMode {
 		// API-only mode (no TUI): show info and block
-		log.Infof("API server running at http://%s/ (http://%s)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.APIHostname)
+		log.Infof("API server running at http://%s/ (http://%s/)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.Hostname)
 		log.Println("Press [Ctrl-C] to stop forwarding.")
 		<-stopListenCh
 	} else {
