@@ -1,0 +1,105 @@
+{
+  "manifest_version": "0.3",
+  "name": "kubefwd",
+  "display_name": "kubefwd",
+  "version": "0.0.0",
+  "description": "Kubernetes port forwarding for local development. Forward services from any namespace to localhost with automatic /etc/hosts entries.",
+  "long_description": "kubefwd is a command line utility for bulk forwarding Kubernetes services to your local machine. It creates local loopback IP addresses for each service, adds entries to /etc/hosts, and lets you access cluster services by name - just like you're running inside the cluster. Perfect for local development against microservices.",
+  "author": {
+    "name": "Craig Johnston",
+    "email": "cj@imti.co",
+    "url": "https://imti.co"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/txn2/kubefwd"
+  },
+  "homepage": "https://kubefwd.com",
+  "documentation": "https://kubefwd.com/mcp-integration/",
+  "license": "Apache-2.0",
+  "keywords": [
+    "kubernetes",
+    "k8s",
+    "port-forward",
+    "development",
+    "microservices",
+    "local-development",
+    "devops"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "kubefwd",
+    "mcp_config": {
+      "command": "${__dirname}/kubefwd",
+      "args": ["mcp"],
+      "env": {}
+    },
+    "platform_overrides": {
+      "win32": {
+        "command": "${__dirname}/kubefwd.exe",
+        "args": ["mcp"]
+      }
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "win32"],
+    "runtimes": {}
+  },
+  "tools": [
+    {
+      "name": "add_namespace",
+      "description": "Forward all services in a namespace to localhost"
+    },
+    {
+      "name": "remove_namespace",
+      "description": "Stop forwarding a namespace"
+    },
+    {
+      "name": "add_service",
+      "description": "Forward a single service"
+    },
+    {
+      "name": "remove_service",
+      "description": "Stop forwarding a service"
+    },
+    {
+      "name": "get_connection_info",
+      "description": "Get connection details for a forwarded service"
+    },
+    {
+      "name": "list_services",
+      "description": "List all forwarded services"
+    },
+    {
+      "name": "find_services",
+      "description": "Search forwarded services"
+    },
+    {
+      "name": "get_quick_status",
+      "description": "Fast health check"
+    },
+    {
+      "name": "diagnose_errors",
+      "description": "Diagnose connection issues"
+    },
+    {
+      "name": "reconnect_service",
+      "description": "Reconnect a failed service"
+    }
+  ],
+  "user_config": {
+    "kubeconfig": {
+      "type": "file",
+      "title": "Kubeconfig",
+      "description": "Path to kubeconfig file (optional, uses default if not set)",
+      "required": false
+    }
+  },
+  "_meta": {
+    "claude_desktop": {
+      "category": "Development Tools",
+      "featured": false
+    }
+  }
+}

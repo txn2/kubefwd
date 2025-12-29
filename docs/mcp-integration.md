@@ -107,6 +107,16 @@ sudo -E kubefwd  # Idle mode, API enabled
 
 ### 2. Configure Your AI
 
+=== "Claude Desktop (One-Click)"
+
+    Download the `.mcpb` bundle for your platform from [GitHub Releases](https://github.com/txn2/kubefwd/releases):
+
+    - **macOS (Apple Silicon):** `kubefwd-VERSION-darwin-arm64.mcpb`
+    - **macOS (Intel):** `kubefwd-VERSION-darwin-amd64.mcpb`
+    - **Windows:** `kubefwd-VERSION-windows-amd64.mcpb`
+
+    Double-click the downloaded file to install kubefwd as a Claude Desktop extension.
+
 === "Claude Code (Easy)"
 
     One command to add kubefwd:

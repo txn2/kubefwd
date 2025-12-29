@@ -60,6 +60,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
+      - name: Build MCPB bundles
+        run: |
+          # Extract version from tag (remove 'v' prefix)
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./mcpb/build.sh "$VERSION" --use-dist
+
+      - name: Upload MCPB bundles to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Upload each .mcpb file to the release
+          for mcpb in dist/mcpb/*.mcpb; do
+            echo "Uploading $mcpb..."
+            gh release upload "$GITHUB_REF_NAME" "$mcpb" --clobber
+          done
+
       - name: Generate artifact hashes
         id: hash
         run: |
