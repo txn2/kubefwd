@@ -6,7 +6,7 @@ Understanding when to use kubefwd versus other local Kubernetes development tool
 
 **kubefwd solves one problem exceptionally well**: accessing cluster services from your local machine using their actual service names.
 
-Most other tools in this space focus on **bidirectional traffic interception**—routing cluster traffic to your local machine so you can intercept requests destined for a deployed service. kubefwd takes the opposite, simpler approach: it makes cluster services available locally without modifying anything in the cluster.
+Most other tools in this space focus on **bidirectional traffic interception**: routing cluster traffic to your local machine so you can intercept requests destined for a deployed service. kubefwd takes the opposite, simpler approach: it makes cluster services available locally without modifying anything in the cluster.
 
 | Approach | Direction | Use Case |
 |----------|-----------|----------|
@@ -15,7 +15,7 @@ Most other tools in this space focus on **bidirectional traffic interception**�
 
 ### System-Wide Access
 
-Because kubefwd updates `/etc/hosts`, **any application** on your machine can access cluster services—not just your code:
+Because kubefwd updates `/etc/hosts`, **any application** on your machine can access cluster services, not just your code:
 
 - **Web browsers**: Navigate to `http://grafana:3000` or `http://kibana:5601`
 - **Database clients**: Connect DBeaver, DataGrip, pgAdmin, or TablePlus to `postgres:5432`
@@ -51,7 +51,7 @@ This is a significant advantage over process-injection tools where only the inje
 - Good for debugging production-like traffic
 
 **kubefwd strengths:**
-- No cluster components—nothing to install in the cluster
+- No cluster components to install
 - Bulk forward all services with one command
 - Unique IP per service (no port conflicts)
 - Simpler mental model (one-way access)
@@ -212,7 +212,7 @@ kubefwd is ideal when:
 
 3. **You have many services to access**
    - Forward 10, 20, or 100 services with one command
-   - Each gets a unique IP—no port conflicts
+   - Each gets a unique IP (no port conflicts)
 
 4. **You want to keep it simple**
    - One-way access: local → cluster
@@ -243,7 +243,7 @@ Consider alternatives when:
 
 ## Summary
 
-kubefwd occupies a specific niche in the local Kubernetes development ecosystem: **simple, bulk access to cluster services with service name resolution**. It doesn't try to intercept traffic or inject into processes—it just makes cluster services accessible locally, exactly as they appear in-cluster.
+kubefwd occupies a specific niche in the local Kubernetes development ecosystem: **simple, bulk access to cluster services with service name resolution**. It doesn't try to intercept traffic or inject into processes. It just makes cluster services accessible locally, exactly as they appear in-cluster.
 
 For developers who primarily need to connect their local code to cluster dependencies (databases, APIs, caches), kubefwd provides the simplest path with the least overhead.
 

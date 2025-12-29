@@ -10,11 +10,28 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/txn2/kubefwd/cmd/kubefwd/mcp"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
 	"k8s.io/klog/v2"
 )
 
-var globalUsage = ``
+var globalUsage = `Bulk forward Kubernetes services for local development.
+
+Each forwarded service gets its own unique loopback IP (127.x.x.x), allowing
+multiple services to use the same port simultaneously. Service names are added
+to /etc/hosts for transparent access using cluster service names.
+
+Modes:
+  Idle Mode:    Run without -n/--namespace; API enabled, no namespaces forwarded
+  Namespace:    Forward all services from specified namespace(s)
+  All:          Forward services from all namespaces (--all-namespaces)
+
+The REST API (http://kubefwd.internal/) is auto-enabled in idle mode and allows
+adding/removing namespaces and services dynamically.
+
+Subcommands:
+  mcp           Start MCP server for AI assistant integration (no sudo needed)
+  version       Show version information`
 var Version = "0.0.0"
 
 // KlogWriter captures klog output and reformats it through logrus
@@ -76,17 +93,14 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kubefwd",
 		Short: "Expose Kubernetes services for local development.",
-		Example: " kubefwd services --help\n" +
-			"  kubefwd svc -n the-project --tui\n" +
-			"  kubefwd svc -n the-project -l env=dev,component=api --tui\n" +
-			"  kubefwd svc -n the-project -f metadata.name=service-name --tui\n" +
-			"  kubefwd svc -n default -l \"app in (ws, api)\" --tui\n" +
-			"  kubefwd svc -n default -n the-project --tui\n" +
-			"  kubefwd svc -n the-project -m 80:8080 -m 443:1443 --tui\n" +
-			"  kubefwd svc -n the-project -z path/to/conf.yml --tui\n" +
-			"  kubefwd svc -n the-project -r svc.ns:127.3.3.1 --tui\n" +
-			"  kubefwd svc --all-namespaces --tui\n" +
-			"  kubefwd svc --hosts-path /etc/hosts --tui",
+		Example: `  sudo kubefwd                      # Idle mode (API enabled, no namespaces)
+  sudo kubefwd --tui                # Idle mode with TUI
+  sudo kubefwd -n myapp             # Forward services from 'myapp' namespace
+  sudo kubefwd -n ns1 -n ns2        # Forward from multiple namespaces
+  sudo kubefwd -A                   # Forward from all namespaces
+  sudo kubefwd -n myapp -l app=web  # Filter by label selector
+  kubefwd mcp                       # Start MCP server for AI integration
+  kubefwd version                   # Show version`,
 
 		Long: globalUsage,
 	}
@@ -98,14 +112,17 @@ func newRootCmd() *cobra.Command {
 			" kubefwd version quiet\n",
 		Long: ``,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
+			fmt.Printf("Kubefwd version: %s\nhttps://kubefwd.com\n", Version)
 		},
 	}
 
 	// Pass version to services package for TUI header
 	services.Version = Version
 
-	cmd.AddCommand(versionCmd, services.Cmd)
+	// Pass version to mcp package
+	mcp.Version = Version
+
+	cmd.AddCommand(versionCmd, services.Cmd, mcp.Cmd)
 
 	return cmd
 }
@@ -129,12 +146,30 @@ func isTUIMode() bool {
 	return false
 }
 
+// isKnownSubcommand checks if arg is a known subcommand
+func isKnownSubcommand(arg string) bool {
+	knownCommands := map[string]bool{
+		"services": true, "svcs": true, "svc": true,
+		"version": true, "mcp": true,
+		"help": true, "completion": true, "__complete": true,
+	}
+	return knownCommands[arg]
+}
+
 func main() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
 		ForceColors:     true,
 		TimestampFormat: "15:04:05",
 	})
+
+	// If no subcommand provided, default to "svc" (services command)
+	// This enables `sudo -E kubefwd` to work directly as idle mode
+	args := os.Args[1:]
+	if len(args) == 0 || (len(args) > 0 && !isKnownSubcommand(args[0])) {
+		// No args, or first arg is a flag/unknown - prepend "svc"
+		os.Args = append([]string{os.Args[0], "svc"}, args...)
+	}
 
 	// Only print banner in non-TUI mode
 	if !isTUIMode() {
@@ -145,7 +180,7 @@ func main() {
 		log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
 		log.Print("")
 		log.Printf("Version %s", Version)
-		log.Print("https://github.com/txn2/kubefwd")
+		log.Print("https://kubefwd.com")
 		log.Print("")
 	}
 

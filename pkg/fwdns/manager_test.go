@@ -1,0 +1,793 @@
+package fwdns
+
+import (
+	"sync"
+	"testing"
+	"time"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+)
+
+// Package-level registry initialization
+var (
+	registryOnce sync.Once
+	registryStop chan struct{}
+)
+
+func initRegistryOnce() {
+	registryOnce.Do(func() {
+		registryStop = make(chan struct{})
+		fwdsvcregistry.Init(registryStop)
+	})
+}
+
+func TestWatcherKey(t *testing.T) {
+	tests := []struct {
+		namespace string
+		context   string
+		expected  string
+	}{
+		{"default", "minikube", "default.minikube"},
+		{"kube-system", "prod-cluster", "kube-system.prod-cluster"},
+		{"my-ns", "my-ctx", "my-ns.my-ctx"},
+	}
+
+	for _, tt := range tests {
+		result := WatcherKey(tt.namespace, tt.context)
+		if result != tt.expected {
+			t.Errorf("WatcherKey(%q, %q) = %q, want %q",
+				tt.namespace, tt.context, result, tt.expected)
+		}
+	}
+}
+
+func TestNewManager(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	cfg := ManagerConfig{
+		Domain:         "test.local",
+		Timeout:        300,
+		AutoReconnect:  true,
+		ResyncInterval: 5 * time.Minute,
+		RetryInterval:  10 * time.Second,
+		GlobalStopCh:   stopCh,
+	}
+
+	mgr := NewManager(cfg)
+
+	if mgr == nil {
+		t.Fatal("NewManager returned nil")
+	}
+
+	if mgr.domain != "test.local" {
+		t.Errorf("Expected domain 'test.local', got %q", mgr.domain)
+	}
+
+	if mgr.timeout != 300 {
+		t.Errorf("Expected timeout 300, got %d", mgr.timeout)
+	}
+
+	if !mgr.autoReconnect {
+		t.Error("Expected autoReconnect to be true")
+	}
+}
+
+func TestManager_ListWatchers_Empty(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watchers := mgr.ListWatchers()
+
+	if len(watchers) != 0 {
+		t.Errorf("Expected 0 watchers, got %d", len(watchers))
+	}
+}
+
+func TestManager_GetWatcher_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := mgr.GetWatcher("ctx", "ns")
+
+	if watcher != nil {
+		t.Error("Expected nil watcher for non-existent namespace")
+	}
+}
+
+func TestManager_StopWatcher_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	err := mgr.StopWatcher("ctx", "ns")
+
+	if err == nil {
+		t.Error("Expected error when stopping non-existent watcher")
+	}
+}
+
+func TestManager_StopAll_Empty(t *testing.T) {
+	stopCh := make(chan struct{})
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Should not panic with no watchers
+	mgr.StopAll()
+
+	// Verify done channel is closed
+	select {
+	case <-mgr.Done():
+		// Success
+	case <-time.After(time.Second):
+		t.Error("Done channel not closed after StopAll")
+	}
+}
+
+func TestManager_GetClientSet_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	cs := mgr.GetClientSet("nonexistent")
+
+	if cs != nil {
+		t.Error("Expected nil clientSet for non-existent context")
+	}
+}
+
+func TestNamespaceWatcher_Running(t *testing.T) {
+	watcher := &NamespaceWatcher{
+		running: false,
+	}
+
+	if watcher.Running() {
+		t.Error("Expected Running() to return false")
+	}
+
+	watcher.runningMu.Lock()
+	watcher.running = true
+	watcher.runningMu.Unlock()
+
+	if !watcher.Running() {
+		t.Error("Expected Running() to return true")
+	}
+}
+
+func TestNamespaceWatcher_Info(t *testing.T) {
+	initRegistryOnce()
+
+	startTime := time.Now()
+	watcher := &NamespaceWatcher{
+		key:           "default.minikube",
+		namespace:     "default",
+		context:       "minikube",
+		labelSelector: "app=test",
+		fieldSelector: "metadata.name=test",
+		startedAt:     startTime,
+		running:       true,
+	}
+
+	info := watcher.Info()
+
+	if info.Key != "default.minikube" {
+		t.Errorf("Expected key 'default.minikube', got %q", info.Key)
+	}
+	if info.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got %q", info.Namespace)
+	}
+	if info.Context != "minikube" {
+		t.Errorf("Expected context 'minikube', got %q", info.Context)
+	}
+	if info.LabelSelector != "app=test" {
+		t.Errorf("Expected labelSelector 'app=test', got %q", info.LabelSelector)
+	}
+	if info.FieldSelector != "metadata.name=test" {
+		t.Errorf("Expected fieldSelector 'metadata.name=test', got %q", info.FieldSelector)
+	}
+	if !info.Running {
+		t.Error("Expected Running to be true")
+	}
+}
+
+func TestNamespaceWatcher_Stop(t *testing.T) {
+	watcher := &NamespaceWatcher{
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
+		running: true,
+	}
+
+	watcher.Stop()
+
+	// Verify stopCh is closed
+	select {
+	case <-watcher.stopCh:
+		// Success
+	default:
+		t.Error("stopCh not closed after Stop()")
+	}
+
+	// Calling Stop again should not panic
+	watcher.Stop()
+}
+
+func TestSplitPortMapping(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{"80:8080", []string{"80", "8080"}},
+		{"443:8443", []string{"443", "8443"}},
+		{"http:8080", []string{"http", "8080"}},
+		{"invalid", nil},
+		{"", nil},
+	}
+
+	for _, tt := range tests {
+		result := splitPortMapping(tt.input)
+		if tt.expected == nil {
+			if result != nil {
+				t.Errorf("splitPortMapping(%q) = %v, want nil", tt.input, result)
+			}
+		} else {
+			if result == nil || len(result) != len(tt.expected) {
+				t.Errorf("splitPortMapping(%q) = %v, want %v", tt.input, result, tt.expected)
+				continue
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("splitPortMapping(%q)[%d] = %q, want %q",
+						tt.input, i, result[i], tt.expected[i])
+				}
+			}
+		}
+	}
+}
+
+func TestNamespaceWatcher_ParsePortMap(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{manager: mgr}
+
+	// Test nil mappings
+	result := watcher.parsePortMap(nil)
+	if result != nil {
+		t.Error("Expected nil for nil mappings")
+	}
+
+	// Test empty mappings
+	result = watcher.parsePortMap([]string{})
+	if result != nil {
+		t.Error("Expected nil for empty mappings")
+	}
+
+	// Test valid mappings
+	result = watcher.parsePortMap([]string{"80:8080", "443:8443"})
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(*result) != 2 {
+		t.Errorf("Expected 2 mappings, got %d", len(*result))
+	}
+	if (*result)[0].SourcePort != "80" || (*result)[0].TargetPort != "8080" {
+		t.Errorf("First mapping: got %+v", (*result)[0])
+	}
+	if (*result)[1].SourcePort != "443" || (*result)[1].TargetPort != "8443" {
+		t.Errorf("Second mapping: got %+v", (*result)[1])
+	}
+
+	// Test invalid mappings (should be skipped)
+	result = watcher.parsePortMap([]string{"invalid", "80:8080"})
+	if result == nil || len(*result) != 1 {
+		t.Errorf("Expected 1 valid mapping, got %v", result)
+	}
+}
+
+func TestNamespaceWatcher_AddServiceHandler_SkipsNoSelector(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-selector-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: nil, // No selector
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+	}
+
+	// Should not panic - just skip silently
+	watcher.addServiceHandler(svc)
+}
+
+func TestNamespaceWatcher_AddServiceHandler_SkipsEmptySelector(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "empty-selector-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{}, // Empty selector
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+	}
+
+	// Should not panic - just skip silently
+	watcher.addServiceHandler(svc)
+}
+
+func TestNamespaceWatcher_DeleteServiceHandler_InvalidObject(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+	}
+
+	// Should not panic with non-service object
+	watcher.deleteServiceHandler("not a service")
+	watcher.deleteServiceHandler(nil)
+	watcher.deleteServiceHandler(123)
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_InvalidObjects(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+	}
+
+	// Should not panic with non-service objects
+	watcher.updateServiceHandler("old", "new")
+	watcher.updateServiceHandler(nil, nil)
+
+	// Mixed types
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+	}
+	watcher.updateServiceHandler(svc, "not a service")
+	watcher.updateServiceHandler("not a service", svc)
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_NoChange(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "test"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test-ctx",
+		clientSet: fake.NewClientset(),
+	}
+
+	// Same service, no changes - should do nothing
+	watcher.updateServiceHandler(svc, svc)
+}
+
+func TestManagerConfig_Fields(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	cfg := ManagerConfig{
+		ConfigPath:      "/path/to/config",
+		Domain:          "test.domain",
+		PortMapping:     []string{"80:8080", "443:8443"},
+		Timeout:         600,
+		FwdConfigPath:   "/path/to/fwd.conf",
+		FwdReservations: []string{"svc1:127.1.1.1"},
+		ResyncInterval:  10 * time.Minute,
+		RetryInterval:   30 * time.Second,
+		AutoReconnect:   true,
+		LabelSelector:   "app=test",
+		FieldSelector:   "metadata.name=test",
+		GlobalStopCh:    stopCh,
+	}
+
+	mgr := NewManager(cfg)
+
+	if mgr.configPath != "/path/to/config" {
+		t.Errorf("Expected configPath '/path/to/config', got %q", mgr.configPath)
+	}
+	if mgr.domain != "test.domain" {
+		t.Errorf("Expected domain 'test.domain', got %q", mgr.domain)
+	}
+	if len(mgr.portMapping) != 2 {
+		t.Errorf("Expected 2 port mappings, got %d", len(mgr.portMapping))
+	}
+	if mgr.timeout != 600 {
+		t.Errorf("Expected timeout 600, got %d", mgr.timeout)
+	}
+	if mgr.fwdConfigPath != "/path/to/fwd.conf" {
+		t.Errorf("Expected fwdConfigPath '/path/to/fwd.conf', got %q", mgr.fwdConfigPath)
+	}
+	if len(mgr.fwdReservations) != 1 {
+		t.Errorf("Expected 1 reservation, got %d", len(mgr.fwdReservations))
+	}
+	if mgr.resyncInterval != 10*time.Minute {
+		t.Errorf("Expected resyncInterval 10m, got %v", mgr.resyncInterval)
+	}
+	if mgr.retryInterval != 30*time.Second {
+		t.Errorf("Expected retryInterval 30s, got %v", mgr.retryInterval)
+	}
+	if !mgr.autoReconnect {
+		t.Error("Expected autoReconnect true")
+	}
+	if mgr.labelSelector != "app=test" {
+		t.Errorf("Expected labelSelector 'app=test', got %q", mgr.labelSelector)
+	}
+	if mgr.fieldSelector != "metadata.name=test" {
+		t.Errorf("Expected fieldSelector 'metadata.name=test', got %q", mgr.fieldSelector)
+	}
+}
+
+func TestNamespaceInfo_Fields(t *testing.T) {
+	now := time.Now()
+	info := NamespaceInfo{
+		Key:           "default.minikube",
+		Namespace:     "default",
+		Context:       "minikube",
+		ServiceCount:  5,
+		ActiveCount:   4,
+		ErrorCount:    1,
+		StartedAt:     now,
+		Running:       true,
+		LabelSelector: "app=test",
+		FieldSelector: "metadata.name=svc",
+	}
+
+	if info.Key != "default.minikube" {
+		t.Errorf("Expected Key 'default.minikube', got %q", info.Key)
+	}
+	if info.Namespace != "default" {
+		t.Errorf("Expected Namespace 'default', got %q", info.Namespace)
+	}
+	if info.Context != "minikube" {
+		t.Errorf("Expected Context 'minikube', got %q", info.Context)
+	}
+	if info.ServiceCount != 5 {
+		t.Errorf("Expected ServiceCount 5, got %d", info.ServiceCount)
+	}
+	if info.ActiveCount != 4 {
+		t.Errorf("Expected ActiveCount 4, got %d", info.ActiveCount)
+	}
+	if info.ErrorCount != 1 {
+		t.Errorf("Expected ErrorCount 1, got %d", info.ErrorCount)
+	}
+	if !info.Running {
+		t.Error("Expected Running true")
+	}
+}
+
+func TestWatcherOpts_Fields(t *testing.T) {
+	opts := WatcherOpts{
+		LabelSelector: "app=web",
+		FieldSelector: "metadata.name=frontend",
+	}
+
+	if opts.LabelSelector != "app=web" {
+		t.Errorf("Expected LabelSelector 'app=web', got %q", opts.LabelSelector)
+	}
+	if opts.FieldSelector != "metadata.name=frontend" {
+		t.Errorf("Expected FieldSelector 'metadata.name=frontend', got %q", opts.FieldSelector)
+	}
+}
+
+func TestManager_GetContextIndex(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// First context should get index 0
+	idx1 := mgr.GetContextIndex("ctx1")
+	if idx1 != 0 {
+		t.Errorf("Expected first context index 0, got %d", idx1)
+	}
+
+	// Same context should return same index
+	idx1Again := mgr.GetContextIndex("ctx1")
+	if idx1Again != 0 {
+		t.Errorf("Expected same context to return 0, got %d", idx1Again)
+	}
+
+	// Second context should get index 1
+	idx2 := mgr.GetContextIndex("ctx2")
+	if idx2 != 1 {
+		t.Errorf("Expected second context index 1, got %d", idx2)
+	}
+
+	// Third context should get index 2
+	idx3 := mgr.GetContextIndex("ctx3")
+	if idx3 != 2 {
+		t.Errorf("Expected third context index 2, got %d", idx3)
+	}
+}
+
+func TestManager_GetNamespaceIndex(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// First namespace key should get index 0
+	idx1 := mgr.GetNamespaceIndex("ns1.ctx1")
+	if idx1 != 0 {
+		t.Errorf("Expected first namespace index 0, got %d", idx1)
+	}
+
+	// Same key should return same index
+	idx1Again := mgr.GetNamespaceIndex("ns1.ctx1")
+	if idx1Again != 0 {
+		t.Errorf("Expected same key to return 0, got %d", idx1Again)
+	}
+
+	// Second namespace key should get index 1
+	idx2 := mgr.GetNamespaceIndex("ns2.ctx1")
+	if idx2 != 1 {
+		t.Errorf("Expected second namespace index 1, got %d", idx2)
+	}
+
+	// Different context same namespace should get new index
+	idx3 := mgr.GetNamespaceIndex("ns1.ctx2")
+	if idx3 != 2 {
+		t.Errorf("Expected third namespace index 2, got %d", idx3)
+	}
+}
+
+func TestManager_GetOrCreateIPLock_AdHoc(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Get lock for namespace without watcher - should create ad-hoc lock
+	lock1 := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock1 == nil {
+		t.Fatal("Expected non-nil lock")
+	}
+
+	// Same namespace/context should return same lock
+	lock1Again := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock1Again != lock1 {
+		t.Error("Expected same lock for same namespace/context")
+	}
+
+	// Different namespace should return different lock
+	lock2 := mgr.GetOrCreateIPLock("ctx1", "ns2")
+	if lock2 == nil {
+		t.Fatal("Expected non-nil lock for ns2")
+	}
+	if lock2 == lock1 {
+		t.Error("Expected different lock for different namespace")
+	}
+
+	// Different context should return different lock
+	lock3 := mgr.GetOrCreateIPLock("ctx2", "ns1")
+	if lock3 == nil {
+		t.Fatal("Expected non-nil lock for ctx2")
+	}
+	if lock3 == lock1 {
+		t.Error("Expected different lock for different context")
+	}
+}
+
+func TestManager_GetOrCreateIPLock_WithWatcher(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Manually add a watcher with its own ipLock
+	watcherLock := &sync.Mutex{}
+	watcher := &NamespaceWatcher{
+		key:       "ns1.ctx1",
+		namespace: "ns1",
+		context:   "ctx1",
+		ipLock:    watcherLock,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+	}
+	mgr.mu.Lock()
+	mgr.watchers["ns1.ctx1"] = watcher
+	mgr.mu.Unlock()
+
+	// GetOrCreateIPLock should return watcher's lock
+	lock := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock != watcherLock {
+		t.Error("Expected watcher's lock to be returned")
+	}
+}
+
+func TestManager_adHocIPLocks_Initialization(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// adHocIPLocks should be initialized
+	if mgr.adHocIPLocks == nil {
+		t.Error("adHocIPLocks should be initialized")
+	}
+}
+
+func TestParsePortMapPublic(t *testing.T) {
+	// Test nil mappings
+	result := parsePortMapPublic(nil)
+	if result != nil {
+		t.Error("Expected nil for nil mappings")
+	}
+
+	// Test empty mappings
+	result = parsePortMapPublic([]string{})
+	if result != nil {
+		t.Error("Expected nil for empty mappings")
+	}
+
+	// Test valid mappings
+	result = parsePortMapPublic([]string{"80:8080", "443:8443"})
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(*result) != 2 {
+		t.Errorf("Expected 2 mappings, got %d", len(*result))
+	}
+	if (*result)[0].SourcePort != "80" || (*result)[0].TargetPort != "8080" {
+		t.Errorf("First mapping incorrect: got %+v", (*result)[0])
+	}
+	if (*result)[1].SourcePort != "443" || (*result)[1].TargetPort != "8443" {
+		t.Errorf("Second mapping incorrect: got %+v", (*result)[1])
+	}
+
+	// Test with invalid mappings (should be skipped)
+	result = parsePortMapPublic([]string{"invalid", "80:8080", "alsobad"})
+	if result == nil || len(*result) != 1 {
+		t.Errorf("Expected 1 valid mapping, got %v", result)
+	}
+}
+
+func TestManager_CreateServiceFWD_NoSelector(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Service without selector should fail
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-selector",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: nil,
+			Ports: []v1.ServicePort{
+				{Port: 80},
+			},
+		},
+	}
+
+	_, err := mgr.CreateServiceFWD("ctx", "default", svc)
+	if err == nil {
+		t.Error("Expected error for service without selector")
+	}
+	if err != nil && !contains(err.Error(), "no pod selector") {
+		t.Errorf("Expected 'no pod selector' error, got: %v", err)
+	}
+}
+
+func TestManager_CreateServiceFWD_EmptySelector(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Service with empty selector should fail
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "empty-selector",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{},
+			Ports: []v1.ServicePort{
+				{Port: 80},
+			},
+		},
+	}
+
+	_, err := mgr.CreateServiceFWD("ctx", "default", svc)
+	if err == nil {
+		t.Error("Expected error for service with empty selector")
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
+}
+
+func containsAt(s, substr string, start int) bool {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

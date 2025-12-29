@@ -396,7 +396,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		pfo.removeInterfaceAlias()
 
 		// Unregister from metrics registry if TUI is enabled
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			serviceKey := pfo.Service + "." + pfo.Namespace + "." + pfo.Context
 			fwdmetrics.GetRegistry().UnregisterPortForward(serviceKey, pfo.PodName, pfo.LocalPort)
 		}
@@ -440,7 +440,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	// Wrap with metrics dialer if TUI is enabled
 	var finalDialer httpstream.Dialer = dialerWithPing
 	var pfMetrics *fwdmetrics.PortForwardMetrics
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		localIPStr := ""
 		if pfo.LocalIP != nil {
 			localIPStr = pfo.LocalIP.String()
@@ -474,7 +474,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	fw, err := portforward.NewOnAddresses(finalDialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		// Emit status change event for TUI
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			event := events.NewPodEvent(
 				events.PodStatusChanged,
 				pfo.Service,
@@ -495,7 +495,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Emit active status - port forward is now ready
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		event := events.NewPodEvent(
 			events.PodStatusChanged,
 			pfo.Service,
@@ -520,7 +520,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		log.Errorf("Lost connection to %s/%s: %s", pfo.Namespace, pfo.PodName, err.Error())
 
 		// Emit status change event for TUI
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			event := events.NewPodEvent(
 				events.PodStatusChanged,
 				pfo.Service,

@@ -38,7 +38,7 @@ func (m *HeaderModel) Update(msg tea.Msg) (HeaderModel, tea.Cmd) {
 func (m *HeaderModel) View() string {
 	title := styles.HeaderTitleStyle.Render("kubefwd")
 	version := styles.HeaderVersionStyle.Render(" v" + m.version)
-	link := styles.HeaderLinkStyle.Render("github.com/txn2/kubefwd")
+	link := styles.HeaderLinkStyle.Render("kubefwd.com")
 
 	return fmt.Sprintf(" %s%s | %s", title, version, link)
 }

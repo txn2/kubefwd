@@ -25,6 +25,11 @@ var (
 	once       sync.Once
 	mu         sync.RWMutex
 	Version    string // Set by main package before Init
+
+	// Standalone event infrastructure (for API-only mode without TUI)
+	standaloneEventBus *events.Bus
+	standaloneStore    *state.Store
+	eventOnce          sync.Once
 )
 
 // Focus tracks which component has focus
@@ -110,24 +115,118 @@ func IsEnabled() bool {
 	return tuiEnabled
 }
 
-// GetEventBus returns the global event bus (nil if TUI not initialized)
+// EventsEnabled returns true if the event infrastructure is available.
+// This is true when either TUI is enabled OR API-only mode initialized events.
+func EventsEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return tuiManager != nil || standaloneEventBus != nil
+}
+
+// InitEventInfrastructure initializes the event bus and state store for API-only mode.
+// This allows events to be published and consumed without the full TUI.
+// Safe to call multiple times - only initializes once.
+func InitEventInfrastructure() {
+	eventOnce.Do(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		standaloneStore = state.NewStore(1000)
+		standaloneEventBus = events.NewBus(1000)
+
+		// Subscribe the store to events so it tracks state
+		standaloneEventBus.SubscribeAll(func(e events.Event) {
+			handleEventForStore(standaloneStore, e)
+		})
+
+		// Start the event bus
+		standaloneEventBus.Start()
+	})
+}
+
+// handleEventForStore processes a kubefwd event and updates the store
+// This is the same logic used by the TUI but extracted for standalone use
+func handleEventForStore(store *state.Store, e events.Event) {
+	switch e.Type {
+	case events.PodAdded:
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
+		snapshot := state.ForwardSnapshot{
+			Key:           key,
+			ServiceKey:    e.ServiceKey,
+			RegistryKey:   e.RegistryKey,
+			ServiceName:   e.Service,
+			Namespace:     e.Namespace,
+			Context:       e.Context,
+			PodName:       e.PodName,
+			ContainerName: e.ContainerName,
+			LocalIP:       e.LocalIP,
+			LocalPort:     e.LocalPort,
+			PodPort:       e.PodPort,
+			Hostnames:     e.Hostnames,
+			Status:        state.StatusConnecting,
+			StartedAt:     e.Timestamp,
+		}
+		store.AddForward(snapshot)
+
+	case events.PodRemoved:
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
+		store.RemoveForward(key)
+
+	case events.PodStatusChanged:
+		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
+		var status state.ForwardStatus
+		switch e.Status {
+		case "connecting":
+			status = state.StatusConnecting
+		case "active":
+			status = state.StatusActive
+		case "error":
+			status = state.StatusError
+		case "stopping":
+			status = state.StatusStopping
+		default:
+			status = state.StatusPending
+		}
+		errorMsg := ""
+		if e.Error != nil {
+			errorMsg = e.Error.Error()
+		}
+		store.UpdateStatus(key, status, errorMsg)
+
+		// Update hostnames when "active" status arrives with populated hostnames
+		if e.Status == "active" && len(e.Hostnames) > 0 {
+			store.UpdateHostnames(key, e.Hostnames)
+		}
+
+	case events.ServiceRemoved:
+		forwards := store.GetFiltered()
+		for _, fwd := range forwards {
+			if fwd.ServiceKey == e.ServiceKey {
+				store.RemoveForward(fwd.Key)
+			}
+		}
+	}
+}
+
+// GetEventBus returns the global event bus (nil if not initialized)
+// Checks TUI manager first, then standalone event bus
 func GetEventBus() *events.Bus {
 	mu.RLock()
 	defer mu.RUnlock()
 	if tuiManager != nil {
 		return tuiManager.eventBus
 	}
-	return nil
+	return standaloneEventBus
 }
 
-// GetStore returns the global state store (nil if TUI not initialized)
+// GetStore returns the global state store (nil if not initialized)
+// Checks TUI manager first, then standalone store
 func GetStore() *state.Store {
 	mu.RLock()
 	defer mu.RUnlock()
 	if tuiManager != nil {
 		return tuiManager.store
 	}
-	return nil
+	return standaloneStore
 }
 
 // Init initializes the TUI manager

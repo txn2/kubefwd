@@ -1,0 +1,1209 @@
+openapi: 3.1.0
+info:
+  title: kubefwd API
+  description: |
+    REST API for controlling and monitoring kubefwd port forwarding.
+
+    kubefwd is a command-line utility for bulk Kubernetes port forwarding. This API provides
+    programmatic access to manage forwarded services, monitor traffic, and control namespace
+    watchers dynamically.
+
+    For full documentation, visit [kubefwd.com](https://kubefwd.com).
+
+    ## Authentication
+
+    The API runs on a loopback interface (127.2.27.1) and does not require authentication.
+    It is only accessible from localhost.
+
+    ## URL Structure
+
+    When kubefwd runs with `--api`, it adds `kubefwd.internal` to /etc/hosts pointing to 127.2.27.1:
+
+    - `http://kubefwd.internal/` - Web interface (coming soon, redirects to /docs)
+    - `http://kubefwd.internal/docs` - This API documentation
+    - `http://kubefwd.internal/api/` - REST API endpoints
+  version: "0.0.0"
+  contact:
+    name: kubefwd
+    url: https://kubefwd.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+externalDocs:
+  description: kubefwd Documentation
+  url: https://kubefwd.com
+
+servers:
+  - url: http://kubefwd.internal/api
+    description: Local API server (via hostname)
+  - url: http://127.2.27.1/api
+    description: Local API server (via IP)
+
+tags:
+  - name: Health
+    description: Health and status endpoints
+  - name: Services
+    description: Forwarded service management
+  - name: Forwards
+    description: Individual port forward information
+  - name: Namespaces
+    description: Namespace watcher management (CRUD)
+  - name: Kubernetes
+    description: Kubernetes cluster discovery
+  - name: Metrics
+    description: Traffic metrics and statistics
+  - name: Diagnostics
+    description: Troubleshooting and diagnostics
+  - name: Events
+    description: Real-time event streaming (SSE)
+  - name: History
+    description: Historical events and reconnection data
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns the health status of the kubefwd API server
+      operationId: getHealth
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+              example:
+                success: true
+                data:
+                  status: healthy
+                  version: "1.22.0"
+                  uptime: "2h30m15s"
+                  timestamp: "2024-01-15T10:30:00Z"
+
+  /info:
+    get:
+      tags: [Health]
+      summary: Runtime information
+      description: Returns detailed runtime information including version, platform, and configuration
+      operationId: getInfo
+      responses:
+        "200":
+          description: Runtime information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/services:
+    get:
+      tags: [Services]
+      summary: List forwarded services
+      description: Returns all currently forwarded services with their status and metrics
+      operationId: listServices
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+        - $ref: "#/components/parameters/offsetParam"
+        - $ref: "#/components/parameters/statusParam"
+        - $ref: "#/components/parameters/namespaceParam"
+        - $ref: "#/components/parameters/contextParam"
+        - $ref: "#/components/parameters/searchParam"
+      responses:
+        "200":
+          description: List of forwarded services
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+    post:
+      tags: [Services]
+      summary: Forward a specific service
+      description: Start forwarding a specific Kubernetes service
+      operationId: addService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddServiceRequest"
+      responses:
+        "200":
+          description: Service forwarding started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Service already forwarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/services/{key}:
+    get:
+      tags: [Services]
+      summary: Get service details
+      description: Returns detailed information about a specific forwarded service
+      operationId: getService
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [Services]
+      summary: Stop forwarding a service
+      description: Stop forwarding a specific service and clean up resources
+      operationId: removeService
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Service forwarding stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/services/{key}/reconnect:
+    post:
+      tags: [Services]
+      summary: Reconnect a service
+      description: Trigger reconnection of all port forwards for a service
+      operationId: reconnectService
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Reconnection triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/services/{key}/sync:
+    post:
+      tags: [Services]
+      summary: Sync service pods
+      description: Synchronize the port forwards with current pod state
+      operationId: syncService
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+        - name: force
+          in: query
+          description: Force sync even if recently synced
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Sync triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/services/reconnect:
+    post:
+      tags: [Services]
+      summary: Reconnect all errored services
+      description: Trigger reconnection for all services in error state
+      operationId: reconnectAllServices
+      responses:
+        "200":
+          description: Reconnection triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/services/{key}/http:
+    get:
+      tags: [Services]
+      summary: Get HTTP traffic for a service
+      description: Returns HTTP request/response logs for all forwards of a service
+      operationId: getServiceHTTPTraffic
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: HTTP traffic logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/services/{key}/history/reconnections:
+    get:
+      tags: [History]
+      summary: Get service reconnection history
+      description: Returns the reconnection history for a specific service
+      operationId: getServiceReconnections
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Reconnection history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/forwards:
+    get:
+      tags: [Forwards]
+      summary: List port forwards
+      description: Returns all active port forwards across all services
+      operationId: listForwards
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+        - $ref: "#/components/parameters/offsetParam"
+        - $ref: "#/components/parameters/statusParam"
+        - $ref: "#/components/parameters/namespaceParam"
+      responses:
+        "200":
+          description: List of port forwards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/forwards/{key}:
+    get:
+      tags: [Forwards]
+      summary: Get forward details
+      description: Returns detailed information about a specific port forward
+      operationId: getForward
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Port forward key (e.g., "pod-name.service.namespace.context")
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forward details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Forward not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/forwards/{key}/http:
+    get:
+      tags: [Forwards]
+      summary: Get HTTP traffic for a forward
+      description: Returns HTTP request/response logs for a specific port forward
+      operationId: getForwardHTTPTraffic
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Port forward key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: HTTP traffic logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/namespaces:
+    get:
+      tags: [Namespaces]
+      summary: List watched namespaces
+      description: Returns all namespaces currently being watched for services
+      operationId: listNamespaces
+      responses:
+        "200":
+          description: List of watched namespaces
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+    post:
+      tags: [Namespaces]
+      summary: Start watching a namespace
+      description: Start watching a Kubernetes namespace for services to forward
+      operationId: addNamespace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddNamespaceRequest"
+      responses:
+        "200":
+          description: Namespace watcher started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Namespace already being watched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/namespaces/{key}:
+    get:
+      tags: [Namespaces]
+      summary: Get namespace details
+      description: Returns information about a watched namespace
+      operationId: getNamespace
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Namespace key (e.g., "default.minikube")
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Namespace details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Namespace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [Namespaces]
+      summary: Stop watching a namespace
+      description: Stop watching a namespace and remove all its forwarded services
+      operationId: removeNamespace
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Namespace key (e.g., "default.minikube")
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Namespace watcher stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Namespace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/kubernetes/namespaces:
+    get:
+      tags: [Kubernetes]
+      summary: List available Kubernetes namespaces
+      description: Returns all namespaces available in the Kubernetes cluster
+      operationId: listK8sNamespaces
+      responses:
+        "200":
+          description: List of K8s namespaces
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/kubernetes/services:
+    get:
+      tags: [Kubernetes]
+      summary: List available Kubernetes services
+      description: Returns services available for forwarding in a namespace
+      operationId: listK8sServices
+      parameters:
+        - name: namespace
+          in: query
+          description: Filter by namespace
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of K8s services
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/kubernetes/services/{namespace}/{name}:
+    get:
+      tags: [Kubernetes]
+      summary: Get Kubernetes service details
+      description: Returns detailed information about a specific Kubernetes service
+      operationId: getK8sService
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          description: Service name
+          schema:
+            type: string
+      responses:
+        "200":
+          description: K8s service details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/kubernetes/contexts:
+    get:
+      tags: [Kubernetes]
+      summary: List available Kubernetes contexts
+      description: Returns all available Kubernetes contexts from kubeconfig
+      operationId: listK8sContexts
+      responses:
+        "200":
+          description: List of K8s contexts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/metrics:
+    get:
+      tags: [Metrics]
+      summary: Get metrics summary
+      description: Returns overall traffic and health metrics
+      operationId: getMetricsSummary
+      responses:
+        "200":
+          description: Metrics summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/metrics/services:
+    get:
+      tags: [Metrics]
+      summary: Get metrics by service
+      description: Returns traffic metrics grouped by service
+      operationId: getMetricsByService
+      responses:
+        "200":
+          description: Service metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/metrics/services/{key}:
+    get:
+      tags: [Metrics]
+      summary: Get service metrics detail
+      description: Returns detailed metrics for a specific service
+      operationId: getServiceMetrics
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Service metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/metrics/services/{key}/history:
+    get:
+      tags: [Metrics]
+      summary: Get service metrics history
+      description: Returns historical traffic data for a service
+      operationId: getServiceMetricsHistory
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Metrics history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/logs:
+    get:
+      tags: [Events]
+      summary: Get recent logs
+      description: Returns recent log entries
+      operationId: getRecentLogs
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+      responses:
+        "200":
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/logs/stream:
+    get:
+      tags: [Events]
+      summary: Stream logs (SSE)
+      description: Server-Sent Events stream of log entries
+      operationId: streamLogs
+      responses:
+        "200":
+          description: SSE log stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/logs/system:
+    get:
+      tags: [Events]
+      summary: Get system logs
+      description: |
+        Returns kubefwd system logs from the internal ring buffer.
+        Captures all logrus output for debugging and monitoring.
+      operationId: getSystemLogs
+      parameters:
+        - name: count
+          in: query
+          description: Number of log entries to return (default 100, max 1000)
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: level
+          in: query
+          description: Filter by log level
+          schema:
+            type: string
+            enum: [debug, info, warn, error, fatal, panic]
+      responses:
+        "200":
+          description: System log entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          logs:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/LogEntry"
+                          totalCount:
+                            type: integer
+                            description: Total entries in the buffer
+    delete:
+      tags: [Events]
+      summary: Clear system logs
+      description: Clears the system log ring buffer
+      operationId: clearSystemLogs
+      responses:
+        "200":
+          description: Log buffer cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/events:
+    get:
+      tags: [Events]
+      summary: Stream events (SSE)
+      description: Server-Sent Events stream of kubefwd events (service added, pod changed, etc.)
+      operationId: streamEvents
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/diagnostics:
+    get:
+      tags: [Diagnostics]
+      summary: Get diagnostics summary
+      description: Returns overall diagnostic information
+      operationId: getDiagnostics
+      responses:
+        "200":
+          description: Diagnostics summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/diagnostics/services/{key}:
+    get:
+      tags: [Diagnostics]
+      summary: Get service diagnostics
+      description: Returns diagnostic information for a specific service
+      operationId: getServiceDiagnostics
+      parameters:
+        - $ref: "#/components/parameters/serviceKeyParam"
+      responses:
+        "200":
+          description: Service diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/diagnostics/forwards/{key}:
+    get:
+      tags: [Diagnostics]
+      summary: Get forward diagnostics
+      description: Returns diagnostic information for a specific port forward
+      operationId: getForwardDiagnostics
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Port forward key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forward diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/diagnostics/network:
+    get:
+      tags: [Diagnostics]
+      summary: Get network diagnostics
+      description: Returns network interface and IP allocation diagnostics
+      operationId: getNetworkDiagnostics
+      responses:
+        "200":
+          description: Network diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/diagnostics/errors:
+    get:
+      tags: [Diagnostics]
+      summary: Get error diagnostics
+      description: Returns information about services and forwards in error state
+      operationId: getErrorDiagnostics
+      responses:
+        "200":
+          description: Error diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/status:
+    get:
+      tags: [Diagnostics]
+      summary: Get AI-optimized status
+      description: Returns a compact status summary optimized for AI/MCP consumption
+      operationId: getStatus
+      responses:
+        "200":
+          description: Compact status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/analyze:
+    get:
+      tags: [Diagnostics]
+      summary: Get AI-optimized analysis
+      description: Returns detailed analysis optimized for AI/MCP consumption
+      operationId: getAnalysis
+      responses:
+        "200":
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/history/events:
+    get:
+      tags: [History]
+      summary: Get event history
+      description: Returns historical events (service added, removed, etc.)
+      operationId: getEventHistory
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+      responses:
+        "200":
+          description: Event history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/history/errors:
+    get:
+      tags: [History]
+      summary: Get error history
+      description: Returns historical error events
+      operationId: getErrorHistory
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+      responses:
+        "200":
+          description: Error history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/history/reconnections:
+    get:
+      tags: [History]
+      summary: Get all reconnection history
+      description: Returns reconnection history across all services
+      operationId: getAllReconnections
+      parameters:
+        - $ref: "#/components/parameters/limitParam"
+      responses:
+        "200":
+          description: Reconnection history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/history/stats:
+    get:
+      tags: [History]
+      summary: Get history statistics
+      description: Returns aggregate statistics from historical data
+      operationId: getHistoryStats
+      responses:
+        "200":
+          description: History statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+components:
+  parameters:
+    serviceKeyParam:
+      name: key
+      in: path
+      required: true
+      description: Service key in format "servicename.namespace.context"
+      schema:
+        type: string
+      example: "postgres.default.minikube"
+
+    limitParam:
+      name: limit
+      in: query
+      description: Maximum number of items to return
+      schema:
+        type: integer
+        default: 100
+        maximum: 1000
+
+    offsetParam:
+      name: offset
+      in: query
+      description: Number of items to skip for pagination
+      schema:
+        type: integer
+        default: 0
+
+    statusParam:
+      name: status
+      in: query
+      description: Filter by status
+      schema:
+        type: string
+        enum: [active, error, partial, pending]
+
+    namespaceParam:
+      name: namespace
+      in: query
+      description: Filter by namespace
+      schema:
+        type: string
+
+    contextParam:
+      name: context
+      in: query
+      description: Filter by Kubernetes context
+      schema:
+        type: string
+
+    searchParam:
+      name: search
+      in: query
+      description: Search in service/pod names
+      schema:
+        type: string
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+        error:
+          $ref: "#/components/schemas/ErrorInfo"
+        meta:
+          $ref: "#/components/schemas/MetaInfo"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: "#/components/schemas/ErrorInfo"
+
+    ErrorInfo:
+      type: object
+      properties:
+        code:
+          type: string
+          example: NOT_FOUND
+        message:
+          type: string
+          example: Service not found
+
+    MetaInfo:
+      type: object
+      properties:
+        count:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    AddNamespaceRequest:
+      type: object
+      required:
+        - namespace
+      properties:
+        namespace:
+          type: string
+          description: Kubernetes namespace to watch
+          example: staging
+        context:
+          type: string
+          description: Kubernetes context (defaults to current context)
+          example: minikube
+        selector:
+          type: string
+          description: Label selector to filter services
+          example: "app=myapp"
+
+    AddServiceRequest:
+      type: object
+      required:
+        - namespace
+        - serviceName
+      properties:
+        namespace:
+          type: string
+          description: Kubernetes namespace
+          example: default
+        serviceName:
+          type: string
+          description: Name of the service to forward
+          example: postgres
+        context:
+          type: string
+          description: Kubernetes context (defaults to current context)
+          example: minikube
+        ports:
+          type: array
+          items:
+            type: string
+          description: Specific ports to forward (optional, forwards all if omitted)
+          example: ["5432"]
+        localIP:
+          type: string
+          description: Reserve a specific local IP address (optional)
+          example: "127.1.2.100"
+
+    ServiceResponse:
+      type: object
+      properties:
+        key:
+          type: string
+          example: "postgres.default.minikube"
+        serviceName:
+          type: string
+          example: postgres
+        namespace:
+          type: string
+          example: default
+        context:
+          type: string
+          example: minikube
+        headless:
+          type: boolean
+        status:
+          type: string
+          enum: [active, error, partial, pending]
+        activeCount:
+          type: integer
+        errorCount:
+          type: integer
+        totalBytesIn:
+          type: integer
+        totalBytesOut:
+          type: integer
+        rateIn:
+          type: number
+        rateOut:
+          type: number
+
+    ForwardResponse:
+      type: object
+      properties:
+        key:
+          type: string
+        serviceKey:
+          type: string
+        serviceName:
+          type: string
+        namespace:
+          type: string
+        context:
+          type: string
+        podName:
+          type: string
+        localIP:
+          type: string
+          example: "127.1.2.3"
+        localPort:
+          type: string
+          example: "5432"
+        podPort:
+          type: string
+          example: "5432"
+        hostnames:
+          type: array
+          items:
+            type: string
+          example: ["postgres", "postgres.default", "postgres.default.svc.cluster.local"]
+        status:
+          type: string
+          enum: [active, error, reconnecting]
+        error:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        bytesIn:
+          type: integer
+        bytesOut:
+          type: integer
+
+    NamespaceInfoResponse:
+      type: object
+      properties:
+        key:
+          type: string
+          example: "default.minikube"
+        namespace:
+          type: string
+          example: default
+        context:
+          type: string
+          example: minikube
+        serviceCount:
+          type: integer
+        activeCount:
+          type: integer
+        errorCount:
+          type: integer
+        running:
+          type: boolean
+        labelSelector:
+          type: string
+        fieldSelector:
+          type: string
+
+    K8sNamespace:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [Active, Terminating]
+        forwarded:
+          type: boolean
+          description: True if this namespace is currently being watched
+
+    K8sService:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        type:
+          type: string
+          enum: [ClusterIP, NodePort, LoadBalancer, ExternalName]
+        clusterIP:
+          type: string
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/K8sServicePort"
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+        forwarded:
+          type: boolean
+          description: True if this service is currently being forwarded
+        forwardKey:
+          type: string
+          description: Key in the registry if forwarded
+
+    K8sServicePort:
+      type: object
+      properties:
+        name:
+          type: string
+        port:
+          type: integer
+        targetPort:
+          type: string
+        protocol:
+          type: string
+          enum: [TCP, UDP]
+
+    K8sContext:
+      type: object
+      properties:
+        name:
+          type: string
+        cluster:
+          type: string
+        user:
+          type: string
+        namespace:
+          type: string
+          description: Default namespace for this context
+        active:
+          type: boolean
+          description: True if this is the current context
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        uptime:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [debug, info, warn, error, fatal, panic]
+        message:
+          type: string

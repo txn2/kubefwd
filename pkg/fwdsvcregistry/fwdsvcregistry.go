@@ -54,6 +54,30 @@ func Get(key string) *fwdservice.ServiceFWD {
 	return svcRegistry.services[key]
 }
 
+// GetAll returns a slice of all services in the registry
+func GetAll() []*fwdservice.ServiceFWD {
+	svcRegistry.mutex.Lock()
+	defer svcRegistry.mutex.Unlock()
+	result := make([]*fwdservice.ServiceFWD, 0, len(svcRegistry.services))
+	for _, svc := range svcRegistry.services {
+		result = append(result, svc)
+	}
+	return result
+}
+
+// GetByNamespace returns all services for a given namespace and context
+func GetByNamespace(namespace, context string) []*fwdservice.ServiceFWD {
+	svcRegistry.mutex.Lock()
+	defer svcRegistry.mutex.Unlock()
+	var result []*fwdservice.ServiceFWD
+	for _, svc := range svcRegistry.services {
+		if svc.Namespace == namespace && svc.Context == context {
+			result = append(result, svc)
+		}
+	}
+	return result
+}
+
 // Add will add this service to the registry of services configured to do forwarding
 // (if it wasn't already configured) and start the port-forwarding process.
 func Add(serviceFwd *fwdservice.ServiceFWD) {
@@ -76,7 +100,7 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	log.Debugf("Registry: Start forwarding service %s", serviceFwd)
 
 	// Emit event for TUI
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		fwdtui.Emit(events.NewServiceEvent(
 			events.ServiceAdded,
 			serviceFwd.Svc.Name,
@@ -131,7 +155,7 @@ func RemoveByName(name string) {
 	close(serviceFwd.DoneChannel)
 
 	// Emit event for TUI
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		fwdtui.Emit(events.NewServiceEvent(
 			events.ServiceRemoved,
 			serviceFwd.Svc.Name,
