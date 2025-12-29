@@ -183,6 +183,7 @@ func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts)
 		doneCh:        make(chan struct{}),
 		ipLock:        &sync.Mutex{},
 		startedAt:     time.Now(),
+		running:       true, // Set running before goroutine starts to avoid race condition
 	}
 
 	m.watchers[key] = watcher
@@ -374,12 +375,9 @@ type NamespaceWatcher struct {
 }
 
 // Run starts the namespace watcher (blocking)
+// Note: running is set to true in StartWatcher() before this goroutine starts
 func (w *NamespaceWatcher) Run() {
 	defer close(w.doneCh)
-
-	w.runningMu.Lock()
-	w.running = true
-	w.runningMu.Unlock()
 
 	defer func() {
 		w.runningMu.Lock()
