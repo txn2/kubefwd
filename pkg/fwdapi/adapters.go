@@ -877,7 +877,7 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 	var unsubscribe func()
 
 	if bus := fwdtui.GetEventBus(); bus != nil {
-		bus.Subscribe(events.PodAdded, func(e events.Event) {
+		busUnsubscribe := bus.Subscribe(events.PodAdded, func(e events.Event) {
 			// Only capture events for this service
 			if e.ServiceKey == key {
 				select {
@@ -888,8 +888,7 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 			}
 		})
 		unsubscribe = func() {
-			// Note: events.Bus doesn't have Unsubscribe, but the handler
-			// will be garbage collected when the channel closes
+			busUnsubscribe() // Remove handler from bus to prevent memory leak
 			close(podAddedCh)
 		}
 	}
