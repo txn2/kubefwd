@@ -461,9 +461,10 @@ Try:
 
 		// First signal: graceful shutdown
 		<-sigChan
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			fwdtui.Emit(events.Event{Type: events.ShutdownStarted})
-		} else {
+		}
+		if !fwdtui.IsEnabled() {
 			log.Infof("Shutting down... (press Ctrl+C again to force)")
 		}
 		triggerShutdown()
