@@ -707,7 +707,7 @@ func TestNewServiceCRUDAdapter_WithConfigPath(t *testing.T) {
 		"/path/to/config",
 	)
 	if adapter == nil {
-		t.Error("Expected non-nil adapter")
+		t.Fatal("Expected non-nil adapter")
 	}
 	if adapter.configPath != "/path/to/config" {
 		t.Errorf("Expected config path '/path/to/config', got '%s'", adapter.configPath)
@@ -805,7 +805,7 @@ func TestNewKubernetesDiscoveryAdapter_WithConfigPath(t *testing.T) {
 		"/path/to/kubeconfig",
 	)
 	if adapter == nil {
-		t.Error("Expected non-nil adapter")
+		t.Fatal("Expected non-nil adapter")
 	}
 	if adapter.configPath != "/path/to/kubeconfig" {
 		t.Errorf("Expected config path '/path/to/kubeconfig', got '%s'", adapter.configPath)

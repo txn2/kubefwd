@@ -149,18 +149,6 @@ func (m *mockManagerInfo) Namespaces() []string  { return m.namespaces }
 func (m *mockManagerInfo) Contexts() []string    { return m.contexts }
 func (m *mockManagerInfo) TUIEnabled() bool      { return m.tuiEnabled }
 
-type mockEventStreamer struct {
-	eventCh chan events.Event
-}
-
-func (m *mockEventStreamer) Subscribe() (<-chan events.Event, func()) {
-	return m.eventCh, func() { close(m.eventCh) }
-}
-
-func (m *mockEventStreamer) SubscribeType(eventType events.EventType) (<-chan events.Event, func()) {
-	return m.eventCh, func() { close(m.eventCh) }
-}
-
 // Test helpers
 
 func setupRouter() *gin.Engine {

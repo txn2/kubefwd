@@ -359,7 +359,7 @@ func TestHandleGetLogs(t *testing.T) {
 	server.SetStateReader(mock)
 
 	// Test default count
-	result, data, err := server.handleGetLogs(context.Background(), nil, GetLogsInput{})
+	result, _, err := server.handleGetLogs(context.Background(), nil, GetLogsInput{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestHandleGetLogs(t *testing.T) {
 	}
 
 	// Test with count
-	_, data, err = server.handleGetLogs(context.Background(), nil, GetLogsInput{Count: 2})
+	_, data, err := server.handleGetLogs(context.Background(), nil, GetLogsInput{Count: 2})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestHandleSyncService(t *testing.T) {
 	}
 
 	// Test force sync
-	result, data, err = server.handleSyncService(context.Background(), nil, SyncServiceInput{Key: "svc1", Force: true})
+	_, data, err = server.handleSyncService(context.Background(), nil, SyncServiceInput{Key: "svc1", Force: true})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

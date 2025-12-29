@@ -42,7 +42,7 @@ func (c *HTTPClient) Get(path string, result interface{}) error {
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -62,7 +62,7 @@ func (c *HTTPClient) Post(path string, result interface{}) error {
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -93,7 +93,7 @@ func (c *HTTPClient) PostJSON(path string, body interface{}, result interface{})
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -120,7 +120,7 @@ func (c *HTTPClient) Delete(path string, result interface{}) error {
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)

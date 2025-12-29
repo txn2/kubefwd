@@ -455,10 +455,10 @@ func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSn
 	// Calculate uptime and idle duration
 	var uptime, idleDuration string
 	if !fwd.StartedAt.IsZero() {
-		uptime = time.Now().Sub(fwd.StartedAt).Round(1e9).String()
+		uptime = time.Since(fwd.StartedAt).Round(1e9).String()
 	}
 	if !fwd.LastActive.IsZero() {
-		idleDuration = time.Now().Sub(fwd.LastActive).Round(1e9).String()
+		idleDuration = time.Since(fwd.LastActive).Round(1e9).String()
 	}
 
 	return types.ForwardDiagnostic{

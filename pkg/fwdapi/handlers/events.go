@@ -78,7 +78,7 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no") // Disable nginx buffering
 
 	// Send initial comment to flush headers and confirm connection
-	c.Writer.WriteString(": connected\n\n")
+	_, _ = c.Writer.WriteString(": connected\n\n")
 	c.Writer.Flush()
 
 	// Send keepalive every 30 seconds
@@ -96,12 +96,12 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 			if err != nil {
 				return true // Skip malformed events
 			}
-			fmt.Fprintf(w, "event: %s\n", event.Type.String())
-			fmt.Fprintf(w, "data: %s\n\n", jsonData)
+			_, _ = fmt.Fprintf(w, "event: %s\n", event.Type.String())
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", jsonData)
 			return true
 
 		case <-keepalive.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			return true
 
 		case <-c.Request.Context().Done():

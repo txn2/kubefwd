@@ -25,13 +25,13 @@ func SetupAPINetwork(hostFile *fwdport.HostFileWithLock) error {
 
 	// Add hosts entry for kubefwd.internal
 	if hostFile != nil {
-		hostFile.Mutex.Lock()
+		hostFile.Lock()
 		hostFile.Hosts.AddHost(APIIP, Hostname)
 		if err := hostFile.Hosts.Save(); err != nil {
-			hostFile.Mutex.Unlock()
+			hostFile.Unlock()
 			return fmt.Errorf("failed to add hosts entry: %w", err)
 		}
-		hostFile.Mutex.Unlock()
+		hostFile.Unlock()
 		log.Debugf("Added hosts entry: %s -> %s", Hostname, APIIP)
 	}
 

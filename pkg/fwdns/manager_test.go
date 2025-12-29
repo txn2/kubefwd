@@ -9,9 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
-	"github.com/txn2/txeh"
 )
 
 // Package-level registry initialization
@@ -430,36 +428,6 @@ func TestNamespaceWatcher_UpdateServiceHandler_NoChange(t *testing.T) {
 
 	// Same service, no changes - should do nothing
 	watcher.updateServiceHandler(svc, svc)
-}
-
-func createTestHostFile(t *testing.T) *fwdport.HostFileWithLock {
-	t.Helper()
-
-	tmpDir := t.TempDir()
-	hostsPath := tmpDir + "/hosts"
-
-	// Write initial hosts content
-	if err := writeTestHostsFile(hostsPath); err != nil {
-		t.Fatalf("Failed to create test hosts file: %v", err)
-	}
-
-	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{
-		ReadFilePath:  hostsPath,
-		WriteFilePath: hostsPath,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create txeh hosts: %v", err)
-	}
-
-	return &fwdport.HostFileWithLock{Hosts: hostFile}
-}
-
-func writeTestHostsFile(path string) error {
-	return writeFile(path, []byte("127.0.0.1 localhost\n"))
-}
-
-func writeFile(path string, data []byte) error {
-	return nil // Simplified for test - actual implementation would use os.WriteFile
 }
 
 func TestManagerConfig_Fields(t *testing.T) {

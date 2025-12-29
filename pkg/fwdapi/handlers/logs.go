@@ -14,7 +14,6 @@ import (
 // LogsHandler handles log-related endpoints
 type LogsHandler struct {
 	state        types.StateReader
-	logBuffer    types.LogBufferProvider
 	getLogBuffer func() types.LogBufferProvider
 }
 
@@ -113,15 +112,15 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 						log.Timestamp.Format(time.RFC3339),
 						log.Level,
 						escapeJSON(log.Message))
-					fmt.Fprintf(w, "event: log\n")
-					fmt.Fprintf(w, "data: %s\n\n", data)
+					_, _ = fmt.Fprintf(w, "event: log\n")
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				}
 				lastCount = len(logs)
 			}
 			return true
 
 		case <-keepalive.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			return true
 
 		case <-c.Request.Context().Done():

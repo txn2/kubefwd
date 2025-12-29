@@ -617,7 +617,7 @@ Try:
 			log.Debugf("Timeout waiting for API cleanup")
 		}
 		// Clean up API network configuration
-		fwdapi.CleanupAPINetwork(hostFile)
+		_ = fwdapi.CleanupAPINetwork(hostFile)
 	}
 
 	// Final safety net: ensure all hosts are cleaned up

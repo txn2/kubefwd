@@ -201,7 +201,7 @@ func TestHandleSummaryResource(t *testing.T) {
 
 	// Test degraded state
 	mock.summary.ErrorCount = 1
-	result, err = server.handleSummaryResource(context.Background(), req)
+	_, err = server.handleSummaryResource(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestHandleSummaryResource(t *testing.T) {
 	// Test unhealthy state (errors > active)
 	mock.summary.ErrorCount = 5
 	mock.summary.ActiveServices = 2
-	result, err = server.handleSummaryResource(context.Background(), req)
+	_, err = server.handleSummaryResource(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestHandleSummaryResource(t *testing.T) {
 	}
 	server.SetManagerInfo(func() types.ManagerInfo { return mockMgr })
 
-	result, err = server.handleSummaryResource(context.Background(), req)
+	_, err = server.handleSummaryResource(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

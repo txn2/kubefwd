@@ -493,7 +493,7 @@ func (m *NamespaceManager) CreateServiceFWD(ctx, namespace string, svc *v1.Servi
 
 // parsePortMapPublic converts string mappings to PortMap slice (package-level helper)
 func parsePortMapPublic(mappings []string) *[]fwdservice.PortMap {
-	if mappings == nil || len(mappings) == 0 {
+	if len(mappings) == 0 {
 		return nil
 	}
 	var portList []fwdservice.PortMap
@@ -729,7 +729,7 @@ func (w *NamespaceWatcher) updateServiceHandler(oldObj interface{}, newObj inter
 
 // parsePortMap converts string mappings to PortMap slice
 func (w *NamespaceWatcher) parsePortMap(mappings []string) *[]fwdservice.PortMap {
-	if mappings == nil || len(mappings) == 0 {
+	if len(mappings) == 0 {
 		return nil
 	}
 	var portList []fwdservice.PortMap
