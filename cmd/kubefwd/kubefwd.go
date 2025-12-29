@@ -99,7 +99,7 @@ func newRootCmd() *cobra.Command {
 			" kubefwd version quiet\n",
 		Long: ``,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Kubefwd version: %s\nhttps://github.com/txn2/kubefwd\n", Version)
+			fmt.Printf("Kubefwd version: %s\nhttps://kubefwd.com\n", Version)
 		},
 	}
 
@@ -149,7 +149,7 @@ func main() {
 		log.Print(`|_|\_\\__,_|_.__/ \___|_|   \_/\_/ \__,_|`)
 		log.Print("")
 		log.Printf("Version %s", Version)
-		log.Print("https://github.com/txn2/kubefwd")
+		log.Print("https://kubefwd.com")
 		log.Print("")
 	}
 
