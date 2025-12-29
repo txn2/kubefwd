@@ -22,7 +22,7 @@ var (
 var Version string
 
 func init() {
-	Cmd.Flags().StringVar(&apiURL, "api-url", "http://localhost:8080", "URL of the kubefwd REST API")
+	Cmd.Flags().StringVar(&apiURL, "api-url", "http://kubefwd.internal", "URL of the kubefwd REST API")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 }
 
@@ -33,20 +33,31 @@ var Cmd = &cobra.Command{
 	Long: `Start an MCP (Model Context Protocol) server that connects to a running
 kubefwd instance via its REST API.
 
-This command does NOT require sudo and can be spawned by Claude Code or other
-MCP-compatible AI assistants.
+Architecture:
+  ┌─────────────┐    stdio     ┌─────────────┐    HTTP      ┌─────────────┐
+  │  AI Client  │ ←──────────→ │ kubefwd mcp │ ←──────────→ │   kubefwd   │
+  │ (Claude,etc)│   MCP proto  │  (bridge)   │ REST API     │ (with sudo) │
+  └─────────────┘              └─────────────┘              └─────────────┘
+
+Why two processes?
+  - kubefwd needs sudo for /etc/hosts and network interfaces
+  - MCP clients spawn MCP servers as child processes (no sudo possible)
+  - So 'kubefwd mcp' runs without sudo and talks to kubefwd via REST API
+
+This command does NOT require sudo and can be spawned by Claude Code, Cursor,
+or other MCP-compatible AI assistants.
 
 Prerequisites:
-  1. Start kubefwd with the --api flag in a separate terminal:
-     sudo -E kubefwd svc -n default --api
+  1. Start kubefwd in a separate terminal (requires sudo):
+     sudo -E kubefwd              # Idle mode with API auto-enabled
+     sudo -E kubefwd -n default   # Forward namespace (API auto-enabled)
 
-  2. Configure Claude Code to use this MCP server:
-     Add to your Claude Code MCP settings:
+  2. Configure your MCP client (e.g., Claude Code):
      {
        "mcpServers": {
          "kubefwd": {
            "command": "kubefwd",
-           "args": ["mcp", "--api-url", "http://localhost:8080"]
+           "args": ["mcp"]
          }
        }
      }
@@ -61,11 +72,11 @@ The MCP server provides developer-focused tools for:
   - Viewing metrics and logs
   - Triggering reconnections and syncs
   - Diagnosing errors`,
-	Example: `  # Start MCP server connecting to default API URL
+	Example: `  # Start MCP server (connects to kubefwd API at http://kubefwd.internal/)
   kubefwd mcp
 
   # Connect to a custom API URL
-  kubefwd mcp --api-url http://localhost:9000
+  kubefwd mcp --api-url http://localhost:8080
 
   # With verbose logging (logs go to stderr, not interfering with stdio MCP)
   kubefwd mcp --verbose`,
