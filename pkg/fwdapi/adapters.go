@@ -599,6 +599,15 @@ func NewKubernetesDiscoveryAdapter(getNsManager func() *fwdns.NamespaceManager, 
 
 // ListNamespaces returns available namespaces in the cluster
 func (a *KubernetesDiscoveryAdapter) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
 	nsManager := a.getNsManager()
 	if nsManager == nil {
 		return nil, fmt.Errorf("namespace manager not available")
@@ -646,6 +655,15 @@ func (a *KubernetesDiscoveryAdapter) ListNamespaces(ctx string) ([]types.K8sName
 
 // ListServices returns available services in a namespace
 func (a *KubernetesDiscoveryAdapter) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
 	nsManager := a.getNsManager()
 	if nsManager == nil {
 		return nil, fmt.Errorf("namespace manager not available")
