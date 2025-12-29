@@ -440,3 +440,23 @@ type HostnameEntry struct {
 	Namespace string `json:"namespace"`
 	Context   string `json:"context"`
 }
+
+// === Log Buffer Types ===
+
+// LogBufferEntry represents a single entry in the system log buffer
+type LogBufferEntry struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Level     string            `json:"level"`
+	Message   string            `json:"message"`
+	Fields    map[string]string `json:"fields,omitempty"`
+}
+
+// LogBufferProvider provides access to the system log buffer
+type LogBufferProvider interface {
+	// GetLast returns the last n entries (most recent first)
+	GetLast(n int) []LogBufferEntry
+	// Count returns the total number of entries in the buffer
+	Count() int
+	// Clear removes all entries from the buffer
+	Clear()
+}

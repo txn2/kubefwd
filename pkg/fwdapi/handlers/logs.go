@@ -8,19 +8,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/txn2/kubefwd/pkg/fwdapi"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
 // LogsHandler handles log-related endpoints
 type LogsHandler struct {
-	state types.StateReader
+	state        types.StateReader
+	logBuffer    types.LogBufferProvider
+	getLogBuffer func() types.LogBufferProvider
 }
 
 // NewLogsHandler creates a new logs handler
-func NewLogsHandler(state types.StateReader) *LogsHandler {
+func NewLogsHandler(state types.StateReader, getLogBuffer func() types.LogBufferProvider) *LogsHandler {
 	return &LogsHandler{
-		state: state,
+		state:        state,
+		getLogBuffer: getLogBuffer,
 	}
 }
 
@@ -153,7 +155,10 @@ func escapeJSON(s string) string {
 // System returns kubefwd system logs from the ring buffer
 // GET /v1/logs/system?count=100&level=error
 func (h *LogsHandler) System(c *gin.Context) {
-	buffer := fwdapi.GetLogBuffer()
+	var buffer types.LogBufferProvider
+	if h.getLogBuffer != nil {
+		buffer = h.getLogBuffer()
+	}
 	if buffer == nil {
 		c.JSON(http.StatusServiceUnavailable, types.Response{
 			Success: false,
@@ -210,7 +215,10 @@ func (h *LogsHandler) System(c *gin.Context) {
 // ClearSystem clears the system log buffer
 // DELETE /v1/logs/system
 func (h *LogsHandler) ClearSystem(c *gin.Context) {
-	buffer := fwdapi.GetLogBuffer()
+	var buffer types.LogBufferProvider
+	if h.getLogBuffer != nil {
+		buffer = h.getLogBuffer()
+	}
 	if buffer == nil {
 		c.JSON(http.StatusServiceUnavailable, types.Response{
 			Success: false,

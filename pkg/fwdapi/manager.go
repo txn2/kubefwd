@@ -255,6 +255,9 @@ func (m *Manager) Run() error {
 		return fmt.Errorf("state reader not configured")
 	}
 
+	// Initialize log buffer to capture system logs via API
+	InitLogBuffer()
+
 	// Set Gin to release mode for cleaner logs
 	gin.SetMode(gin.ReleaseMode)
 

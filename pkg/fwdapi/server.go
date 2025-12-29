@@ -73,7 +73,7 @@ func (m *Manager) setupRouter() *gin.Engine {
 			v1.GET("/metrics/services/:key/history", metricsHandler.ServiceHistory)
 
 			// Logs endpoints
-			logsHandler := handlers.NewLogsHandler(m.stateReader)
+			logsHandler := handlers.NewLogsHandler(m.stateReader, GetLogBufferProvider)
 			v1.GET("/logs", logsHandler.Recent)
 			v1.GET("/logs/stream", logsHandler.Stream)
 			v1.GET("/logs/system", logsHandler.System)
