@@ -37,12 +37,6 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// Set SSE headers
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no") // Disable nginx buffering
-
 	// Get optional event type filter
 	eventTypeFilter := c.Query("type")
 
@@ -57,6 +51,36 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 		eventCh, cancel = h.streamer.Subscribe()
 	}
 	defer cancel()
+
+	// Check if channel is already closed (indicates no event bus available)
+	// This happens when TUI is not enabled and there's no event bus
+	select {
+	case _, ok := <-eventCh:
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, types.Response{
+				Success: false,
+				Error: &types.ErrorInfo{
+					Code:    "EVENT_BUS_UNAVAILABLE",
+					Message: "Event bus not available. Events streaming requires TUI mode (--tui) to be enabled.",
+				},
+			})
+			return
+		}
+		// If we received an event, we need to handle it - but this shouldn't happen
+		// since we haven't set up the stream yet
+	default:
+		// Channel is open and ready, continue
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no") // Disable nginx buffering
+
+	// Send initial comment to flush headers and confirm connection
+	c.Writer.WriteString(": connected\n\n")
+	c.Writer.Flush()
 
 	// Send keepalive every 30 seconds
 	keepalive := time.NewTicker(30 * time.Second)
