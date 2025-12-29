@@ -93,6 +93,25 @@ type Config struct {
 	MaxReconnects int
 }
 
+// Maximum allocation limits (for CodeQL CWE-770 compliance)
+const (
+	maxEventsLimit     = 10000
+	maxErrorsLimit     = 5000
+	maxReconnectsLimit = 2000
+)
+
+// boundedSize returns size bounded to limit, providing explicit flow control
+// that static analyzers can verify. Returns 0 for negative inputs.
+func boundedSize(size, limit int) int {
+	if size <= 0 {
+		return 0
+	}
+	if size > limit {
+		return limit
+	}
+	return size
+}
+
 // DefaultConfig returns default configuration
 func DefaultConfig() Config {
 	return Config{
@@ -265,7 +284,13 @@ func (s *Store) GetErrors(count int) []ErrorRecord {
 		count = s.errorCount
 	}
 
-	result := make([]ErrorRecord, 0, count)
+	// Explicit upper bound for memory safety (CodeQL CWE-770)
+	allocSize := boundedSize(count, maxErrorsLimit)
+	if allocSize == 0 {
+		return nil
+	}
+
+	result := make([]ErrorRecord, 0, allocSize)
 	for i := 0; i < count && i < s.errorCount; i++ {
 		idx := (s.errorIndex - 1 - i + s.maxErrors) % s.maxErrors
 		record := s.errors[idx]

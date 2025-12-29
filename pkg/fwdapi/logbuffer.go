@@ -7,6 +7,20 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
+// Maximum allocation limit for log buffer (CodeQL CWE-770 compliance)
+const maxLogBufferSize = 10000
+
+// boundedSize returns size bounded to limit for memory safety
+func boundedSize(size, limit int) int {
+	if size <= 0 {
+		return 0
+	}
+	if size > limit {
+		return limit
+	}
+	return size
+}
+
 // LogBuffer is a ring buffer that stores log entries
 // It implements types.LogBufferProvider
 type LogBuffer struct {
@@ -49,8 +63,14 @@ func (b *LogBuffer) GetLast(n int) []types.LogBufferEntry {
 		n = b.count
 	}
 
-	result := make([]types.LogBufferEntry, n)
-	for i := 0; i < n; i++ {
+	// Explicit upper bound for memory safety (CodeQL CWE-770)
+	allocSize := boundedSize(n, maxLogBufferSize)
+	if allocSize == 0 {
+		return nil
+	}
+
+	result := make([]types.LogBufferEntry, allocSize)
+	for i := 0; i < allocSize; i++ {
 		// Start from most recent (head-1) and go backwards
 		idx := (b.head - 1 - i + b.size) % b.size
 		result[i] = b.entries[idx]

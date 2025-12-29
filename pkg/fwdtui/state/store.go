@@ -7,6 +7,20 @@ import (
 	"time"
 )
 
+// Maximum allocation limit for logs (CodeQL CWE-770 compliance)
+const maxLogsAllocation = 10000
+
+// boundedSize returns size bounded to limit for memory safety
+func boundedSize(size, limit int) int {
+	if size <= 0 {
+		return 0
+	}
+	if size > limit {
+		return limit
+	}
+	return size
+}
+
 // Store maintains the current state of all forwards for TUI rendering
 type Store struct {
 	mu       sync.RWMutex
@@ -355,12 +369,18 @@ func (s *Store) GetLogs(count int) []LogEntry {
 		count = len(s.logs)
 	}
 
-	start := len(s.logs) - count
+	// Explicit upper bound for memory safety (CodeQL CWE-770)
+	allocSize := boundedSize(count, maxLogsAllocation)
+	if allocSize == 0 {
+		return nil
+	}
+
+	start := len(s.logs) - allocSize
 	if start < 0 {
 		start = 0
 	}
 
-	result := make([]LogEntry, count)
+	result := make([]LogEntry, allocSize)
 	copy(result, s.logs[start:])
 	return result
 }
