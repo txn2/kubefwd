@@ -41,9 +41,10 @@ mkdir -p "$BUILD_DIR"
 
 # Platforms to build for (Claude Desktop supports macOS and Windows)
 # Format: GOOS:GOARCH:goreleaser_dir_suffix
+# Note: goreleaser adds architecture version suffixes (v1 for amd64, v8.0 for arm64)
 PLATFORMS=(
     "darwin:amd64:darwin_amd64_v1"
-    "darwin:arm64:darwin_arm64"
+    "darwin:arm64:darwin_arm64_v8.0"
     "windows:amd64:windows_amd64_v1"
 )
 
