@@ -71,15 +71,9 @@ hide:
 
     Talk to your AI about your work, not about tools.
 
-    ```json
-    {
-      "mcpServers": {
-        "kubefwd": {
-          "command": "kubefwd",
-          "args": ["mcp"]
-        }
-      }
-    }
+    ```bash
+    # Add to Claude Code
+    claude mcp add --transport stdio kubefwd -- kubefwd mcp
     ```
 
     - "Connect me to the staging database"

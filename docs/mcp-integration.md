@@ -83,22 +83,49 @@ sudo -E kubefwd  # Idle mode, API enabled
 
 ### 2. Configure Your AI
 
-Add to your MCP client config:
+=== "Claude Code (Easy)"
 
-```json
-{
-  "mcpServers": {
-    "kubefwd": {
-      "command": "kubefwd",
-      "args": ["mcp"]
+    One command to add kubefwd:
+
+    ```bash
+    claude mcp add --transport stdio kubefwd -- kubefwd mcp
+    ```
+
+    Verify it's configured:
+
+    ```bash
+    claude mcp list
+    ```
+
+=== "Claude Code (Manual)"
+
+    Add to `~/.claude.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
 
-**Claude Code:** `~/.claude/claude_code_config.json`
+=== "Cursor"
 
-**Cursor:** MCP settings in preferences
+    Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
 
 That's it. Start talking to your AI about your work.
 
