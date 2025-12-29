@@ -27,6 +27,10 @@ type Store struct {
 	forwards map[string]*ForwardSnapshot // keyed by "service.namespace.context.podname"
 	services map[string]*ServiceSnapshot // keyed by "service.namespace.context"
 
+	// Blocked namespaces - prevents race condition where port forward events
+	// arrive after namespace removal. Key format: "namespace.context"
+	blockedNamespaces map[string]struct{}
+
 	// Display options
 	filter    string
 	sortField string
@@ -43,13 +47,14 @@ func NewStore(maxLogSize int) *Store {
 		maxLogSize = 1000
 	}
 	return &Store{
-		forwards:   make(map[string]*ForwardSnapshot),
-		services:   make(map[string]*ServiceSnapshot),
-		filter:     "",
-		sortField:  "hostname",
-		sortAsc:    true,
-		logs:       make([]LogEntry, 0, maxLogSize),
-		maxLogSize: maxLogSize,
+		forwards:          make(map[string]*ForwardSnapshot),
+		services:          make(map[string]*ServiceSnapshot),
+		blockedNamespaces: make(map[string]struct{}),
+		filter:            "",
+		sortField:         "hostname",
+		sortAsc:           true,
+		logs:              make([]LogEntry, 0, maxLogSize),
+		maxLogSize:        maxLogSize,
 	}
 }
 
@@ -57,6 +62,13 @@ func NewStore(maxLogSize int) *Store {
 func (s *Store) AddForward(snapshot ForwardSnapshot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Check if this namespace is blocked (recently removed)
+	// This prevents race condition where port forward events arrive after namespace removal
+	nsKey := snapshot.Namespace + "." + snapshot.Context
+	if _, blocked := s.blockedNamespaces[nsKey]; blocked {
+		return // Silently ignore updates for blocked namespaces
+	}
 
 	s.forwards[snapshot.Key] = &snapshot
 
@@ -439,9 +451,14 @@ func (s *Store) RemoveByNamespace(namespace, context string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Block this namespace FIRST to prevent race condition with in-flight events
+	// Any AddForward calls for this namespace will be ignored after this point
+	nsKey := namespace + "." + context
+	s.blockedNamespaces[nsKey] = struct{}{}
+
 	removedCount := 0
 
-	// First, find and remove all forwards matching the namespace/context
+	// Find and remove all forwards matching the namespace/context
 	forwardsToRemove := make([]string, 0)
 	for key, fwd := range s.forwards {
 		if fwd.Namespace == namespace && fwd.Context == context {
@@ -467,4 +484,14 @@ func (s *Store) RemoveByNamespace(namespace, context string) int {
 	}
 
 	return removedCount
+}
+
+// UnblockNamespace removes a namespace from the blocked list, allowing new forwards to be added.
+// This should be called when a namespace is being re-added after previous removal.
+func (s *Store) UnblockNamespace(namespace, context string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nsKey := namespace + "." + context
+	delete(s.blockedNamespaces, nsKey)
 }

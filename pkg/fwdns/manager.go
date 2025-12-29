@@ -157,6 +157,12 @@ func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts)
 
 	key := WatcherKey(namespace, ctx)
 
+	// Unblock this namespace in case it was previously removed
+	// This allows AddForward to work again for this namespace
+	if store := fwdtui.GetStore(); store != nil {
+		store.UnblockNamespace(namespace, ctx)
+	}
+
 	// Check if already watching
 	if existing, ok := m.watchers[key]; ok && existing.Running() {
 		return existing.Info(), fmt.Errorf("already watching namespace %s in context %s", namespace, ctx)
@@ -234,6 +240,13 @@ func (m *NamespaceManager) StopWatcher(ctx, namespace string) error {
 		return fmt.Errorf("no watcher found for namespace %s in context %s", namespace, ctx)
 	}
 
+	// IMPORTANT: Block this namespace in the state store FIRST, before stopping.
+	// This prevents race condition where in-flight port forward events re-add entries.
+	// Must be done synchronously (not via event) to ensure block is set before any events.
+	if store := fwdtui.GetStore(); store != nil {
+		store.RemoveByNamespace(namespace, ctx)
+	}
+
 	// Stop the watcher
 	watcher.Stop()
 
@@ -243,8 +256,7 @@ func (m *NamespaceManager) StopWatcher(ctx, namespace string) error {
 	// Remove all services for this namespace from the registry
 	m.removeNamespaceServices(namespace, ctx)
 
-	// Emit NamespaceRemoved event to clean up the state store
-	// This ensures both TUI and MCP state are properly updated
+	// Also emit event for any other listeners (TUI update, etc.)
 	if fwdtui.EventsEnabled() {
 		fwdtui.Emit(events.NewNamespaceRemovedEvent(namespace, ctx))
 	}
