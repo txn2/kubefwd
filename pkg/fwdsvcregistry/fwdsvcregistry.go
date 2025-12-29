@@ -100,7 +100,7 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	log.Debugf("Registry: Start forwarding service %s", serviceFwd)
 
 	// Emit event for TUI
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		fwdtui.Emit(events.NewServiceEvent(
 			events.ServiceAdded,
 			serviceFwd.Svc.Name,
@@ -155,7 +155,7 @@ func RemoveByName(name string) {
 	close(serviceFwd.DoneChannel)
 
 	// Emit event for TUI
-	if fwdtui.IsEnabled() {
+	if fwdtui.EventsEnabled() {
 		fwdtui.Emit(events.NewServiceEvent(
 			events.ServiceRemoved,
 			serviceFwd.Svc.Name,

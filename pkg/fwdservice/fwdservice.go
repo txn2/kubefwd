@@ -230,7 +230,7 @@ func (svcFwd *ServiceFWD) StopAllPortForwards() {
 	// Emit PodRemoved events so TUI can clean up entries
 	for _, pfo := range forwards {
 		pfo.Stop()
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			event := events.NewPodEvent(
 				events.PodRemoved,
 				pfo.Service,
@@ -598,7 +598,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				svcFwd.NamespaceServiceLock.Unlock()
 
 				// Emit PodRemoved event so TUI can clean up the entry
-				if fwdtui.IsEnabled() {
+				if fwdtui.EventsEnabled() {
 					event := events.NewPodEvent(
 						events.PodRemoved,
 						pfo.Service,
@@ -656,7 +656,7 @@ func (svcFwd *ServiceFWD) AddServicePod(pfo *fwdport.PortForwardOpts) bool {
 	// Emit event for TUI if this is a new pod
 	// Use pfo values to match metrics key construction exactly
 	// Pass svcFwd.String() as registryKey for proper registry lookup
-	if isNew && fwdtui.IsEnabled() {
+	if isNew && fwdtui.EventsEnabled() {
 		event := events.NewPodEvent(
 			events.PodAdded,
 			pfo.Service,
@@ -707,7 +707,7 @@ func (svcFwd *ServiceFWD) RemoveServicePod(servicePodName string) {
 		// Emit event for TUI
 		// Use pod (PortForwardOpts) values to match metrics key construction exactly
 		// Pass svcFwd.String() as registryKey for proper registry lookup
-		if fwdtui.IsEnabled() {
+		if fwdtui.EventsEnabled() {
 			event := events.NewPodEvent(
 				events.PodRemoved,
 				pod.Service,
