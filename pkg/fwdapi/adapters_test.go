@@ -1,14 +1,28 @@
 package fwdapi
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdns"
+	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
+
+// initRegistryOnce ensures the service registry is initialized only once for all tests
+var initRegistryOnce sync.Once
+var testShutdownCh chan struct{}
+
+func initTestRegistry() {
+	initRegistryOnce.Do(func() {
+		testShutdownCh = make(chan struct{})
+		fwdsvcregistry.Init(testShutdownCh)
+	})
+}
 
 // StateReaderAdapter tests
 
@@ -670,5 +684,296 @@ func TestMetricsProviderAdapter_WithRegistry(t *testing.T) {
 
 	if count := adapter.PortForwardCount(); count != 0 {
 		t.Error("Expected 0 port forward count for empty registry")
+	}
+}
+
+// ServiceCRUDAdapter tests
+
+func TestNewServiceCRUDAdapter(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+}
+
+func TestNewServiceCRUDAdapter_WithConfigPath(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"/path/to/config",
+	)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+	if adapter.configPath != "/path/to/config" {
+		t.Errorf("Expected config path '/path/to/config', got '%s'", adapter.configPath)
+	}
+}
+
+func TestServiceCRUDAdapter_HasEmbeddedController(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+	// Should have embedded ServiceControllerAdapter
+	if adapter.ServiceControllerAdapter == nil {
+		t.Error("Expected embedded ServiceControllerAdapter to be non-nil")
+	}
+}
+
+func TestServiceCRUDAdapter_AddService_NilNamespaceManager(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.AddService(types.AddServiceRequest{
+		Namespace:   "default",
+		ServiceName: "test-service",
+	})
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceCRUDAdapter_RemoveService_NotFound(t *testing.T) {
+	// Initialize the service registry (once for all tests)
+	initTestRegistry()
+
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	err := adapter.RemoveService("nonexistent.service.key")
+
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent.service.key" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceCRUDAdapter_RemoveService_EmptyKey(t *testing.T) {
+	// Initialize the service registry (once for all tests)
+	initTestRegistry()
+
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	err := adapter.RemoveService("")
+
+	if err == nil {
+		t.Error("Expected error for empty service key")
+	}
+	// fwdsvcregistry.Get("") returns nil, so error should be service not found
+	if err.Error() != "service not found: " {
+		t.Errorf("Expected 'service not found: ' error, got: %s", err.Error())
+	}
+}
+
+// KubernetesDiscoveryAdapter tests
+
+func TestNewKubernetesDiscoveryAdapter(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+}
+
+func TestNewKubernetesDiscoveryAdapter_WithConfigPath(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"/path/to/kubeconfig",
+	)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+	if adapter.configPath != "/path/to/kubeconfig" {
+		t.Errorf("Expected config path '/path/to/kubeconfig', got '%s'", adapter.configPath)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListNamespaces_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	// We need a valid context to test, but with nil manager it should fail
+	// when trying to get namespaces
+	_, err := adapter.ListNamespaces("test-context")
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListServices_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.ListServices("test-context", "default")
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetService_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.GetService("test-context", "default", "my-service")
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+// Note: ListContexts doesn't require namespace manager, only kubeconfig
+// Full integration tests for ServiceCRUDAdapter.AddService and RemoveService with real
+// Kubernetes clusters are done through curl/API integration testing as these require:
+// - Active Kubernetes cluster connection
+// - fwdsvcregistry global state
+// - fwdns.NamespaceManager with real clients
+
+// TestKubernetesDiscoveryAdapter_ListContexts tests listing contexts from kubeconfig
+func TestKubernetesDiscoveryAdapter_ListContexts(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"", // Empty config path - will use default kubeconfig
+	)
+
+	// This will attempt to read kubeconfig which may or may not exist
+	// We're testing that the method doesn't panic and handles errors gracefully
+	result, err := adapter.ListContexts()
+
+	// We can't predict if kubeconfig exists, but method should handle both cases
+	if err != nil {
+		// Error is expected if no kubeconfig
+		t.Logf("ListContexts returned expected error (no kubeconfig): %v", err)
+	} else if result != nil {
+		// If we got a result, verify structure
+		if result.Contexts == nil {
+			t.Error("Expected Contexts slice to be non-nil")
+		}
+		t.Logf("ListContexts returned %d contexts, current: %s", len(result.Contexts), result.CurrentContext)
+	}
+}
+
+// Test ServiceCRUD adapter inherits from ServiceControllerAdapter correctly
+func TestServiceCRUDAdapter_InheritedMethods(t *testing.T) {
+	initTestRegistry()
+
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	// Test inherited Reconnect method
+	err := adapter.Reconnect("test.key")
+	if err == nil {
+		t.Error("Expected error for Reconnect with nonexistent key")
+	}
+
+	// Test inherited Sync method
+	err = adapter.Sync("test.key", false)
+	if err == nil {
+		t.Error("Expected error for Sync with nonexistent key")
+	}
+
+	// Test inherited ReconnectAll method (should return 0 for nil store)
+	adapter2 := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+	count := adapter2.ReconnectAll()
+	if count != 0 {
+		t.Errorf("Expected ReconnectAll to return 0 for nil store, got %d", count)
+	}
+}
+
+// Test AddService with various error conditions
+func TestServiceCRUDAdapter_AddService_ErrorCases(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	tests := []struct {
+		name        string
+		request     types.AddServiceRequest
+		expectError string
+	}{
+		{
+			name: "missing namespace",
+			request: types.AddServiceRequest{
+				ServiceName: "test-svc",
+			},
+			expectError: "namespace manager not available",
+		},
+		{
+			name: "missing service name",
+			request: types.AddServiceRequest{
+				Namespace: "default",
+			},
+			expectError: "namespace manager not available",
+		},
+		{
+			name: "all fields empty",
+			request: types.AddServiceRequest{
+				Context:     "",
+				Namespace:   "",
+				ServiceName: "",
+			},
+			expectError: "namespace manager not available",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := adapter.AddService(tt.request)
+			if err == nil {
+				t.Error("Expected error")
+			}
+			if err.Error() != tt.expectError {
+				t.Errorf("Expected error '%s', got '%s'", tt.expectError, err.Error())
+			}
+		})
 	}
 }
