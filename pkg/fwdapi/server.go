@@ -76,6 +76,8 @@ func (m *Manager) setupRouter() *gin.Engine {
 			logsHandler := handlers.NewLogsHandler(m.stateReader)
 			v1.GET("/logs", logsHandler.Recent)
 			v1.GET("/logs/stream", logsHandler.Stream)
+			v1.GET("/logs/system", logsHandler.System)
+			v1.DELETE("/logs/system", logsHandler.ClearSystem)
 
 			// Events endpoint (SSE)
 			eventsHandler := handlers.NewEventsHandler(m.eventStreamer)
