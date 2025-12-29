@@ -56,18 +56,18 @@ func TestRequestLogger(t *testing.T) {
 	}
 }
 
-func TestCORS(t *testing.T) {
+func TestCORS_AllowedOrigin(t *testing.T) {
 	r := setupRouter()
 	r.Use(CORS())
 	r.GET("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 
-	// Test with origin header
-	w := performRequestWithOrigin(r, "GET", "/test", "http://localhost:3000")
+	// Test with allowed origin
+	w := performRequestWithOrigin(r, "GET", "/test", "http://kubefwd.internal")
 
-	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Errorf("Expected Access-Control-Allow-Origin '*', got '%s'",
+	if w.Header().Get("Access-Control-Allow-Origin") != "http://kubefwd.internal" {
+		t.Errorf("Expected Access-Control-Allow-Origin 'http://kubefwd.internal', got '%s'",
 			w.Header().Get("Access-Control-Allow-Origin"))
 	}
 
@@ -77,6 +77,74 @@ func TestCORS(t *testing.T) {
 
 	if w.Header().Get("Access-Control-Allow-Headers") == "" {
 		t.Error("Expected Access-Control-Allow-Headers to be set")
+	}
+
+	if w.Header().Get("Vary") != "Origin" {
+		t.Errorf("Expected Vary 'Origin', got '%s'", w.Header().Get("Vary"))
+	}
+}
+
+func TestCORS_DisallowedOrigin(t *testing.T) {
+	r := setupRouter()
+	r.Use(CORS())
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	// Test with disallowed origin - should NOT set CORS headers
+	w := performRequestWithOrigin(r, "GET", "/test", "http://evil.com")
+
+	// CORS headers should not be set for disallowed origins
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("Expected no Access-Control-Allow-Origin for disallowed origin, got '%s'",
+			w.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
+func TestCORS_NoOrigin(t *testing.T) {
+	r := setupRouter()
+	r.Use(CORS())
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	// Test without origin header (same-origin request)
+	w := performRequest(r, "GET", "/test")
+
+	// No CORS headers needed for same-origin
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("Expected no Access-Control-Allow-Origin for same-origin, got '%s'",
+			w.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	// Request should still succeed
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestCORS_LocalhostOrigins(t *testing.T) {
+	r := setupRouter()
+	r.Use(CORS())
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	// Test various allowed localhost origins
+	allowedOrigins := []string{
+		"http://localhost",
+		"http://localhost:8080",
+		"http://127.0.0.1",
+		"http://127.0.0.1:8080",
+		"http://127.2.27.1",
+	}
+
+	for _, origin := range allowedOrigins {
+		w := performRequestWithOrigin(r, "GET", "/test", origin)
+		if w.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Errorf("Expected Access-Control-Allow-Origin '%s', got '%s'",
+				origin, w.Header().Get("Access-Control-Allow-Origin"))
+		}
 	}
 }
 

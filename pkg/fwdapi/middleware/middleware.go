@@ -47,13 +47,35 @@ func RequestLogger() gin.HandlerFunc {
 	}
 }
 
-// CORS middleware for browser access
+// allowedOrigins lists origins permitted to make cross-origin requests.
+// Restricted to local origins for security since kubefwd runs with root privileges.
+var allowedOrigins = map[string]bool{
+	"http://kubefwd.internal":   true,
+	"http://localhost":          true,
+	"http://localhost:8080":     true,
+	"http://127.0.0.1":          true,
+	"http://127.0.0.1:8080":     true,
+	"http://127.2.27.1":         true, // kubefwd API IP
+	"http://127.2.27.1:8080":    true,
+}
+
+// CORS middleware for browser access.
+// Restricts cross-origin requests to trusted local origins only.
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
-		c.Header("Access-Control-Max-Age", "86400")
+		origin := c.Request.Header.Get("Origin")
+
+		// Allow requests with no Origin header (same-origin, curl, etc.)
+		// or from explicitly allowed origins
+		if origin == "" || allowedOrigins[origin] {
+			if origin != "" {
+				c.Header("Access-Control-Allow-Origin", origin)
+			}
+			c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+			c.Header("Access-Control-Max-Age", "86400")
+			c.Header("Vary", "Origin")
+		}
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
