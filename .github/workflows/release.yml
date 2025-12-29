@@ -66,21 +66,32 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           ./mcpb/build.sh "$VERSION" --use-dist
 
+      - name: Sign MCPB bundles with Cosign
+        run: |
+          for mcpb in dist/mcpb/*.mcpb; do
+            echo "Signing $mcpb..."
+            cosign sign-blob --yes \
+              --bundle="${mcpb}.sigstore.json" \
+              "$mcpb"
+          done
+
       - name: Upload MCPB bundles to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Upload each .mcpb file to the release
+          # Upload each .mcpb file and its signature to the release
           for mcpb in dist/mcpb/*.mcpb; do
             echo "Uploading $mcpb..."
             gh release upload "$GITHUB_REF_NAME" "$mcpb" --clobber
+            gh release upload "$GITHUB_REF_NAME" "${mcpb}.sigstore.json" --clobber
           done
 
       - name: Generate artifact hashes
         id: hash
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip 2>/dev/null | base64 -w0 > /tmp/hashes.txt || true
+          # Include main archives and MCPB bundles in provenance
+          (sha256sum *.tar.gz *.zip 2>/dev/null; sha256sum mcpb/*.mcpb 2>/dev/null) | base64 -w0 > /tmp/hashes.txt || true
           echo "hashes=$(cat /tmp/hashes.txt)" >> "$GITHUB_OUTPUT"
 
   provenance:
