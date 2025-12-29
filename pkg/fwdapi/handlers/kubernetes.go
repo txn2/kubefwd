@@ -34,11 +34,8 @@ func (h *KubernetesHandler) ListNamespaces(c *gin.Context) {
 		return
 	}
 
-	// Get context from query param, default to current
+	// Get context from query param (empty means current context)
 	ctx := c.Query("context")
-	if ctx == "" {
-		ctx = "default"
-	}
 
 	namespaces, err := h.discovery.ListNamespaces(ctx)
 	if err != nil {
@@ -91,9 +88,6 @@ func (h *KubernetesHandler) ListServices(c *gin.Context) {
 	}
 
 	ctx := c.Query("context")
-	if ctx == "" {
-		ctx = "default"
-	}
 
 	services, err := h.discovery.ListServices(ctx, namespace)
 	if err != nil {

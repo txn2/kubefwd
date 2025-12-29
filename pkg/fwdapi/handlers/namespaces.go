@@ -124,11 +124,8 @@ func (h *NamespacesHandler) Add(c *gin.Context) {
 		return
 	}
 
-	// Use default context if not specified
+	// Use provided context (empty means current context will be used)
 	ctx := req.Context
-	if ctx == "" {
-		ctx = "default"
-	}
 
 	opts := types.AddNamespaceOpts{
 		LabelSelector: req.Selector,

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/txn2/kubefwd/pkg/fwdapi"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
@@ -147,4 +148,90 @@ func escapeJSON(s string) string {
 		}
 	}
 	return string(result)
+}
+
+// System returns kubefwd system logs from the ring buffer
+// GET /v1/logs/system?count=100&level=error
+func (h *LogsHandler) System(c *gin.Context) {
+	buffer := fwdapi.GetLogBuffer()
+	if buffer == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "log_buffer_unavailable",
+				Message: "Log buffer not initialized",
+			},
+		})
+		return
+	}
+
+	// Parse count parameter (default 100, max 1000)
+	countStr := c.DefaultQuery("count", "100")
+	count, err := strconv.Atoi(countStr)
+	if err != nil || count < 1 {
+		count = 100
+	}
+	if count > 1000 {
+		count = 1000
+	}
+
+	// Get log level filter
+	levelFilter := c.Query("level")
+
+	// Get entries
+	entries := buffer.GetLast(count)
+
+	// Filter by level if specified and convert to response format
+	var result []types.LogEntryResponse
+	for _, entry := range entries {
+		if levelFilter != "" && entry.Level != levelFilter {
+			continue
+		}
+		result = append(result, types.LogEntryResponse{
+			Timestamp: entry.Timestamp,
+			Level:     entry.Level,
+			Message:   entry.Message,
+		})
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data: gin.H{
+			"logs":       result,
+			"totalCount": buffer.Count(),
+		},
+		Meta: &types.MetaInfo{
+			Count:     len(result),
+			Timestamp: time.Now(),
+		},
+	})
+}
+
+// ClearSystem clears the system log buffer
+// DELETE /v1/logs/system
+func (h *LogsHandler) ClearSystem(c *gin.Context) {
+	buffer := fwdapi.GetLogBuffer()
+	if buffer == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "log_buffer_unavailable",
+				Message: "Log buffer not initialized",
+			},
+		})
+		return
+	}
+
+	buffer.Clear()
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Data: gin.H{
+			"cleared": true,
+			"message": "System log buffer cleared",
+		},
+		Meta: &types.MetaInfo{
+			Timestamp: time.Now(),
+		},
+	})
 }

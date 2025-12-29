@@ -48,16 +48,23 @@ func (h *MetricsHandler) Summary(c *gin.Context) {
 		}
 	}
 
+	// Get bandwidth from metrics provider (more accurate than state store)
+	var totalBytesIn, totalBytesOut uint64
+	var totalRateIn, totalRateOut float64
+	if h.metrics != nil {
+		totalBytesIn, totalBytesOut, totalRateIn, totalRateOut = h.metrics.GetTotals()
+	}
+
 	response := types.MetricsSummaryResponse{
 		TotalServices:  summary.TotalServices,
 		ActiveServices: summary.ActiveServices,
 		TotalForwards:  summary.TotalForwards,
 		ActiveForwards: summary.ActiveForwards,
 		ErrorCount:     summary.ErrorCount,
-		TotalBytesIn:   summary.TotalBytesIn,
-		TotalBytesOut:  summary.TotalBytesOut,
-		TotalRateIn:    summary.TotalRateIn,
-		TotalRateOut:   summary.TotalRateOut,
+		TotalBytesIn:   totalBytesIn,
+		TotalBytesOut:  totalBytesOut,
+		TotalRateIn:    totalRateIn,
+		TotalRateOut:   totalRateOut,
 		Uptime:         uptime,
 		LastUpdated:    summary.LastUpdated,
 	}
