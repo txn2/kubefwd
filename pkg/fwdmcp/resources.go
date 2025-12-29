@@ -50,6 +50,32 @@ func (s *Server) registerResources() {
 		Description: "All services and forwards currently in error state with error details",
 		MIMEType:    "application/json",
 	}, s.handleErrorsResource)
+
+	// === Quick access resources ===
+
+	// kubefwd://status - Quick health status
+	s.mcpServer.AddResource(&mcp.Resource{
+		URI:         "kubefwd://status",
+		Name:        "Quick Status",
+		Description: "Quick health status: ok/issues/error with message. Use for fast health checks.",
+		MIMEType:    "application/json",
+	}, s.handleStatusResource)
+
+	// kubefwd://http-traffic - Recent HTTP traffic
+	s.mcpServer.AddResource(&mcp.Resource{
+		URI:         "kubefwd://http-traffic",
+		Name:        "HTTP Traffic",
+		Description: "Recent HTTP requests through all forwards. Shows method, path, status, duration.",
+		MIMEType:    "application/json",
+	}, s.handleHTTPTrafficResource)
+
+	// kubefwd://contexts - Kubernetes contexts
+	s.mcpServer.AddResource(&mcp.Resource{
+		URI:         "kubefwd://contexts",
+		Name:        "Kubernetes Contexts",
+		Description: "Available Kubernetes contexts from kubeconfig with current context highlighted.",
+		MIMEType:    "application/json",
+	}, s.handleContextsResource)
 }
 
 // Resource handlers
@@ -286,6 +312,173 @@ func (s *Server) handleErrorsResource(ctx context.Context, req *mcp.ReadResource
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal errors: %w", err)
+	}
+
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      req.Params.URI,
+			MIMEType: "application/json",
+			Text:     string(data),
+		}},
+	}, nil
+}
+
+// === Quick access resource handlers ===
+
+func (s *Server) handleStatusResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	analysis := s.getAnalysisProvider()
+	if analysis == nil {
+		// Fallback to state-based status if analysis provider not available
+		state := s.getState()
+		if state == nil {
+			return nil, fmt.Errorf("status not available")
+		}
+
+		summary := state.GetSummary()
+		status := "ok"
+		message := fmt.Sprintf("All %d services healthy", summary.ActiveServices)
+
+		if summary.ErrorCount > 0 {
+			if summary.ErrorCount >= summary.ActiveServices {
+				status = "error"
+				message = fmt.Sprintf("%d services with errors", summary.ErrorCount)
+			} else {
+				status = "issues"
+				message = fmt.Sprintf("%d of %d services have issues", summary.ErrorCount, summary.TotalServices)
+			}
+		} else if summary.TotalServices == 0 {
+			message = "No services currently forwarded"
+		}
+
+		result := map[string]interface{}{
+			"status":     status,
+			"message":    message,
+			"errorCount": summary.ErrorCount,
+			"timestamp":  time.Now(),
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal status: %w", err)
+		}
+
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{{
+				URI:      req.Params.URI,
+				MIMEType: "application/json",
+				Text:     string(data),
+			}},
+		}, nil
+	}
+
+	status, err := analysis.GetQuickStatus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"status":     status.Status,
+		"message":    status.Message,
+		"errorCount": status.ErrorCount,
+		"uptime":     status.Uptime,
+		"timestamp":  time.Now(),
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal status: %w", err)
+	}
+
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      req.Params.URI,
+			MIMEType: "application/json",
+			Text:     string(data),
+		}},
+	}, nil
+}
+
+func (s *Server) handleHTTPTrafficResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	state := s.getState()
+	metrics := s.getMetrics()
+
+	if state == nil || metrics == nil {
+		return nil, fmt.Errorf("state or metrics not available")
+	}
+
+	// Collect HTTP traffic from all services
+	services := state.GetServices()
+	var allTraffic []map[string]interface{}
+
+	for _, svc := range services {
+		snapshot := metrics.GetServiceSnapshot(svc.Key)
+		if snapshot == nil {
+			continue
+		}
+
+		for _, pf := range snapshot.PortForwards {
+			for _, log := range pf.HTTPLogs {
+				allTraffic = append(allTraffic, map[string]interface{}{
+					"timestamp":  log.Timestamp,
+					"service":    svc.ServiceName,
+					"namespace":  svc.Namespace,
+					"pod":        pf.PodName,
+					"method":     log.Method,
+					"path":       log.Path,
+					"statusCode": log.StatusCode,
+					"duration":   log.Duration.String(),
+					"size":       log.Size,
+				})
+			}
+		}
+	}
+
+	// Limit to last 100 entries
+	if len(allTraffic) > 100 {
+		allTraffic = allTraffic[len(allTraffic)-100:]
+	}
+
+	result := map[string]interface{}{
+		"count":     len(allTraffic),
+		"requests":  allTraffic,
+		"timestamp": time.Now(),
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal HTTP traffic: %w", err)
+	}
+
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{{
+			URI:      req.Params.URI,
+			MIMEType: "application/json",
+			Text:     string(data),
+		}},
+	}, nil
+}
+
+func (s *Server) handleContextsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, fmt.Errorf("kubernetes discovery not available")
+	}
+
+	resp, err := k8s.ListContexts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list contexts: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"currentContext": resp.CurrentContext,
+		"contexts":       resp.Contexts,
+		"count":          len(resp.Contexts),
+		"timestamp":      time.Now(),
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal contexts: %w", err)
 	}
 
 	return &mcp.ReadResourceResult{
