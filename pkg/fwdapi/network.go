@@ -23,16 +23,16 @@ func SetupAPINetwork(hostFile *fwdport.HostFileWithLock) error {
 		return fmt.Errorf("failed to add API IP alias: %w", err)
 	}
 
-	// Add hosts entry
+	// Add hosts entry for kubefwd.internal
 	if hostFile != nil {
 		hostFile.Mutex.Lock()
-		hostFile.Hosts.AddHost(APIIP, APIHostname)
+		hostFile.Hosts.AddHost(APIIP, Hostname)
 		if err := hostFile.Hosts.Save(); err != nil {
 			hostFile.Mutex.Unlock()
-			return fmt.Errorf("failed to add API hosts entry: %w", err)
+			return fmt.Errorf("failed to add hosts entry: %w", err)
 		}
 		hostFile.Mutex.Unlock()
-		log.Debugf("Added hosts entry: %s -> %s", APIHostname, APIIP)
+		log.Debugf("Added hosts entry: %s -> %s", Hostname, APIIP)
 	}
 
 	return nil
@@ -42,9 +42,9 @@ func SetupAPINetwork(hostFile *fwdport.HostFileWithLock) error {
 func CleanupAPINetwork(hostFile *txeh.Hosts) error {
 	// Remove hosts entry
 	if hostFile != nil {
-		hostFile.RemoveHost(APIHostname)
+		hostFile.RemoveHost(Hostname)
 		if err := hostFile.Save(); err != nil {
-			log.Warnf("Failed to remove API hosts entry: %v", err)
+			log.Warnf("Failed to remove hosts entry: %v", err)
 		}
 	}
 
