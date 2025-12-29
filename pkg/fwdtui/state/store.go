@@ -432,3 +432,39 @@ func (s *Store) UpdateHostnames(key string, hostnames []string) {
 		fwd.Hostnames = hostnames
 	}
 }
+
+// RemoveByNamespace removes all forwards and services for a given namespace/context
+// This is used when a namespace watcher is stopped to clean up orphaned state
+func (s *Store) RemoveByNamespace(namespace, context string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	removedCount := 0
+
+	// First, find and remove all forwards matching the namespace/context
+	forwardsToRemove := make([]string, 0)
+	for key, fwd := range s.forwards {
+		if fwd.Namespace == namespace && fwd.Context == context {
+			forwardsToRemove = append(forwardsToRemove, key)
+		}
+	}
+
+	for _, key := range forwardsToRemove {
+		delete(s.forwards, key)
+		removedCount++
+	}
+
+	// Then, find and remove all services matching the namespace/context
+	servicesToRemove := make([]string, 0)
+	for key, svc := range s.services {
+		if svc.Namespace == namespace && svc.Context == context {
+			servicesToRemove = append(servicesToRemove, key)
+		}
+	}
+
+	for _, key := range servicesToRemove {
+		delete(s.services, key)
+	}
+
+	return removedCount
+}
