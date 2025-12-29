@@ -36,6 +36,11 @@ type Server struct {
 	k8sDiscovery        types.KubernetesDiscovery
 	connectionInfo      types.ConnectionInfoProvider
 
+	// Additional providers for enhanced MCP tools
+	analysisProvider    *AnalysisProviderHTTP
+	httpTrafficProvider *HTTPTrafficProviderHTTP
+	historyProvider     *HistoryProviderHTTP
+
 	stopCh chan struct{}
 	doneCh chan struct{}
 	mu     sync.RWMutex
@@ -133,6 +138,27 @@ func (s *Server) SetKubernetesDiscovery(discovery types.KubernetesDiscovery) {
 func (s *Server) SetConnectionInfoProvider(provider types.ConnectionInfoProvider) {
 	s.mu.Lock()
 	s.connectionInfo = provider
+	s.mu.Unlock()
+}
+
+// SetAnalysisProvider sets the analysis provider for AI-optimized endpoints
+func (s *Server) SetAnalysisProvider(provider *AnalysisProviderHTTP) {
+	s.mu.Lock()
+	s.analysisProvider = provider
+	s.mu.Unlock()
+}
+
+// SetHTTPTrafficProvider sets the HTTP traffic provider for traffic inspection
+func (s *Server) SetHTTPTrafficProvider(provider *HTTPTrafficProviderHTTP) {
+	s.mu.Lock()
+	s.httpTrafficProvider = provider
+	s.mu.Unlock()
+}
+
+// SetHistoryProvider sets the history provider for event/error/reconnection history
+func (s *Server) SetHistoryProvider(provider *HistoryProviderHTTP) {
+	s.mu.Lock()
+	s.historyProvider = provider
 	s.mu.Unlock()
 }
 
@@ -246,6 +272,27 @@ func (s *Server) getConnectionInfo() types.ConnectionInfoProvider {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.connectionInfo
+}
+
+// getAnalysisProvider safely gets the analysis provider
+func (s *Server) getAnalysisProvider() *AnalysisProviderHTTP {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.analysisProvider
+}
+
+// getHTTPTrafficProvider safely gets the HTTP traffic provider
+func (s *Server) getHTTPTrafficProvider() *HTTPTrafficProviderHTTP {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.httpTrafficProvider
+}
+
+// getHistoryProvider safely gets the history provider
+func (s *Server) getHistoryProvider() *HistoryProviderHTTP {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.historyProvider
 }
 
 // ServeStdio starts the MCP server on stdio transport and blocks until done.
