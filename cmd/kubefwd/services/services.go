@@ -521,6 +521,14 @@ Try:
 			cfgFilePath,
 		)
 		apiManager.SetKubernetesDiscovery(k8sDiscovery)
+
+		// Set up ServiceCRUD adapter for add/remove operations
+		serviceCRUD := fwdapi.NewServiceCRUDAdapter(
+			fwdtui.GetStore,
+			apiManager.GetNamespaceManager,
+			cfgFilePath,
+		)
+		apiManager.SetServiceCRUD(serviceCRUD)
 	}
 
 	// Start watchers for each context/namespace combination
