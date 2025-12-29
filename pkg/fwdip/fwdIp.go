@@ -167,6 +167,9 @@ func addToRegistry(regKey string, opts ForwardIPOpts, ip net.IP) error {
 
 func ipFromString(ipStr string) (net.IP, error) {
 	ipParts := strings.Split(ipStr, ".")
+	if len(ipParts) != 4 {
+		return nil, errors.New("IP address must have exactly 4 octets")
+	}
 
 	octet0, err := strconv.Atoi(ipParts[0])
 	if err != nil {

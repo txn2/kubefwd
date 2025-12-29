@@ -555,36 +555,28 @@ func TestGetIP_ConcurrentAllocation(t *testing.T) {
 // TestIpFromString tests parsing IP strings
 func TestIpFromString(t *testing.T) {
 	tests := []struct {
-		input       string
-		expected    string
-		shouldPanic bool
-		hasError    bool
+		input    string
+		expected string
+		hasError bool
 	}{
-		{"127.0.0.1", "127.0.0.1", false, false},
-		{"127.1.27.1", "127.1.27.1", false, false},
-		{"192.168.1.1", "192.168.1.1", false, false},
-		{"abc.def.ghi.jkl", "", false, true},       // Returns error - invalid integer
-		{"invalid.ip.string", "", false, true},     // Returns error - invalid integer
-		{"127.0.0", "", true, false},               // Panics - not enough octets (index out of range)
-		{"127.0.0.1.1", "127.0.0.1", false, false}, // Parses first 4 octets, ignores 5th
+		{"127.0.0.1", "127.0.0.1", false},
+		{"127.1.27.1", "127.1.27.1", false},
+		{"192.168.1.1", "192.168.1.1", false},
+		{"abc.def.ghi.jkl", "", true},  // Returns error - invalid integer
+		{"invalid.ip.string", "", true}, // Returns error - invalid integer
+		{"127.0.0", "", true},           // Returns error - not enough octets
+		{"127.0.0.1.1", "", true},       // Returns error - too many octets
+		{"", "", true},                  // Returns error - empty string
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			if tt.shouldPanic {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Errorf("Expected panic for input %s", tt.input)
-					}
-				}()
-			}
-
 			ip, err := ipFromString(tt.input)
 			if tt.hasError {
 				if err == nil {
 					t.Errorf("Expected error for input %s, got nil", tt.input)
 				}
-			} else if !tt.shouldPanic {
+			} else {
 				if err != nil {
 					t.Errorf("Unexpected error for input %s: %v", tt.input, err)
 				}
