@@ -207,23 +207,34 @@ That's it. Start talking to your AI about your work.
 
 ## What Your AI Can Do
 
-### Access Dependencies
-- Connect to any cluster service by name
-- Set up your local dev environment
-- Discover available services and databases
-- Switch between clusters and namespaces
+### Service Forwarding
 
-### Test Your Deployments
-- Forward and test newly deployed services
-- Make HTTP requests and report results
-- Monitor traffic and bandwidth
-- Stream pod logs
+- **Forward entire namespaces** - Forward all services in a namespace to localhost with automatic `/etc/hosts` entries
+- **Forward individual services** - Forward specific services with custom port mappings
+- **Remove forwards** - Stop forwarding namespaces or individual services
 
-### Troubleshoot
-- Diagnose connection failures
-- Auto-reconnect stale forwards
-- Analyze HTTP traffic patterns
-- Identify misconfigured services
+### Discovery & Connection
+
+- **List Kubernetes contexts** - See available clusters from your kubeconfig
+- **List namespaces** - Discover what namespaces are available and which are forwarded
+- **List services** - See services in a namespace with their types, ports, and selectors
+- **Get connection info** - Get ready-to-use connection strings, IPs, hostnames, and environment variables
+- **Find services** - Search forwarded services by name pattern, port, or namespace
+
+### Monitoring & Debugging
+
+- **Quick status** - Fast health check of kubefwd (healthy/degraded/unhealthy)
+- **View logs** - Filter by level (debug, info, warn, error) or search terms
+- **Get metrics** - Bandwidth stats, bytes in/out, transfer rates, per-service breakdown
+- **HTTP traffic** - View requests flowing through forwards (method, path, status code, response time)
+- **Event history** - Track events, errors, and reconnections over time
+
+### Troubleshooting
+
+- **Diagnose errors** - Root cause analysis with specific fix suggestions
+- **Get analysis** - Full issue classification with priorities and recommended actions
+- **Reconnect services** - Force reconnection for errored or stale services
+- **Sync services** - Re-discover pods after deployments or pod restarts
 
 ---
 
