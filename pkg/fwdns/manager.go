@@ -24,6 +24,8 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 // WatcherKey creates a unique key for a namespace/context combination
@@ -155,6 +157,12 @@ func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts)
 
 	key := WatcherKey(namespace, ctx)
 
+	// Unblock this namespace in case it was previously removed
+	// This allows AddForward to work again for this namespace
+	if store := fwdtui.GetStore(); store != nil {
+		store.UnblockNamespace(namespace, ctx)
+	}
+
 	// Check if already watching
 	if existing, ok := m.watchers[key]; ok && existing.Running() {
 		return existing.Info(), fmt.Errorf("already watching namespace %s in context %s", namespace, ctx)
@@ -232,14 +240,26 @@ func (m *NamespaceManager) StopWatcher(ctx, namespace string) error {
 		return fmt.Errorf("no watcher found for namespace %s in context %s", namespace, ctx)
 	}
 
+	// IMPORTANT: Block this namespace in the state store FIRST, before stopping.
+	// This prevents race condition where in-flight port forward events re-add entries.
+	// Must be done synchronously (not via event) to ensure block is set before any events.
+	if store := fwdtui.GetStore(); store != nil {
+		store.RemoveByNamespace(namespace, ctx)
+	}
+
 	// Stop the watcher
 	watcher.Stop()
 
 	// Wait for it to finish
 	<-watcher.Done()
 
-	// Remove all services for this namespace
+	// Remove all services for this namespace from the registry
 	m.removeNamespaceServices(namespace, ctx)
+
+	// Also emit event for any other listeners (TUI update, etc.)
+	if fwdtui.EventsEnabled() {
+		fwdtui.Emit(events.NewNamespaceRemovedEvent(namespace, ctx))
+	}
 
 	// Remove from map
 	m.mu.Lock()
@@ -368,12 +388,20 @@ func (m *NamespaceManager) getNamespaceIndex(key string) int {
 func (m *NamespaceManager) removeNamespaceServices(namespace, ctx string) {
 	// Get all service keys for this namespace
 	services := fwdsvcregistry.GetAll()
+	removedCount := 0
+	log.Debugf("removeNamespaceServices: looking for services in namespace=%s, context=%s (total services: %d)",
+		namespace, ctx, len(services))
+
 	for _, svc := range services {
 		if svc.Namespace == namespace && svc.Context == ctx {
 			key := svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
+			log.Debugf("removeNamespaceServices: removing service %s", key)
 			fwdsvcregistry.RemoveByName(key)
+			removedCount++
 		}
 	}
+
+	log.Debugf("removeNamespaceServices: removed %d services for %s.%s", removedCount, namespace, ctx)
 }
 
 // GetOrCreateClient gets or creates kubernetes clients for a context (public wrapper)

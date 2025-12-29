@@ -430,3 +430,185 @@ func TestEvent_FieldsAccessible(t *testing.T) {
 		t.Error("BytesIn field not accessible")
 	}
 }
+
+// TestNewNamespaceRemovedEvent tests creating namespace removal events
+func TestNewNamespaceRemovedEvent(t *testing.T) {
+	event := NewNamespaceRemovedEvent("default", "minikube")
+
+	if event.Type != NamespaceRemoved {
+		t.Errorf("Expected type NamespaceRemoved, got %v", event.Type)
+	}
+
+	if event.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got '%s'", event.Namespace)
+	}
+
+	if event.Context != "minikube" {
+		t.Errorf("Expected context 'minikube', got '%s'", event.Context)
+	}
+
+	if event.Timestamp.IsZero() {
+		t.Error("Expected non-zero timestamp")
+	}
+}
+
+// TestNamespaceRemovedEventType_String tests the String() method for NamespaceRemoved
+func TestNamespaceRemovedEventType_String(t *testing.T) {
+	eventType := NamespaceRemoved
+
+	if eventType.String() != "NamespaceRemoved" {
+		t.Errorf("Expected 'NamespaceRemoved', got '%s'", eventType.String())
+	}
+}
+
+// TestNamespaceRemovedEvent_Subscribe tests subscribing to NamespaceRemoved events
+func TestNamespaceRemovedEvent_Subscribe(t *testing.T) {
+	bus := NewBus(100)
+
+	var received int32
+	var receivedNamespace string
+	var receivedContext string
+	var mu sync.Mutex
+
+	bus.Subscribe(NamespaceRemoved, func(e Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		atomic.StoreInt32(&received, 1)
+		receivedNamespace = e.Namespace
+		receivedContext = e.Context
+	})
+
+	bus.Start()
+	defer bus.Stop()
+
+	bus.Publish(NewNamespaceRemovedEvent("staging", "prod-cluster"))
+
+	// Wait for event to be processed
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&received) != 1 {
+		t.Error("Expected handler to be called")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if receivedNamespace != "staging" {
+		t.Errorf("Expected namespace 'staging', got '%s'", receivedNamespace)
+	}
+	if receivedContext != "prod-cluster" {
+		t.Errorf("Expected context 'prod-cluster', got '%s'", receivedContext)
+	}
+}
+
+// TestUnsubscribe tests that unsubscribing removes the handler
+func TestUnsubscribe(t *testing.T) {
+	bus := NewBus(100)
+
+	var callCount int32
+
+	unsubscribe := bus.Subscribe(PodAdded, func(e Event) {
+		atomic.AddInt32(&callCount, 1)
+	})
+
+	bus.Start()
+	defer bus.Stop()
+
+	// First event should be received
+	bus.Publish(NewPodEvent(PodAdded, "svc", "ns", "ctx", "pod", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&callCount) != 1 {
+		t.Errorf("Expected 1 call before unsubscribe, got %d", atomic.LoadInt32(&callCount))
+	}
+
+	// Unsubscribe
+	unsubscribe()
+
+	// Second event should NOT be received
+	bus.Publish(NewPodEvent(PodAdded, "svc", "ns", "ctx", "pod2", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&callCount) != 1 {
+		t.Errorf("Expected still 1 call after unsubscribe, got %d", atomic.LoadInt32(&callCount))
+	}
+}
+
+// TestUnsubscribeAll tests that unsubscribing from SubscribeAll works
+func TestUnsubscribeAll(t *testing.T) {
+	bus := NewBus(100)
+
+	var callCount int32
+
+	unsubscribe := bus.SubscribeAll(func(e Event) {
+		atomic.AddInt32(&callCount, 1)
+	})
+
+	bus.Start()
+	defer bus.Stop()
+
+	// First event should be received
+	bus.Publish(NewPodEvent(PodAdded, "svc", "ns", "ctx", "pod", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&callCount) != 1 {
+		t.Errorf("Expected 1 call before unsubscribe, got %d", atomic.LoadInt32(&callCount))
+	}
+
+	// Unsubscribe
+	unsubscribe()
+
+	// Second event should NOT be received
+	bus.Publish(NewPodEvent(PodRemoved, "svc", "ns", "ctx", "pod", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&callCount) != 1 {
+		t.Errorf("Expected still 1 call after unsubscribe, got %d", atomic.LoadInt32(&callCount))
+	}
+}
+
+// TestMultipleUnsubscribe tests that multiple handlers can be independently unsubscribed
+func TestMultipleUnsubscribe(t *testing.T) {
+	bus := NewBus(100)
+
+	var count1, count2, count3 int32
+
+	unsub1 := bus.Subscribe(PodAdded, func(e Event) {
+		atomic.AddInt32(&count1, 1)
+	})
+	_ = bus.Subscribe(PodAdded, func(e Event) {
+		atomic.AddInt32(&count2, 1)
+	})
+	unsub3 := bus.Subscribe(PodAdded, func(e Event) {
+		atomic.AddInt32(&count3, 1)
+	})
+
+	bus.Start()
+	defer bus.Stop()
+
+	// All three should receive first event
+	bus.Publish(NewPodEvent(PodAdded, "svc", "ns", "ctx", "pod", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&count1) != 1 || atomic.LoadInt32(&count2) != 1 || atomic.LoadInt32(&count3) != 1 {
+		t.Errorf("Expected all handlers to be called once, got %d, %d, %d",
+			atomic.LoadInt32(&count1), atomic.LoadInt32(&count2), atomic.LoadInt32(&count3))
+	}
+
+	// Unsubscribe first and third
+	unsub1()
+	unsub3()
+
+	// Only second should receive second event
+	bus.Publish(NewPodEvent(PodAdded, "svc", "ns", "ctx", "pod2", "svc.ns.ctx"))
+	time.Sleep(50 * time.Millisecond)
+
+	if atomic.LoadInt32(&count1) != 1 {
+		t.Errorf("Expected handler 1 still at 1 after unsubscribe, got %d", atomic.LoadInt32(&count1))
+	}
+	if atomic.LoadInt32(&count2) != 2 {
+		t.Errorf("Expected handler 2 at 2 (still subscribed), got %d", atomic.LoadInt32(&count2))
+	}
+	if atomic.LoadInt32(&count3) != 1 {
+		t.Errorf("Expected handler 3 still at 1 after unsubscribe, got %d", atomic.LoadInt32(&count3))
+	}
+}

@@ -15,7 +15,11 @@ sudo -E kubefwd svc -n default --api
 curl http://kubefwd.internal/api/health
 ```
 
-The API is available at `http://kubefwd.internal/api`. Interactive documentation is at `http://kubefwd.internal/docs`.
+The API is available at `http://kubefwd.internal/api`. 
+
+Interactive documentation is at `http://kubefwd.internal/docs`.
+
+![API Documentation](images/API-docs.png)
 
 ## Overview
 

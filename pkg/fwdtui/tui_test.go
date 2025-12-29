@@ -381,3 +381,59 @@ func TestConcurrentEnableDisable(t *testing.T) {
 		t.Error("Expected TUI to be enabled after concurrent enables")
 	}
 }
+
+// TestHandleEventForStore_NamespaceRemoved tests that NamespaceRemoved events clean up the store
+func TestHandleEventForStore_NamespaceRemoved(t *testing.T) {
+	store := state.NewStore(100)
+
+	// Add forwards from different namespaces
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc2.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc2.ns1.ctx1",
+		ServiceName: "svc2",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc3.ns2.ctx1.pod3.8080",
+		ServiceKey:  "svc3.ns2.ctx1",
+		ServiceName: "svc3",
+		Namespace:   "ns2",
+		Context:     "ctx1",
+		PodName:     "pod3",
+		Status:      state.StatusActive,
+	})
+
+	// Verify initial state
+	if store.Count() != 3 {
+		t.Fatalf("Expected 3 forwards, got %d", store.Count())
+	}
+
+	// Handle NamespaceRemoved event for ns1.ctx1
+	event := events.NewNamespaceRemovedEvent("ns1", "ctx1")
+	handleEventForStore(store, event)
+
+	// Should have removed 2 forwards (ns1.ctx1)
+	if store.Count() != 1 {
+		t.Errorf("Expected 1 forward remaining, got %d", store.Count())
+	}
+
+	// Verify the correct service remains
+	if store.GetService("svc3.ns2.ctx1") == nil {
+		t.Error("svc3.ns2.ctx1 should NOT have been removed")
+	}
+	if store.GetService("svc1.ns1.ctx1") != nil {
+		t.Error("svc1.ns1.ctx1 should have been removed")
+	}
+}

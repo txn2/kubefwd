@@ -204,6 +204,10 @@ func handleEventForStore(store *state.Store, e events.Event) {
 				store.RemoveForward(fwd.Key)
 			}
 		}
+
+	case events.NamespaceRemoved:
+		// Remove all services and forwards for this namespace/context
+		store.RemoveByNamespace(e.Namespace, e.Context)
 	}
 }
 
@@ -952,6 +956,10 @@ func (m *RootModel) handleKubefwdEvent(e events.Event) {
 				m.store.RemoveForward(fwd.Key)
 			}
 		}
+
+	case events.NamespaceRemoved:
+		// Remove all services and forwards for this namespace/context
+		m.store.RemoveByNamespace(e.Namespace, e.Context)
 
 	case events.ServiceAdded, events.ServiceUpdated:
 		// Service lifecycle events - pods are tracked individually via PodAdded/PodRemoved

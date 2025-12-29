@@ -1204,3 +1204,232 @@ func TestGetService_NonExistent(t *testing.T) {
 		t.Error("Expected nil for non-existent service")
 	}
 }
+
+// TestRemoveByNamespace tests removing all services and forwards for a namespace
+func TestRemoveByNamespace(t *testing.T) {
+	store := NewStore(100)
+
+	// Add forwards from different namespaces
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc2.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc2.ns1.ctx1",
+		ServiceName: "svc2",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+	})
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc3.ns2.ctx1.pod3.8080",
+		ServiceKey:  "svc3.ns2.ctx1",
+		ServiceName: "svc3",
+		Namespace:   "ns2",
+		Context:     "ctx1",
+		PodName:     "pod3",
+		LocalPort:   "8080",
+	})
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc4.ns1.ctx2.pod4.8080",
+		ServiceKey:  "svc4.ns1.ctx2",
+		ServiceName: "svc4",
+		Namespace:   "ns1",
+		Context:     "ctx2",
+		PodName:     "pod4",
+		LocalPort:   "8080",
+	})
+
+	// Verify initial state
+	if store.Count() != 4 {
+		t.Fatalf("Expected 4 forwards, got %d", store.Count())
+	}
+	if store.ServiceCount() != 4 {
+		t.Fatalf("Expected 4 services, got %d", store.ServiceCount())
+	}
+
+	// Remove all services for ns1.ctx1
+	removed := store.RemoveByNamespace("ns1", "ctx1")
+
+	// Should have removed 2 forwards
+	if removed != 2 {
+		t.Errorf("Expected to remove 2 forwards, removed %d", removed)
+	}
+
+	// Should have 2 forwards remaining
+	if store.Count() != 2 {
+		t.Errorf("Expected 2 forwards remaining, got %d", store.Count())
+	}
+
+	// Should have 2 services remaining
+	if store.ServiceCount() != 2 {
+		t.Errorf("Expected 2 services remaining, got %d", store.ServiceCount())
+	}
+
+	// Verify the correct services were removed
+	if store.GetService("svc1.ns1.ctx1") != nil {
+		t.Error("svc1.ns1.ctx1 should have been removed")
+	}
+	if store.GetService("svc2.ns1.ctx1") != nil {
+		t.Error("svc2.ns1.ctx1 should have been removed")
+	}
+	if store.GetService("svc3.ns2.ctx1") == nil {
+		t.Error("svc3.ns2.ctx1 should NOT have been removed")
+	}
+	if store.GetService("svc4.ns1.ctx2") == nil {
+		t.Error("svc4.ns1.ctx2 should NOT have been removed (different context)")
+	}
+}
+
+// TestRemoveByNamespace_Empty tests removing from empty store
+func TestRemoveByNamespace_Empty(t *testing.T) {
+	store := NewStore(100)
+
+	removed := store.RemoveByNamespace("ns1", "ctx1")
+
+	if removed != 0 {
+		t.Errorf("Expected 0 removed from empty store, got %d", removed)
+	}
+}
+
+// TestRemoveByNamespace_NoMatch tests removing when no services match
+func TestRemoveByNamespace_NoMatch(t *testing.T) {
+	store := NewStore(100)
+
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+
+	removed := store.RemoveByNamespace("ns2", "ctx1")
+
+	if removed != 0 {
+		t.Errorf("Expected 0 removed when no match, got %d", removed)
+	}
+	if store.Count() != 1 {
+		t.Errorf("Expected 1 forward remaining, got %d", store.Count())
+	}
+}
+
+// TestRemoveByNamespace_BlocksNewAdds tests that RemoveByNamespace blocks future AddForward calls
+// This prevents race condition where in-flight port forward events re-add entries after removal
+func TestRemoveByNamespace_BlocksNewAdds(t *testing.T) {
+	store := NewStore(100)
+
+	// Add a forward
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Fatalf("Expected 1 forward, got %d", store.Count())
+	}
+
+	// Remove the namespace
+	removed := store.RemoveByNamespace("ns1", "ctx1")
+	if removed != 1 {
+		t.Errorf("Expected 1 removed, got %d", removed)
+	}
+
+	if store.Count() != 0 {
+		t.Errorf("Expected 0 forwards after removal, got %d", store.Count())
+	}
+
+	// Try to add a new forward for the removed namespace (simulating in-flight event)
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+	})
+
+	// The add should be blocked - count should still be 0
+	if store.Count() != 0 {
+		t.Errorf("Expected blocked namespace to prevent AddForward, but count is %d", store.Count())
+	}
+
+	// Adding to a different namespace should still work
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc2.ns2.ctx1.pod1.8080",
+		ServiceKey:  "svc2.ns2.ctx1",
+		ServiceName: "svc2",
+		Namespace:   "ns2",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Errorf("Expected AddForward to work for unblocked namespace, got count %d", store.Count())
+	}
+}
+
+// TestUnblockNamespace tests that UnblockNamespace allows AddForward again
+func TestUnblockNamespace(t *testing.T) {
+	store := NewStore(100)
+
+	// Add and remove a namespace
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+	store.RemoveByNamespace("ns1", "ctx1")
+
+	// Verify blocked
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+	})
+	if store.Count() != 0 {
+		t.Errorf("Expected namespace to be blocked, got count %d", store.Count())
+	}
+
+	// Unblock the namespace
+	store.UnblockNamespace("ns1", "ctx1")
+
+	// Now AddForward should work
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod3.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod3",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Errorf("Expected AddForward to work after UnblockNamespace, got count %d", store.Count())
+	}
+}

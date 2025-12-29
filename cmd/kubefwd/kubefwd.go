@@ -84,7 +84,7 @@ func init() {
 	}
 
 	log.SetOutput(&LogOutputSplitter{})
-	if len(args) > 0 && (args[0] == "completion" || args[0] == "__complete") {
+	if len(args) > 0 && (args[0] == "completion" || args[0] == "__complete" || args[0] == "mcp") {
 		log.SetOutput(io.Discard)
 	}
 }
@@ -146,6 +146,20 @@ func isTUIMode() bool {
 	return false
 }
 
+// isMCPMode checks if running the mcp subcommand
+func isMCPMode() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "mcp" {
+			return true
+		}
+		// Stop at first non-flag argument
+		if !strings.HasPrefix(arg, "-") {
+			break
+		}
+	}
+	return false
+}
+
 // isKnownSubcommand checks if arg is a known subcommand
 func isKnownSubcommand(arg string) bool {
 	knownCommands := map[string]bool{
@@ -171,8 +185,8 @@ func main() {
 		os.Args = append([]string{os.Args[0], "svc"}, args...)
 	}
 
-	// Only print banner in non-TUI mode
-	if !isTUIMode() {
+	// Only print banner in non-TUI, non-MCP mode
+	if !isTUIMode() && !isMCPMode() {
 		log.Print(` _          _           __             _`)
 		log.Print(`| | ___   _| |__   ___ / _|_      ____| |`)
 		log.Print(`| |/ / | | | '_ \ / _ \ |_\ \ /\ / / _  |`)
