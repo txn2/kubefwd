@@ -631,6 +631,61 @@ paths:
               schema:
                 type: string
 
+  /v1/logs/system:
+    get:
+      tags: [Events]
+      summary: Get system logs
+      description: |
+        Returns kubefwd system logs from the internal ring buffer.
+        Captures all logrus output for debugging and monitoring.
+      operationId: getSystemLogs
+      parameters:
+        - name: count
+          in: query
+          description: Number of log entries to return (default 100, max 1000)
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: level
+          in: query
+          description: Filter by log level
+          schema:
+            type: string
+            enum: [debug, info, warn, error, fatal, panic]
+      responses:
+        "200":
+          description: System log entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          logs:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/LogEntry"
+                          totalCount:
+                            type: integer
+                            description: Total entries in the buffer
+    delete:
+      tags: [Events]
+      summary: Clear system logs
+      description: Clears the system log ring buffer
+      operationId: clearSystemLogs
+      responses:
+        "200":
+          description: Log buffer cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
   /v1/events:
     get:
       tags: [Events]
@@ -1140,3 +1195,15 @@ components:
         timestamp:
           type: string
           format: date-time
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [debug, info, warn, error, fatal, panic]
+        message:
+          type: string
