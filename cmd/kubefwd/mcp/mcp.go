@@ -22,7 +22,7 @@ var (
 var Version string
 
 func init() {
-	Cmd.Flags().StringVar(&apiURL, "api-url", "http://kubefwd.internal", "URL of the kubefwd REST API")
+	Cmd.Flags().StringVar(&apiURL, "api-url", "http://kubefwd.internal/api", "URL of the kubefwd REST API")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 }
 
@@ -72,11 +72,11 @@ The MCP server provides developer-focused tools for:
   - Viewing metrics and logs
   - Triggering reconnections and syncs
   - Diagnosing errors`,
-	Example: `  # Start MCP server (connects to kubefwd API at http://kubefwd.internal/)
+	Example: `  # Start MCP server (connects to kubefwd API at http://kubefwd.internal/api)
   kubefwd mcp
 
   # Connect to a custom API URL
-  kubefwd mcp --api-url http://localhost:8080
+  kubefwd mcp --api-url http://localhost:8080/api
 
   # With verbose logging (logs go to stderr, not interfering with stdio MCP)
   kubefwd mcp --verbose`,
