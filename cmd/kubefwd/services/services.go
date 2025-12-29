@@ -14,7 +14,6 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdhost"
-	"github.com/txn2/kubefwd/pkg/fwdmcp"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdns"
 	"github.com/txn2/kubefwd/pkg/fwdport"
@@ -52,7 +51,6 @@ var resyncInterval time.Duration
 var retryInterval time.Duration
 var tuiMode bool
 var apiMode bool
-var mcpMode bool
 var autoReconnect bool
 
 // Version is set by the main package
@@ -84,7 +82,6 @@ func init() {
 	Cmd.Flags().DurationVar(&retryInterval, "retry-interval", 10*time.Second, "Retry interval when no pods found for a service (e.g., 5s, 10s, 30s)")
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
 	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://kubefwd.internal/api for automation and monitoring")
-	Cmd.Flags().BoolVar(&mcpMode, "mcp", false, "Enable MCP (Model Context Protocol) server on stdio for AI assistant integration")
 	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI/API mode.")
 }
 
@@ -92,18 +89,24 @@ var Cmd = &cobra.Command{
 	Use:     "services",
 	Aliases: []string{"svcs", "svc"},
 	Short:   "Forward services",
-	Long:    `Forward multiple Kubernetes services from one or more namespaces. Filter services with selector.`,
-	Example: "  kubefwd svc -n the-project\n" +
-		"  kubefwd svc -n the-project -l app=wx,component=api\n" +
-		"  kubefwd svc -n default -l \"app in (ws, api)\"\n" +
-		"  kubefwd svc -n default -n the-project\n" +
-		"  kubefwd svc -n default -d internal.example.com\n" +
-		"  kubefwd svc -n the-project -x prod-cluster\n" +
-		"  kubefwd svc -n the-project -m 80:8080 -m 443:1443\n" +
-		"  kubefwd svc -n the-project -z path/to/conf.yml\n" +
-		"  kubefwd svc -n the-project -r svc.ns:127.3.3.1\n" +
-		"  kubefwd svc --all-namespaces\n" +
-		"  kubefwd svc --hosts-path /etc/hosts",
+	Long: `Forward multiple Kubernetes services from one or more namespaces.
+
+Idle Mode:
+  When run without specifying namespaces (-n) or --all-namespaces, kubefwd starts
+  in idle mode. The REST API is automatically enabled and kubefwd waits for
+  namespaces and services to be added via API calls. This is useful for:
+  - Running kubefwd as a background daemon
+  - AI/MCP integration where all operations are API-driven
+  - Dynamic environments where namespaces are not known at startup
+
+  In idle mode, auto-reconnect (-a) is also enabled by default.`,
+	Example: "  sudo kubefwd                          # Idle mode with API\n" +
+		"  sudo kubefwd --tui                    # Idle mode with TUI\n" +
+		"  sudo kubefwd -n the-project           # Forward from namespace\n" +
+		"  sudo kubefwd -n the-project --tui     # With TUI\n" +
+		"  sudo kubefwd -n the-project -l app=api\n" +
+		"  sudo kubefwd -n default -n other-ns   # Multiple namespaces\n" +
+		"  sudo kubefwd --all-namespaces         # All namespaces",
 	Run: runCmd,
 }
 
@@ -188,6 +191,21 @@ Try:
 		log.Fatalf("Hosts path does not exist: %s", hostsPath)
 	}
 
+	// Detect idle mode: no namespaces specified and not --all-namespaces
+	// In idle mode, API is enabled automatically and kubefwd waits for API calls
+	idleMode := len(namespaces) == 0 && !isAllNs
+	if idleMode {
+		// Enable API automatically in idle mode
+		if !cmd.Flags().Changed("api") {
+			apiMode = true
+		}
+		// Enable auto-reconnect automatically in idle mode
+		if !cmd.Flags().Changed("auto-reconnect") {
+			autoReconnect = true
+		}
+		log.Println("Starting in idle mode - API enabled, waiting for namespaces/services via API")
+	}
+
 	// Initialize TUI mode if enabled
 	if tuiMode {
 		fwdtui.Version = Version
@@ -212,18 +230,8 @@ Try:
 		}
 	}
 
-	// Initialize MCP mode if enabled
-	if mcpMode {
-		fwdmcp.Enable()
-
-		// In MCP mode, enable auto-reconnect by default unless user explicitly disabled it
-		if !cmd.Flags().Changed("auto-reconnect") {
-			autoReconnect = true
-		}
-	}
-
-	// Only show instructions in non-TUI mode (and non-API-only mode)
-	if !tuiMode && !apiMode {
+	// Only show instructions in non-TUI mode (and non-API-only/idle mode)
+	if !tuiMode && !apiMode && !idleMode {
 		log.Println("Press [Ctrl-C] to stop forwarding.")
 		log.Println("'cat " + hostsPath + "' to see all host entries.")
 	}
@@ -293,8 +301,8 @@ Try:
 	listOptions.FieldSelector = cmd.Flag("field-selector").Value.String()
 
 	// if no namespaces were specified via the flags, check config from the k8s context
-	// then explicitly set one to "default"
-	if len(namespaces) < 1 {
+	// then explicitly set one to "default" (unless in idle mode)
+	if len(namespaces) < 1 && !idleMode {
 		namespaces = []string{"default"}
 		x := rawConfig.CurrentContext
 		// use the first context if specified
@@ -318,7 +326,6 @@ Try:
 	// Initialize TUI manager if in TUI mode
 	var tuiManager *fwdtui.Manager
 	var apiManager *fwdapi.Manager
-	var mcpServer *fwdmcp.Server
 	var stopOnce sync.Once
 	triggerShutdown := func() {
 		stopOnce.Do(func() {
@@ -421,38 +428,6 @@ Try:
 		apiManager.SetDiagnosticsProvider(diagnosticsProvider)
 	}
 
-	// Initialize MCP server if in MCP mode
-	if fwdmcp.IsEnabled() {
-		// Initialize event infrastructure for MCP mode (allows events without TUI)
-		fwdtui.InitEventInfrastructure()
-		fwdmetrics.GetRegistry().Start()
-
-		mcpServer = fwdmcp.Init(Version)
-
-		// Set up adapters for MCP data access (reuse API adapters)
-		stateReader, metricsProvider, serviceController, _ := fwdapi.CreateAPIAdapters()
-		mcpServer.SetStateReader(stateReader)
-		mcpServer.SetMetricsProvider(metricsProvider)
-		mcpServer.SetServiceController(serviceController)
-
-		// Set up diagnostics adapter
-		diagnosticsProvider := fwdapi.CreateDiagnosticsAdapter(func() types.ManagerInfo {
-			if mgr := fwdapi.GetManager(); mgr != nil {
-				return mgr
-			}
-			return nil
-		})
-		mcpServer.SetDiagnosticsProvider(diagnosticsProvider)
-
-		// Set up manager info
-		mcpServer.SetManagerInfo(func() types.ManagerInfo {
-			if mgr := fwdapi.GetManager(); mgr != nil {
-				return mgr
-			}
-			return nil
-		})
-	}
-
 	// Listen for shutdown signal from user
 	go func() {
 		sigChan := make(chan os.Signal, 2)
@@ -531,46 +506,48 @@ Try:
 		apiManager.SetServiceCRUD(serviceCRUD)
 	}
 
-	// Start watchers for each context/namespace combination
-	for _, ctx := range contexts {
-		// Create clientSet for this context (for connectivity check and --all-namespaces)
-		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
-		if err != nil {
-			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
-		}
-
-		clientSet, err := kubernetes.NewForConfig(restConfig)
-		if err != nil {
-			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
-		}
-
-		// Store clientSet for pod log streaming
-		clientSetsMu.Lock()
-		clientSets[ctx] = clientSet
-		clientSetsMu.Unlock()
-
-		// if use --all-namespace, from v1 api get all ns.
-		if isAllNs {
-			if len(namespaces) > 1 {
-				log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
-			}
-			setAllNamespace(clientSet, listOptions, &namespaces)
-		}
-
-		// check connectivity
-		err = checkConnection(clientSet, namespaces)
-		if err != nil {
-			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
-		}
-
-		// Start a watcher for each namespace
-		for _, namespace := range namespaces {
-			_, err := nsManager.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
-				LabelSelector: listOptions.LabelSelector,
-				FieldSelector: listOptions.FieldSelector,
-			})
+	// Start watchers for each context/namespace combination (skip in idle mode)
+	if !idleMode {
+		for _, ctx := range contexts {
+			// Create clientSet for this context (for connectivity check and --all-namespaces)
+			restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
 			if err != nil {
-				log.Errorf("Failed to start watcher for %s.%s: %v", namespace, ctx, err)
+				log.Fatalf("Error generating REST configuration: %s\n", err.Error())
+			}
+
+			clientSet, err := kubernetes.NewForConfig(restConfig)
+			if err != nil {
+				log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
+			}
+
+			// Store clientSet for pod log streaming
+			clientSetsMu.Lock()
+			clientSets[ctx] = clientSet
+			clientSetsMu.Unlock()
+
+			// if use --all-namespace, from v1 api get all ns.
+			if isAllNs {
+				if len(namespaces) > 1 {
+					log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
+				}
+				setAllNamespace(clientSet, listOptions, &namespaces)
+			}
+
+			// check connectivity
+			err = checkConnection(clientSet, namespaces)
+			if err != nil {
+				log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
+			}
+
+			// Start a watcher for each namespace
+			for _, namespace := range namespaces {
+				_, err := nsManager.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
+					LabelSelector: listOptions.LabelSelector,
+					FieldSelector: listOptions.FieldSelector,
+				})
+				if err != nil {
+					log.Errorf("Failed to start watcher for %s.%s: %v", namespace, ctx, err)
+				}
 			}
 		}
 	}
@@ -584,28 +561,19 @@ Try:
 		}()
 	}
 
-	// Start MCP server in background if enabled
-	if mcpServer != nil {
-		go func() {
-			if err := mcpServer.Run(context.Background()); err != nil {
-				log.Errorf("MCP server error: %s", err)
-			}
-		}()
-	}
-
 	// If TUI mode, run the TUI (blocks until user quits)
 	// Otherwise, block until shutdown signal is received
 	if tuiManager != nil {
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
-	} else if mcpServer != nil && !tuiMode && apiManager == nil {
-		// MCP-only mode (no TUI, no API): block silently on stdio
-		<-stopListenCh
 	} else if apiManager != nil && !tuiMode {
-		// API-only mode (no TUI): show info and block
+		// API-only or idle mode (no TUI): show info and block
 		log.Infof("API server running at http://%s/ (http://%s/)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.Hostname)
-		log.Println("Press [Ctrl-C] to stop forwarding.")
+		if idleMode {
+			log.Println("Idle mode: Add namespaces via POST /api/v1/namespaces or services via POST /api/v1/services")
+		}
+		log.Println("Press [Ctrl-C] to stop.")
 		<-stopListenCh
 	} else {
 		// Standard mode: block until shutdown signal (Ctrl+C)
@@ -650,17 +618,6 @@ Try:
 		}
 		// Clean up API network configuration
 		fwdapi.CleanupAPINetwork(hostFile)
-	}
-
-	// Wait for MCP cleanup if enabled
-	if mcpServer != nil {
-		mcpServer.Stop()
-		select {
-		case <-mcpServer.Done():
-			log.Debugf("MCP server cleanup complete")
-		case <-time.After(1 * time.Second):
-			log.Debugf("Timeout waiting for MCP cleanup")
-		}
 	}
 
 	// Final safety net: ensure all hosts are cleaned up
