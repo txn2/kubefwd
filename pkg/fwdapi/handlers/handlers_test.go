@@ -501,7 +501,7 @@ func TestLogsHandler_Recent(t *testing.T) {
 			{Timestamp: now.Add(time.Second), Level: "warn", Message: "Test log 2"},
 		},
 	}
-	h := NewLogsHandler(mock)
+	h := NewLogsHandler(mock, nil)
 	r.GET("/v1/logs", h.Recent)
 
 	w := performRequest(r, "GET", "/v1/logs")
@@ -532,7 +532,7 @@ func TestLogsHandler_RecentWithCount(t *testing.T) {
 		}
 	}
 	mock := &mockStateReader{logs: logs}
-	h := NewLogsHandler(mock)
+	h := NewLogsHandler(mock, nil)
 	r.GET("/v1/logs", h.Recent)
 
 	w := performRequest(r, "GET", "/v1/logs?count=10")
@@ -1751,7 +1751,7 @@ func TestForwardsHandler_GetNilState(t *testing.T) {
 
 func TestLogsHandler_RecentNilState(t *testing.T) {
 	r := setupRouter()
-	h := NewLogsHandler(nil)
+	h := NewLogsHandler(nil, nil)
 	r.GET("/v1/logs", h.Recent)
 
 	w := performRequest(r, "GET", "/v1/logs")
@@ -1764,7 +1764,7 @@ func TestLogsHandler_RecentNilState(t *testing.T) {
 func TestLogsHandler_RecentInvalidCount(t *testing.T) {
 	r := setupRouter()
 	mock := &mockStateReader{logs: []state.LogEntry{}}
-	h := NewLogsHandler(mock)
+	h := NewLogsHandler(mock, nil)
 	r.GET("/v1/logs", h.Recent)
 
 	w := performRequest(r, "GET", "/v1/logs?count=invalid")
