@@ -69,6 +69,7 @@ type RemoveServiceInput struct {
 type GetConnectionInfoInput struct {
 	ServiceName string `json:"service_name" jsonschema:"Service name to get connection info for"`
 	Namespace   string `json:"namespace,omitempty" jsonschema:"Namespace (optional if service name is unambiguous)"`
+	Context     string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
 	Port        int    `json:"port,omitempty" jsonschema:"Specific port to get info for (optional)"`
 }
 
@@ -337,7 +338,7 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest, input GetServiceInput) (*mcp.CallToolResult, any, error) {
 	state := s.getState()
 	if state == nil {
-		return nil, nil, NewProviderUnavailableError("State reader", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	svc := state.GetService(input.Key)
@@ -487,7 +488,7 @@ func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequ
 func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRequest, input ReconnectServiceInput) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	if input.Key == "" {
@@ -514,7 +515,7 @@ func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRe
 func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	count := controller.ReconnectAll()
@@ -682,7 +683,7 @@ func (s *Server) handleGetHealth(ctx context.Context, req *mcp.CallToolRequest, 
 func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest, input SyncServiceInput) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	if input.Key == "" {
@@ -712,7 +713,7 @@ func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest
 func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolRequest, input AddNamespaceInput) (*mcp.CallToolResult, any, error) {
 	nsController := s.getNamespaceController()
 	if nsController == nil {
-		return nil, nil, NewProviderUnavailableError("Namespace controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Namespace controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	// Validate input
@@ -754,7 +755,7 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolRequest, input RemoveNamespaceInput) (*mcp.CallToolResult, any, error) {
 	nsController := s.getNamespaceController()
 	if nsController == nil {
-		return nil, nil, NewProviderUnavailableError("Namespace controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Namespace controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	if input.Namespace == "" {
@@ -787,7 +788,7 @@ func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolReq
 func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest, input AddServiceInput) (*mcp.CallToolResult, any, error) {
 	svcCRUD := s.getServiceCRUD()
 	if svcCRUD == nil {
-		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	// Validate required inputs
@@ -837,7 +838,7 @@ func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest,
 func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolRequest, input RemoveServiceInput) (*mcp.CallToolResult, any, error) {
 	svcCRUD := s.getServiceCRUD()
 	if svcCRUD == nil {
-		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	if input.Key == "" {
@@ -875,6 +876,9 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 		for _, svc := range services {
 			if svc.ServiceName == input.ServiceName {
 				if input.Namespace != "" && svc.Namespace != input.Namespace {
+					continue
+				}
+				if input.Context != "" && svc.Context != input.Context {
 					continue
 				}
 
@@ -916,10 +920,18 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 		return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
 	}
 
-	// Build key from input
+	// Build key from input: service.namespace.context
 	key := input.ServiceName
 	if input.Namespace != "" {
 		key = input.ServiceName + "." + input.Namespace
+		// Add context if specified, or use current context
+		context := input.Context
+		if context == "" {
+			context = s.getCurrentContext()
+		}
+		if context != "" {
+			key = key + "." + context
+		}
 	}
 
 	info, err := connInfo.GetConnectionInfo(key)
@@ -938,12 +950,15 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolRequest, input ListK8sNamespacesInput) (*mcp.CallToolResult, any, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
-		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	context := input.Context
 	if context == "" {
-		context = "default"
+		context = s.getCurrentContext()
+		if context == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
 	}
 
 	namespaces, err := k8s.ListNamespaces(context)
@@ -975,7 +990,7 @@ func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolR
 func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolRequest, input ListK8sServicesInput) (*mcp.CallToolResult, any, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
-		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	if input.Namespace == "" {
@@ -984,7 +999,10 @@ func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolReq
 
 	context := input.Context
 	if context == "" {
-		context = "default"
+		context = s.getCurrentContext()
+		if context == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
 	}
 
 	services, err := k8s.ListServices(context, input.Namespace)
@@ -1131,7 +1149,7 @@ func unique(s []string) []string {
 func (s *Server) handleGetAnalysis(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	analysis := s.getAnalysisProvider()
 	if analysis == nil {
-		return nil, nil, NewProviderUnavailableError("Analysis provider", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Analysis provider", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	resp, err := analysis.GetAnalysis()
@@ -1158,7 +1176,7 @@ func (s *Server) handleGetAnalysis(ctx context.Context, req *mcp.CallToolRequest
 func (s *Server) handleGetQuickStatus(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	analysis := s.getAnalysisProvider()
 	if analysis == nil {
-		return nil, nil, NewProviderUnavailableError("Analysis provider", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Analysis provider", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	resp, err := analysis.GetQuickStatus()
@@ -1176,7 +1194,7 @@ func (s *Server) handleGetQuickStatus(ctx context.Context, req *mcp.CallToolRequ
 func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequest, input GetHTTPTrafficInput) (*mcp.CallToolResult, any, error) {
 	httpTraffic := s.getHTTPTrafficProvider()
 	if httpTraffic == nil {
-		return nil, nil, NewProviderUnavailableError("HTTP traffic provider", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("HTTP traffic provider", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	count := input.Count
@@ -1226,7 +1244,7 @@ func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequ
 func (s *Server) handleListContexts(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
-		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	resp, err := k8s.ListContexts()
@@ -1251,7 +1269,7 @@ func (s *Server) handleListContexts(ctx context.Context, req *mcp.CallToolReques
 func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest, input GetHistoryInput) (*mcp.CallToolResult, any, error) {
 	history := s.getHistoryProvider()
 	if history == nil {
-		return nil, nil, NewProviderUnavailableError("History provider", "make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("History provider", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	historyType := strings.ToLower(input.Type)

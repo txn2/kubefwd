@@ -876,6 +876,10 @@ func TestHandleListK8sNamespaces(t *testing.T) {
 			{Name: "default", Status: "Active", Forwarded: true},
 			{Name: "staging", Status: "Active", Forwarded: false},
 		},
+		contexts: &types.K8sContextsResponse{
+			CurrentContext: "minikube",
+			Contexts:       []types.K8sContext{{Name: "minikube", Cluster: "minikube", Active: true}},
+		},
 	}
 	server.SetKubernetesDiscovery(mock)
 
@@ -916,6 +920,10 @@ func TestHandleListK8sServices(t *testing.T) {
 		services: []types.K8sService{
 			{Name: "api", Namespace: "default", Type: "ClusterIP"},
 			{Name: "db", Namespace: "default", Type: "ClusterIP"},
+		},
+		contexts: &types.K8sContextsResponse{
+			CurrentContext: "minikube",
+			Contexts:       []types.K8sContext{{Name: "minikube", Cluster: "minikube", Active: true}},
 		},
 	}
 	server.SetKubernetesDiscovery(mock)

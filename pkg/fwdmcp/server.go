@@ -267,6 +267,19 @@ func (s *Server) getK8sDiscovery() types.KubernetesDiscovery {
 	return s.k8sDiscovery
 }
 
+// getCurrentContext returns the current kubeconfig context, or empty string if unavailable
+func (s *Server) getCurrentContext() string {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return ""
+	}
+	resp, err := k8s.ListContexts()
+	if err != nil || resp == nil {
+		return ""
+	}
+	return resp.CurrentContext
+}
+
 // getConnectionInfo safely gets the connection info provider
 func (s *Server) getConnectionInfo() types.ConnectionInfoProvider {
 	s.mu.RLock()

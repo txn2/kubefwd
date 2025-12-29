@@ -98,8 +98,8 @@ func runMCP(cmd *cobra.Command, args []string) {
 	// Verify API is reachable
 	if err := verifyAPIConnection(apiURL); err != nil {
 		log.Errorf("Cannot connect to kubefwd API at %s: %v", apiURL, err)
-		log.Error("Make sure kubefwd is running with --api flag:")
-		log.Error("  sudo -E kubefwd svc -n <namespace> --api")
+		log.Error("Make sure kubefwd is running:")
+		log.Error("  sudo -E kubefwd")
 		os.Exit(1)
 	}
 
