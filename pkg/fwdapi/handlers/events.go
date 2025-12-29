@@ -53,7 +53,6 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 	defer cancel()
 
 	// Check if channel is already closed (indicates no event bus available)
-	// This happens when TUI is not enabled and there's no event bus
 	select {
 	case _, ok := <-eventCh:
 		if !ok {
@@ -61,7 +60,7 @@ func (h *EventsHandler) Stream(c *gin.Context) {
 				Success: false,
 				Error: &types.ErrorInfo{
 					Code:    "EVENT_BUS_UNAVAILABLE",
-					Message: "Event bus not available. Events streaming requires TUI mode (--tui) to be enabled.",
+					Message: "Event bus not initialized",
 				},
 			})
 			return
