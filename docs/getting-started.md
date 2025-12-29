@@ -9,7 +9,7 @@ Before using kubefwd, ensure you have:
 - **kubectl configured** with access to a Kubernetes cluster
 - **Root/sudo access** (required for modifying `/etc/hosts` and creating network interfaces)
 
-Note: kubefwd reads your kubeconfig file (`~/.kube/config` or `KUBECONFIG` env var) and connects directly to the Kubernetes API—it does not invoke kubectl.
+Note: kubefwd reads your kubeconfig file (`~/.kube/config` or `KUBECONFIG` env var) and connects directly to the Kubernetes API. It does not invoke kubectl.
 
 ## Installation
 
@@ -144,6 +144,24 @@ When kubefwd exits (via `q` or `Ctrl+C`), it automatically:
 - Closes all port forward connections
 
 Your original `/etc/hosts` is backed up to `~/hosts.original`.
+
+## Enabling the API
+
+kubefwd includes a REST API for programmatic control and AI assistant integration.
+
+**Idle mode** (API enabled by default):
+```bash
+sudo -E kubefwd
+```
+
+**With namespace forwarding**:
+```bash
+sudo -E kubefwd svc -n default --api
+```
+
+The API is available at `http://kubefwd.internal/api` and interactive docs at `http://kubefwd.internal/docs`.
+
+See [REST API](api-reference.md) for endpoints and [MCP Integration](mcp-integration.md) for AI assistant setup.
 
 ## Next Steps
 

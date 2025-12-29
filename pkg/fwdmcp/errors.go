@@ -189,7 +189,7 @@ func NewProviderUnavailableError(providerName, requirement string) *MCPError {
 	return &MCPError{
 		Code:      ErrCodeProviderUnavailable,
 		Message:   fmt.Sprintf("%s not available", providerName),
-		Diagnosis: "kubefwd may not be running, or may not have been started with the --api flag",
+		Diagnosis: "kubefwd may not be running. Start it with: sudo -E kubefwd",
 		SuggestedActions: []SuggestedAction{
 			{
 				Action: "get_health",
@@ -212,10 +212,10 @@ func NewAPIUnavailableError(apiURL string, cause error) *MCPError {
 		Diagnosis: "kubefwd daemon may not be running, or the API endpoint is incorrect",
 		SuggestedActions: []SuggestedAction{
 			{
-				Hint: "Start kubefwd with: sudo -E kubefwd svc -n <namespace> --api",
+				Hint: "Start kubefwd in idle mode: sudo -E kubefwd",
 			},
 			{
-				Hint: "Or for idle mode: sudo -E kubefwd --api",
+				Hint: "Or with a namespace: sudo -E kubefwd svc -n <namespace>",
 			},
 		},
 		RetryRecommended: true,

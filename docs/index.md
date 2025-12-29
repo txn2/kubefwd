@@ -24,6 +24,71 @@ hide:
   <img src="images/tui-110-main-active.png" alt="kubefwd TUI">
 </div>
 
+<div class="home-modes" markdown>
+
+## Four Ways to Use kubefwd
+
+=== "TUI"
+
+    Interactive terminal interface with real-time monitoring.
+
+    ```bash
+    sudo -E kubefwd svc -n my-namespace --tui
+    ```
+
+    - Real-time service status and traffic metrics
+    - Pod log streaming
+    - Keyboard-driven navigation
+    - [TUI Guide →](tui-guide.md)
+
+=== "Classic"
+
+    Simple log output for scripts and automation.
+
+    ```bash
+    sudo -E kubefwd svc -n my-namespace
+    ```
+
+    - Minimal output, logs to stdout
+    - Perfect for CI/CD and scripts
+    - [Getting Started →](getting-started.md)
+
+=== "REST API"
+
+    Programmatic control via HTTP endpoints.
+
+    ```bash
+    sudo -E kubefwd  # Idle mode, API enabled
+    curl http://kubefwd.internal/api/v1/services
+    ```
+
+    - Add/remove namespaces and services dynamically
+    - Query metrics and diagnostics
+    - SSE event streaming
+    - [REST API →](api-reference.md)
+
+=== "MCP"
+
+    Talk to your AI about your work, not about tools.
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+    - "Connect me to the staging database"
+    - "Test my new API deployment"
+    - "Why can't my app reach redis?"
+    - [MCP Integration →](mcp-integration.md)
+
+</div>
+
 <div class="home-features">
   <div class="feature">
     <span class="feature-icon">🔌</span>
