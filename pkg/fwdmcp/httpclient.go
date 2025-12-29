@@ -1144,3 +1144,360 @@ func generateEnvVars(serviceName, localIP string, ports []types.PortInfo) map[st
 
 	return envVars
 }
+
+// ============================================================================
+// AnalysisProviderHTTP provides AI-optimized analysis via REST API
+// ============================================================================
+
+// QuickStatusResponse mirrors the status endpoint response
+type QuickStatusResponse struct {
+	Status     string `json:"status"`     // "ok", "issues", "error"
+	Message    string `json:"message"`    // Human-readable summary
+	ErrorCount int    `json:"errorCount"` // Number of current errors
+	Uptime     string `json:"uptime,omitempty"`
+}
+
+// AnalysisIssue represents a detected problem
+type AnalysisIssue struct {
+	Severity   string `json:"severity"`  // "critical", "high", "medium", "low"
+	Component  string `json:"component"` // "service", "forward", "network"
+	ServiceKey string `json:"serviceKey,omitempty"`
+	PodName    string `json:"podName,omitempty"`
+	Message    string `json:"message"`
+	ErrorType  string `json:"errorType,omitempty"`
+}
+
+// AnalysisRecommendation provides actionable advice
+type AnalysisRecommendation struct {
+	Priority string `json:"priority"` // "high", "medium", "low"
+	Category string `json:"category"` // "performance", "reliability", "configuration"
+	Message  string `json:"message"`
+}
+
+// AnalysisActionSuggestion provides API actions to fix issues
+type AnalysisActionSuggestion struct {
+	Action   string `json:"action"` // "reconnect", "sync", "reconnect_all"
+	Target   string `json:"target"` // service key or "all"
+	Reason   string `json:"reason"`
+	Endpoint string `json:"endpoint"` // POST /v1/services/:key/reconnect
+	Method   string `json:"method"`   // POST
+}
+
+// AnalysisStats provides statistics
+type AnalysisStats struct {
+	TotalServices   int    `json:"totalServices"`
+	ActiveServices  int    `json:"activeServices"`
+	ErroredServices int    `json:"erroredServices"`
+	TotalForwards   int    `json:"totalForwards"`
+	ActiveForwards  int    `json:"activeForwards"`
+	TotalBytesIn    uint64 `json:"totalBytesIn"`
+	TotalBytesOut   uint64 `json:"totalBytesOut"`
+	Uptime          string `json:"uptime,omitempty"`
+}
+
+// FullAnalysisResponse provides complete analysis for AI consumption
+type FullAnalysisResponse struct {
+	Status           string                     `json:"status"`
+	Summary          string                     `json:"summary"`
+	Issues           []AnalysisIssue            `json:"issues,omitempty"`
+	Recommendations  []AnalysisRecommendation   `json:"recommendations,omitempty"`
+	SuggestedActions []AnalysisActionSuggestion `json:"suggestedActions,omitempty"`
+	Stats            AnalysisStats              `json:"stats"`
+}
+
+// AnalysisProviderHTTP implements analysis endpoints via REST API
+type AnalysisProviderHTTP struct {
+	client *HTTPClient
+}
+
+// NewAnalysisProviderHTTP creates a new HTTP-based AnalysisProvider
+func NewAnalysisProviderHTTP(baseURL string) *AnalysisProviderHTTP {
+	return &AnalysisProviderHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+// GetQuickStatus returns a quick status check
+func (a *AnalysisProviderHTTP) GetQuickStatus() (*QuickStatusResponse, error) {
+	var resp struct {
+		Success bool                `json:"success"`
+		Data    QuickStatusResponse `json:"data"`
+		Error   *types.ErrorInfo    `json:"error"`
+	}
+
+	if err := a.client.Get("/v1/status", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// GetAnalysis returns full AI-optimized analysis
+func (a *AnalysisProviderHTTP) GetAnalysis() (*FullAnalysisResponse, error) {
+	var resp struct {
+		Success bool                 `json:"success"`
+		Data    FullAnalysisResponse `json:"data"`
+		Error   *types.ErrorInfo     `json:"error"`
+	}
+
+	if err := a.client.Get("/v1/analyze", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// ============================================================================
+// HTTPTrafficProviderHTTP provides HTTP traffic inspection via REST API
+// ============================================================================
+
+// HTTPTrafficProviderHTTP implements HTTP traffic endpoints via REST API
+type HTTPTrafficProviderHTTP struct {
+	client *HTTPClient
+}
+
+// NewHTTPTrafficProviderHTTP creates a new HTTP-based HTTPTrafficProvider
+func NewHTTPTrafficProviderHTTP(baseURL string) *HTTPTrafficProviderHTTP {
+	return &HTTPTrafficProviderHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+// GetForwardHTTP returns HTTP logs for a specific forward
+func (h *HTTPTrafficProviderHTTP) GetForwardHTTP(key string, count int) (*types.HTTPTrafficResponse, error) {
+	if count <= 0 {
+		count = 50
+	}
+	if count > 500 {
+		count = 500
+	}
+
+	path := fmt.Sprintf("/v1/forwards/%s/http?count=%d", url.PathEscape(key), count)
+
+	var resp struct {
+		Success bool                      `json:"success"`
+		Data    types.HTTPTrafficResponse `json:"data"`
+		Error   *types.ErrorInfo          `json:"error"`
+	}
+
+	if err := h.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// GetServiceHTTP returns HTTP logs for all forwards of a service
+func (h *HTTPTrafficProviderHTTP) GetServiceHTTP(key string, count int) (*types.ServiceHTTPTrafficResponse, error) {
+	if count <= 0 {
+		count = 50
+	}
+	if count > 500 {
+		count = 500
+	}
+
+	path := fmt.Sprintf("/v1/services/%s/http?count=%d", url.PathEscape(key), count)
+
+	var resp struct {
+		Success bool                             `json:"success"`
+		Data    types.ServiceHTTPTrafficResponse `json:"data"`
+		Error   *types.ErrorInfo                 `json:"error"`
+	}
+
+	if err := h.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+// ============================================================================
+// HistoryProviderHTTP provides history access via REST API
+// ============================================================================
+
+// HistoryEvent represents a historical event
+type HistoryEvent struct {
+	ID         int64                  `json:"id"`
+	Type       string                 `json:"type"`
+	Timestamp  time.Time              `json:"timestamp"`
+	ServiceKey string                 `json:"serviceKey,omitempty"`
+	ForwardKey string                 `json:"forwardKey,omitempty"`
+	PodName    string                 `json:"podName,omitempty"`
+	Message    string                 `json:"message"`
+	Data       map[string]interface{} `json:"data,omitempty"`
+}
+
+// HistoryError represents a historical error
+type HistoryError struct {
+	ID         int64     `json:"id"`
+	Timestamp  time.Time `json:"timestamp"`
+	ServiceKey string    `json:"serviceKey"`
+	ForwardKey string    `json:"forwardKey,omitempty"`
+	PodName    string    `json:"podName,omitempty"`
+	ErrorType  string    `json:"errorType"`
+	Message    string    `json:"message"`
+	Resolved   bool      `json:"resolved"`
+	ResolvedAt time.Time `json:"resolvedAt,omitempty"`
+}
+
+// HistoryReconnect represents a reconnection attempt
+type HistoryReconnect struct {
+	ID           int64  `json:"id"`
+	Timestamp    string `json:"timestamp"` // Duration string from JSON
+	ServiceKey   string `json:"serviceKey"`
+	Trigger      string `json:"trigger"` // "auto", "manual", "sync"
+	AttemptCount int    `json:"attemptCount"`
+	Success      bool   `json:"success"`
+	Duration     string `json:"duration"` // Duration string from JSON
+	Error        string `json:"error,omitempty"`
+}
+
+// HistoryStats provides statistics about stored history
+type HistoryStats struct {
+	TotalEvents     int `json:"totalEvents"`
+	TotalErrors     int `json:"totalErrors"`
+	TotalReconnects int `json:"totalReconnects"`
+	MaxEvents       int `json:"maxEvents"`
+	MaxErrors       int `json:"maxErrors"`
+	MaxReconnects   int `json:"maxReconnects"`
+}
+
+// HistoryProviderHTTP implements history endpoints via REST API
+type HistoryProviderHTTP struct {
+	client *HTTPClient
+}
+
+// NewHistoryProviderHTTP creates a new HTTP-based HistoryProvider
+func NewHistoryProviderHTTP(baseURL string) *HistoryProviderHTTP {
+	return &HistoryProviderHTTP{
+		client: NewHTTPClient(baseURL),
+	}
+}
+
+// GetEvents returns historical events
+func (h *HistoryProviderHTTP) GetEvents(count int, eventType string) ([]HistoryEvent, error) {
+	if count <= 0 {
+		count = 100
+	}
+	if count > 1000 {
+		count = 1000
+	}
+
+	path := fmt.Sprintf("/v1/history/events?count=%d", count)
+	if eventType != "" {
+		path += "&type=" + url.QueryEscape(eventType)
+	}
+
+	var resp struct {
+		Success bool           `json:"success"`
+		Data    []HistoryEvent `json:"data"`
+		Error   *types.ErrorInfo
+	}
+
+	if err := h.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data, nil
+}
+
+// GetErrors returns historical errors
+func (h *HistoryProviderHTTP) GetErrors(count int) ([]HistoryError, error) {
+	if count <= 0 {
+		count = 50
+	}
+	if count > 500 {
+		count = 500
+	}
+
+	path := fmt.Sprintf("/v1/history/errors?count=%d", count)
+
+	var resp struct {
+		Success bool           `json:"success"`
+		Data    []HistoryError `json:"data"`
+		Error   *types.ErrorInfo
+	}
+
+	if err := h.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data, nil
+}
+
+// GetReconnects returns reconnection history
+func (h *HistoryProviderHTTP) GetReconnects(count int, serviceKey string) ([]HistoryReconnect, error) {
+	if count <= 0 {
+		count = 50
+	}
+	if count > 200 {
+		count = 200
+	}
+
+	var path string
+	if serviceKey != "" {
+		path = fmt.Sprintf("/v1/services/%s/history/reconnections?count=%d",
+			url.PathEscape(serviceKey), count)
+	} else {
+		path = fmt.Sprintf("/v1/history/reconnections?count=%d", count)
+	}
+
+	var resp struct {
+		Success bool               `json:"success"`
+		Data    []HistoryReconnect `json:"data"`
+		Error   *types.ErrorInfo
+	}
+
+	if err := h.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data, nil
+}
+
+// GetStats returns history storage statistics
+func (h *HistoryProviderHTTP) GetStats() (*HistoryStats, error) {
+	var resp struct {
+		Success bool             `json:"success"`
+		Data    HistoryStats     `json:"data"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := h.client.Get("/v1/history/stats", &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
