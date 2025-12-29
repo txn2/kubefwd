@@ -798,3 +798,118 @@ func (a *KubernetesDiscoveryAdapter) ListContexts() (*types.K8sContextsResponse,
 		CurrentContext: rawConfig.CurrentContext,
 	}, nil
 }
+
+// ServiceCRUDAdapter implements types.ServiceCRUD for adding/removing individual services
+type ServiceCRUDAdapter struct {
+	*ServiceControllerAdapter // Embed for Reconnect/ReconnectAll/Sync
+	getNsManager              func() *fwdns.NamespaceManager
+	configGetter              *fwdcfg.ConfigGetter
+	configPath                string
+}
+
+// NewServiceCRUDAdapter creates a new ServiceCRUDAdapter
+func NewServiceCRUDAdapter(
+	getStore func() *state.Store,
+	getNsManager func() *fwdns.NamespaceManager,
+	configPath string,
+) *ServiceCRUDAdapter {
+	return &ServiceCRUDAdapter{
+		ServiceControllerAdapter: NewServiceControllerAdapter(getStore),
+		getNsManager:             getNsManager,
+		configGetter:             fwdcfg.NewConfigGetter(),
+		configPath:               configPath,
+	}
+}
+
+// AddService forwards a specific service
+func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.AddServiceResponse, error) {
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	// Resolve context if not specified
+	ctx := req.Context
+	if ctx == "" {
+		currentCtx, err := nsManager.GetCurrentContext()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	// Check if service is already being forwarded
+	key := req.ServiceName + "." + req.Namespace + "." + ctx
+	if fwdsvcregistry.Get(key) != nil {
+		return nil, fmt.Errorf("service %s is already being forwarded", key)
+	}
+
+	// Get kubernetes client for this context
+	clientSet, _, _, err := nsManager.GetOrCreateClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get kubernetes client: %w", err)
+	}
+
+	// Fetch the service from kubernetes
+	svc, err := clientSet.CoreV1().Services(req.Namespace).Get(
+		context.Background(),
+		req.ServiceName,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service: %w", err)
+	}
+
+	// Validate service has selector
+	if len(svc.Spec.Selector) == 0 {
+		return nil, fmt.Errorf("service %s has no pod selector - kubefwd cannot forward services without selectors", req.ServiceName)
+	}
+
+	// Create ServiceFWD using the namespace manager
+	svcfwd, err := nsManager.CreateServiceFWD(ctx, req.Namespace, svc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service forward: %w", err)
+	}
+
+	// Add to registry (this starts forwarding asynchronously)
+	fwdsvcregistry.Add(svcfwd)
+
+	// Build port mappings from service spec
+	ports := make([]types.PortMapping, 0, len(svc.Spec.Ports))
+	for _, port := range svc.Spec.Ports {
+		if port.Protocol == "UDP" {
+			continue // UDP not supported
+		}
+		ports = append(ports, types.PortMapping{
+			LocalPort:  fmt.Sprintf("%d", port.Port),
+			RemotePort: port.TargetPort.String(),
+			Protocol:   string(port.Protocol),
+		})
+	}
+
+	// Return response with available info
+	// Note: LocalIP and Hostnames are allocated asynchronously per-pod
+	// Client should poll /services/:key for complete info
+	return &types.AddServiceResponse{
+		Key:         key,
+		ServiceName: req.ServiceName,
+		Namespace:   req.Namespace,
+		Context:     ctx,
+		LocalIP:     "",  // Allocated asynchronously
+		Hostnames:   nil, // Set asynchronously
+		Ports:       ports,
+	}, nil
+}
+
+// RemoveService stops forwarding a service
+func (a *ServiceCRUDAdapter) RemoveService(key string) error {
+	// Check if service exists
+	if fwdsvcregistry.Get(key) == nil {
+		return fmt.Errorf("service not found: %s", key)
+	}
+
+	// Remove from registry (this stops forwarding and cleans up)
+	fwdsvcregistry.RemoveByName(key)
+
+	return nil
+}
