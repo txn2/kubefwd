@@ -59,3 +59,12 @@ func (c *ConfigGetter) GetRESTClient() (*restclient.RESTClient, error) {
 	}
 	return RESTClient, nil
 }
+
+// GetCurrentContext returns the current context name from kubeconfig
+func (c *ConfigGetter) GetCurrentContext(cfgFilePath string) (string, error) {
+	rawConfig, err := c.GetClientConfig(cfgFilePath)
+	if err != nil {
+		return "", err
+	}
+	return rawConfig.CurrentContext, nil
+}
