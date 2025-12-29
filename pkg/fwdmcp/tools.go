@@ -87,119 +87,166 @@ type FindServicesInput struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"Filter by namespace"`
 }
 
+// === HTTP traffic and history tool input types ===
+
+type GetHTTPTrafficInput struct {
+	ServiceKey string `json:"service_key,omitempty" jsonschema:"Service key to get HTTP traffic for (optional)"`
+	ForwardKey string `json:"forward_key,omitempty" jsonschema:"Forward key to get HTTP traffic for (optional)"`
+	Count      int    `json:"count,omitempty" jsonschema:"Number of log entries to return (default: 50, max: 500)"`
+}
+
+type GetHistoryInput struct {
+	Type       string `json:"type" jsonschema:"Type of history: events, errors, or reconnections"`
+	ServiceKey string `json:"service_key,omitempty" jsonschema:"Filter by service key (optional)"`
+	EventType  string `json:"event_type,omitempty" jsonschema:"Filter events by type (e.g., ForwardError, ServiceAdded)"`
+	Count      int    `json:"count,omitempty" jsonschema:"Number of entries to return (default varies by type)"`
+}
+
 // registerTools registers all MCP tools
 func (s *Server) registerTools() {
 	// === Developer-focused tools (primary use cases) ===
 
-	// add_namespace - Start forwarding all services in a namespace
+	// add_namespace - Forward all services in a namespace
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "add_namespace",
-		Description: "Start forwarding all services in a Kubernetes namespace. Example: 'Forward all services from the staging namespace'. Returns the list of services discovered and their connection info.",
+		Description: "Forward all services in a namespace to localhost. Adds /etc/hosts entries for each service. Returns list of discovered services with connection info.",
 	}, s.handleAddNamespace)
 
-	// remove_namespace - Stop forwarding a namespace
+	// remove_namespace - Stop all forwards in a namespace
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "remove_namespace",
-		Description: "Stop forwarding all services in a namespace and clean up resources. Use when done working with a namespace.",
+		Description: "Stop all service forwards in a namespace. Removes /etc/hosts entries and cleans up network interfaces.",
 	}, s.handleRemoveNamespace)
 
-	// add_service - Forward a specific service
+	// add_service - Forward a single service
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "add_service",
-		Description: "Forward a specific Kubernetes service. Example: 'Forward the postgres service from the staging namespace'. Returns connection info including local IP, hostnames, and ports.",
+		Description: "Forward a single service to localhost. Returns local IP, hostnames (added to /etc/hosts), and mapped ports.",
 	}, s.handleAddService)
 
 	// remove_service - Stop forwarding a service
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "remove_service",
-		Description: "Stop forwarding a specific service. Use when done with a particular service.",
+		Description: "Stop forwarding a service. Removes /etc/hosts entries and releases the allocated IP.",
 	}, s.handleRemoveService)
 
-	// get_connection_info - Get connection details for a service
+	// get_connection_info - Get connection details
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_connection_info",
-		Description: "Get local connection information for a forwarded service. Returns IP address, hostnames, ports, and suggested environment variables. Example: 'How do I connect to the postgres service?'",
+		Description: "Get connection details for a forwarded service: IP address, hostnames, ports, and environment variables. Use after add_service to get ready-to-use connection strings.",
 	}, s.handleGetConnectionInfo)
 
-	// list_k8s_namespaces - List available namespaces
+	// list_k8s_namespaces - Discover namespaces
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_k8s_namespaces",
-		Description: "List all available Kubernetes namespaces in the cluster. Shows which namespaces are currently being forwarded.",
+		Description: "List available Kubernetes namespaces with forwarding status. Use to discover what can be forwarded.",
 	}, s.handleListK8sNamespaces)
 
-	// list_k8s_services - List available services in a namespace
+	// list_k8s_services - Discover services
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_k8s_services",
-		Description: "List all available Kubernetes services in a namespace. Shows service types, ports, and whether each is currently being forwarded.",
+		Description: "List services in a namespace with type, ports, and forwarding status. Use to discover what can be forwarded.",
 	}, s.handleListK8sServices)
 
-	// find_services - Search forwarded services
+	// find_services - Search forwards
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "find_services",
-		Description: "Search for forwarded services by name, port, or namespace. Example: 'Find all services on port 5432' or 'Find database services'.",
+		Description: "Search forwarded services by name pattern, port number, or namespace. Returns matching services with connection info.",
 	}, s.handleFindServices)
 
-	// list_hostnames - List all DNS entries
+	// list_hostnames - View /etc/hosts entries
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_hostnames",
-		Description: "List all hostnames that have been added to /etc/hosts for forwarded services. Useful for debugging DNS resolution.",
+		Description: "List all /etc/hosts entries created by kubefwd. Shows hostname-to-IP mappings for each forwarded service.",
 	}, s.handleListHostnames)
 
-	// === Existing utility tools ===
+	// === Service inspection and management tools ===
 
-	// list_services - List all forwarded services
+	// list_services - List forwarded services
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_services",
-		Description: "List all Kubernetes services currently being forwarded by kubefwd. Returns service names, namespaces, contexts, status (active/error/partial), and summary statistics.",
+		Description: "List all forwarded services with status. Returns service names, namespaces, contexts, forward counts, and error states.",
 	}, s.handleListServices)
 
-	// get_service - Get detailed service information
+	// get_service - Get service details
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_service",
-		Description: "Get detailed information about a specific forwarded service, including all port forwards, pod information, hostnames, and traffic metrics.",
+		Description: "Get detailed service info: all port forwards, pods, hostnames, traffic bytes/rates, and error state.",
 	}, s.handleGetService)
 
-	// reconnect_service - Trigger reconnection
+	// reconnect_service - Force reconnection
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "reconnect_service",
-		Description: "Trigger a reconnection attempt for a specific service. Use this when a service is in error state or needs to refresh its connection to a pod.",
+		Description: "Reconnect a service to its pods. Use when service is in error state. Forces immediate reconnection attempt.",
 	}, s.handleReconnectService)
 
-	// reconnect_all_errors - Reconnect all errored services
+	// reconnect_all_errors - Batch reconnect
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "reconnect_all_errors",
-		Description: "Trigger reconnection for all services currently in error state. Returns the number of services triggered.",
+		Description: "Reconnect all errored services at once. Returns count of services triggered.",
 	}, s.handleReconnectAllErrors)
 
-	// sync_service - Force pod sync
+	// sync_service - Re-sync pods
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "sync_service",
-		Description: "Force kubefwd to re-sync pods for a service. Useful after pod changes or when the service seems stale.",
+		Description: "Re-sync pods for a service. Discovers pod changes and updates forwards. Use after deployments or pod restarts.",
 	}, s.handleSyncService)
 
 	// get_health - Get health status
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_health",
-		Description: "Get the overall health status of kubefwd, including version information, runtime details, and summary of forwarding state.",
+		Description: "Get kubefwd health: status (healthy/degraded/unhealthy), version, uptime, and service/error counts.",
 	}, s.handleGetHealth)
 
-	// get_metrics - Get bandwidth metrics
+	// get_metrics - Get traffic metrics
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_metrics",
-		Description: "Get bandwidth metrics and traffic statistics for kubefwd. Can return overall summary or per-service breakdown.",
+		Description: "Get bandwidth metrics: total bytes in/out, transfer rates, per-service breakdown. Shows network activity.",
 	}, s.handleGetMetrics)
 
-	// diagnose_errors - AI-optimized error diagnosis
+	// diagnose_errors - Analyze errors
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "diagnose_errors",
-		Description: "Get a comprehensive diagnosis of all current errors in kubefwd, with context and suggested remediation steps.",
+		Description: "Diagnose current errors with root cause analysis. Returns error types, affected pods, and specific fix suggestions.",
 	}, s.handleDiagnoseErrors)
 
-	// get_logs - Get recent logs (kept but lower priority)
+	// get_logs - Access logs
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_logs",
-		Description: "Get recent kubefwd log entries. Supports filtering by level and keyword search.",
+		Description: "Get kubefwd log entries. Filter by level (debug/info/warn/error) or search text. Returns timestamped messages.",
 	}, s.handleGetLogs)
+
+	// === AI-optimized analysis tools ===
+
+	// get_analysis - Full analysis with recommendations
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_analysis",
+		Description: "Full analysis with issues, priorities, and recommended actions. Returns classified errors and specific tool calls to fix them. Best starting point for troubleshooting.",
+	}, s.handleGetAnalysis)
+
+	// get_quick_status - Fast health check
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_quick_status",
+		Description: "Fast health check returning ok/issues/error with message. Use as first check before taking action.",
+	}, s.handleGetQuickStatus)
+
+	// get_http_traffic - View HTTP requests
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_http_traffic",
+		Description: "View HTTP requests through a forward: method, path, status code, response time. Debug API calls and verify connectivity.",
+	}, s.handleGetHTTPTraffic)
+
+	// list_contexts - List clusters
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "list_contexts",
+		Description: "List Kubernetes contexts from kubeconfig with current context marked. Use to discover clusters before forwarding.",
+	}, s.handleListContexts)
+
+	// get_history - Access history
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_history",
+		Description: "Access event, error, or reconnection history. Filter by type and service key. Analyze patterns over time.",
+	}, s.handleGetHistory)
 }
 
 // Tool handlers
@@ -290,12 +337,12 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest, input GetServiceInput) (*mcp.CallToolResult, any, error) {
 	state := s.getState()
 	if state == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "make sure kubefwd is running with --api flag")
 	}
 
 	svc := state.GetService(input.Key)
 	if svc == nil {
-		return nil, nil, fmt.Errorf("service not found: %s", input.Key)
+		return nil, nil, NewServiceNotFoundError(input.Key)
 	}
 
 	// Calculate status
@@ -440,11 +487,15 @@ func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequ
 func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRequest, input ReconnectServiceInput) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, fmt.Errorf("service controller not available")
+		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
+	}
+
+	if input.Key == "" {
+		return nil, nil, NewInvalidInputError("key", "", "service key is required")
 	}
 
 	if err := controller.Reconnect(input.Key); err != nil {
-		return nil, nil, fmt.Errorf("reconnect failed: %w", err)
+		return nil, nil, ClassifyError(err, map[string]interface{}{"service": input.Key})
 	}
 
 	result := map[string]interface{}{
@@ -463,7 +514,7 @@ func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRe
 func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, fmt.Errorf("service controller not available")
+		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
 	}
 
 	count := controller.ReconnectAll()
@@ -631,11 +682,15 @@ func (s *Server) handleGetHealth(ctx context.Context, req *mcp.CallToolRequest, 
 func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest, input SyncServiceInput) (*mcp.CallToolResult, any, error) {
 	controller := s.getController()
 	if controller == nil {
-		return nil, nil, fmt.Errorf("service controller not available")
+		return nil, nil, NewProviderUnavailableError("Service controller", "make sure kubefwd is running with --api flag")
+	}
+
+	if input.Key == "" {
+		return nil, nil, NewInvalidInputError("key", "", "service key is required")
 	}
 
 	if err := controller.Sync(input.Key, input.Force); err != nil {
-		return nil, nil, fmt.Errorf("sync failed: %w", err)
+		return nil, nil, ClassifyError(err, map[string]interface{}{"service": input.Key})
 	}
 
 	result := map[string]interface{}{
@@ -657,7 +712,12 @@ func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest
 func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolRequest, input AddNamespaceInput) (*mcp.CallToolResult, any, error) {
 	nsController := s.getNamespaceController()
 	if nsController == nil {
-		return nil, nil, fmt.Errorf("namespace controller not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Namespace controller", "make sure kubefwd is running with --api flag")
+	}
+
+	// Validate input
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
 	context := input.Context
@@ -694,7 +754,11 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolRequest, input RemoveNamespaceInput) (*mcp.CallToolResult, any, error) {
 	nsController := s.getNamespaceController()
 	if nsController == nil {
-		return nil, nil, fmt.Errorf("namespace controller not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Namespace controller", "make sure kubefwd is running with --api flag")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
 	context := input.Context
@@ -723,7 +787,15 @@ func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolReq
 func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest, input AddServiceInput) (*mcp.CallToolResult, any, error) {
 	svcCRUD := s.getServiceCRUD()
 	if svcCRUD == nil {
-		return nil, nil, fmt.Errorf("service CRUD controller not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "make sure kubefwd is running with --api flag")
+	}
+
+	// Validate required inputs
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
+	}
+	if input.ServiceName == "" {
+		return nil, nil, NewInvalidInputError("service_name", "", "service name is required")
 	}
 
 	context := input.Context
@@ -765,11 +837,15 @@ func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest,
 func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolRequest, input RemoveServiceInput) (*mcp.CallToolResult, any, error) {
 	svcCRUD := s.getServiceCRUD()
 	if svcCRUD == nil {
-		return nil, nil, fmt.Errorf("service CRUD controller not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Service CRUD controller", "make sure kubefwd is running with --api flag")
+	}
+
+	if input.Key == "" {
+		return nil, nil, NewInvalidInputError("key", "", "service key is required")
 	}
 
 	if err := svcCRUD.RemoveService(input.Key); err != nil {
-		return nil, nil, fmt.Errorf("failed to remove service: %w", err)
+		return nil, nil, ClassifyError(err, map[string]interface{}{"service": input.Key})
 	}
 
 	result := map[string]interface{}{
@@ -862,7 +938,7 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolRequest, input ListK8sNamespacesInput) (*mcp.CallToolResult, any, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
-		return nil, nil, fmt.Errorf("kubernetes discovery not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
 	}
 
 	context := input.Context
@@ -899,7 +975,11 @@ func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolR
 func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolRequest, input ListK8sServicesInput) (*mcp.CallToolResult, any, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
-		return nil, nil, fmt.Errorf("kubernetes discovery not available - make sure kubefwd is running with --api flag")
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
 	context := input.Context
@@ -909,7 +989,7 @@ func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolReq
 
 	services, err := k8s.ListServices(context, input.Namespace)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list services: %w", err)
+		return nil, nil, ClassifyError(err, map[string]interface{}{"namespace": input.Namespace, "context": context})
 	}
 
 	result := map[string]interface{}{
@@ -1044,4 +1124,213 @@ func unique(s []string) []string {
 		}
 	}
 	return result
+}
+
+// === AI-optimized analysis tool handlers ===
+
+func (s *Server) handleGetAnalysis(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+	analysis := s.getAnalysisProvider()
+	if analysis == nil {
+		return nil, nil, NewProviderUnavailableError("Analysis provider", "make sure kubefwd is running with --api flag")
+	}
+
+	resp, err := analysis.GetAnalysis()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get analysis: %w", err)
+	}
+
+	// Build summary message
+	summary := fmt.Sprintf("Status: %s. %s", resp.Status, resp.Summary)
+	if len(resp.Issues) > 0 {
+		summary += fmt.Sprintf(" (%d issues found)", len(resp.Issues))
+	}
+	if len(resp.Recommendations) > 0 {
+		summary += fmt.Sprintf(" %d recommendations available.", len(resp.Recommendations))
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: summary},
+		},
+	}, resp, nil
+}
+
+func (s *Server) handleGetQuickStatus(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+	analysis := s.getAnalysisProvider()
+	if analysis == nil {
+		return nil, nil, NewProviderUnavailableError("Analysis provider", "make sure kubefwd is running with --api flag")
+	}
+
+	resp, err := analysis.GetQuickStatus()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: fmt.Sprintf("Status: %s - %s", resp.Status, resp.Message)},
+		},
+	}, resp, nil
+}
+
+func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequest, input GetHTTPTrafficInput) (*mcp.CallToolResult, any, error) {
+	httpTraffic := s.getHTTPTrafficProvider()
+	if httpTraffic == nil {
+		return nil, nil, NewProviderUnavailableError("HTTP traffic provider", "make sure kubefwd is running with --api flag")
+	}
+
+	count := input.Count
+	if count <= 0 {
+		count = 50
+	}
+
+	if input.ForwardKey != "" {
+		// Get traffic for a specific forward
+		resp, err := httpTraffic.GetForwardHTTP(input.ForwardKey, count)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get forward HTTP traffic: %w", err)
+		}
+
+		summary := fmt.Sprintf("HTTP traffic for forward %s: %d requests", input.ForwardKey, resp.Summary.TotalRequests)
+		if resp.Summary.TotalRequests > 0 {
+			summary += fmt.Sprintf(" (last request: %s)", resp.Summary.LastRequest.Format(time.RFC3339))
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: summary},
+			},
+		}, resp, nil
+	}
+
+	if input.ServiceKey != "" {
+		// Get traffic for a service (all forwards)
+		resp, err := httpTraffic.GetServiceHTTP(input.ServiceKey, count)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get service HTTP traffic: %w", err)
+		}
+
+		summary := fmt.Sprintf("HTTP traffic for service %s: %d requests across %d forwards",
+			input.ServiceKey, resp.Summary.TotalRequests, len(resp.Forwards))
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: summary},
+			},
+		}, resp, nil
+	}
+
+	return nil, nil, fmt.Errorf("either service_key or forward_key must be provided")
+}
+
+func (s *Server) handleListContexts(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "make sure kubefwd is running with --api flag")
+	}
+
+	resp, err := k8s.ListContexts()
+	if err != nil {
+		return nil, nil, ClassifyError(err, nil)
+	}
+
+	result := map[string]interface{}{
+		"contexts": resp.Contexts,
+		"current":  resp.CurrentContext,
+		"count":    len(resp.Contexts),
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: fmt.Sprintf("Found %d Kubernetes contexts. Current: %s",
+				len(resp.Contexts), resp.CurrentContext)},
+		},
+	}, result, nil
+}
+
+func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest, input GetHistoryInput) (*mcp.CallToolResult, any, error) {
+	history := s.getHistoryProvider()
+	if history == nil {
+		return nil, nil, NewProviderUnavailableError("History provider", "make sure kubefwd is running with --api flag")
+	}
+
+	historyType := strings.ToLower(input.Type)
+	if historyType == "" {
+		historyType = "events"
+	}
+
+	count := input.Count
+	if count <= 0 {
+		switch historyType {
+		case "events":
+			count = 100
+		case "errors":
+			count = 50
+		case "reconnections":
+			count = 50
+		default:
+			count = 50
+		}
+	}
+
+	switch historyType {
+	case "events":
+		events, err := history.GetEvents(count, input.EventType)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get events: %w", err)
+		}
+		result := map[string]interface{}{
+			"type":   "events",
+			"events": events,
+			"count":  len(events),
+		}
+		filterMsg := ""
+		if input.EventType != "" {
+			filterMsg = fmt.Sprintf(" (filtered by type: %s)", input.EventType)
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d historical events%s", len(events), filterMsg)},
+			},
+		}, result, nil
+
+	case "errors":
+		errors, err := history.GetErrors(count)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get errors: %w", err)
+		}
+		result := map[string]interface{}{
+			"type":   "errors",
+			"errors": errors,
+			"count":  len(errors),
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d historical errors", len(errors))},
+			},
+		}, result, nil
+
+	case "reconnections", "reconnects":
+		reconnects, err := history.GetReconnects(count, input.ServiceKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get reconnections: %w", err)
+		}
+		result := map[string]interface{}{
+			"type":          "reconnections",
+			"reconnections": reconnects,
+			"count":         len(reconnects),
+		}
+		filterMsg := ""
+		if input.ServiceKey != "" {
+			filterMsg = fmt.Sprintf(" for service %s", input.ServiceKey)
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d reconnection records%s", len(reconnects), filterMsg)},
+			},
+		}, result, nil
+
+	default:
+		return nil, nil, fmt.Errorf("invalid history type: %s (valid types: events, errors, reconnections)", input.Type)
+	}
 }
