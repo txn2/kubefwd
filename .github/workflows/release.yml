@@ -5,15 +5,16 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write  # Required for keyless signing with Cosign and SLSA provenance
-  attestations: write  # Required for GitHub attestations
+permissions: {}  # Restrict default token permissions
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write  # Required for keyless signing with Cosign and SLSA provenance
+      attestations: write  # Required for GitHub attestations
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
     steps:
