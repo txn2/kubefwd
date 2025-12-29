@@ -569,3 +569,257 @@ func TestWatcherOpts_Fields(t *testing.T) {
 		t.Errorf("Expected FieldSelector 'metadata.name=frontend', got %q", opts.FieldSelector)
 	}
 }
+
+func TestManager_GetContextIndex(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// First context should get index 0
+	idx1 := mgr.GetContextIndex("ctx1")
+	if idx1 != 0 {
+		t.Errorf("Expected first context index 0, got %d", idx1)
+	}
+
+	// Same context should return same index
+	idx1Again := mgr.GetContextIndex("ctx1")
+	if idx1Again != 0 {
+		t.Errorf("Expected same context to return 0, got %d", idx1Again)
+	}
+
+	// Second context should get index 1
+	idx2 := mgr.GetContextIndex("ctx2")
+	if idx2 != 1 {
+		t.Errorf("Expected second context index 1, got %d", idx2)
+	}
+
+	// Third context should get index 2
+	idx3 := mgr.GetContextIndex("ctx3")
+	if idx3 != 2 {
+		t.Errorf("Expected third context index 2, got %d", idx3)
+	}
+}
+
+func TestManager_GetNamespaceIndex(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// First namespace key should get index 0
+	idx1 := mgr.GetNamespaceIndex("ns1.ctx1")
+	if idx1 != 0 {
+		t.Errorf("Expected first namespace index 0, got %d", idx1)
+	}
+
+	// Same key should return same index
+	idx1Again := mgr.GetNamespaceIndex("ns1.ctx1")
+	if idx1Again != 0 {
+		t.Errorf("Expected same key to return 0, got %d", idx1Again)
+	}
+
+	// Second namespace key should get index 1
+	idx2 := mgr.GetNamespaceIndex("ns2.ctx1")
+	if idx2 != 1 {
+		t.Errorf("Expected second namespace index 1, got %d", idx2)
+	}
+
+	// Different context same namespace should get new index
+	idx3 := mgr.GetNamespaceIndex("ns1.ctx2")
+	if idx3 != 2 {
+		t.Errorf("Expected third namespace index 2, got %d", idx3)
+	}
+}
+
+func TestManager_GetOrCreateIPLock_AdHoc(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Get lock for namespace without watcher - should create ad-hoc lock
+	lock1 := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock1 == nil {
+		t.Fatal("Expected non-nil lock")
+	}
+
+	// Same namespace/context should return same lock
+	lock1Again := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock1Again != lock1 {
+		t.Error("Expected same lock for same namespace/context")
+	}
+
+	// Different namespace should return different lock
+	lock2 := mgr.GetOrCreateIPLock("ctx1", "ns2")
+	if lock2 == nil {
+		t.Fatal("Expected non-nil lock for ns2")
+	}
+	if lock2 == lock1 {
+		t.Error("Expected different lock for different namespace")
+	}
+
+	// Different context should return different lock
+	lock3 := mgr.GetOrCreateIPLock("ctx2", "ns1")
+	if lock3 == nil {
+		t.Fatal("Expected non-nil lock for ctx2")
+	}
+	if lock3 == lock1 {
+		t.Error("Expected different lock for different context")
+	}
+}
+
+func TestManager_GetOrCreateIPLock_WithWatcher(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Manually add a watcher with its own ipLock
+	watcherLock := &sync.Mutex{}
+	watcher := &NamespaceWatcher{
+		key:       "ns1.ctx1",
+		namespace: "ns1",
+		context:   "ctx1",
+		ipLock:    watcherLock,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+	}
+	mgr.mu.Lock()
+	mgr.watchers["ns1.ctx1"] = watcher
+	mgr.mu.Unlock()
+
+	// GetOrCreateIPLock should return watcher's lock
+	lock := mgr.GetOrCreateIPLock("ctx1", "ns1")
+	if lock != watcherLock {
+		t.Error("Expected watcher's lock to be returned")
+	}
+}
+
+func TestManager_adHocIPLocks_Initialization(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// adHocIPLocks should be initialized
+	if mgr.adHocIPLocks == nil {
+		t.Error("adHocIPLocks should be initialized")
+	}
+}
+
+func TestParsePortMapPublic(t *testing.T) {
+	// Test nil mappings
+	result := parsePortMapPublic(nil)
+	if result != nil {
+		t.Error("Expected nil for nil mappings")
+	}
+
+	// Test empty mappings
+	result = parsePortMapPublic([]string{})
+	if result != nil {
+		t.Error("Expected nil for empty mappings")
+	}
+
+	// Test valid mappings
+	result = parsePortMapPublic([]string{"80:8080", "443:8443"})
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(*result) != 2 {
+		t.Errorf("Expected 2 mappings, got %d", len(*result))
+	}
+	if (*result)[0].SourcePort != "80" || (*result)[0].TargetPort != "8080" {
+		t.Errorf("First mapping incorrect: got %+v", (*result)[0])
+	}
+	if (*result)[1].SourcePort != "443" || (*result)[1].TargetPort != "8443" {
+		t.Errorf("Second mapping incorrect: got %+v", (*result)[1])
+	}
+
+	// Test with invalid mappings (should be skipped)
+	result = parsePortMapPublic([]string{"invalid", "80:8080", "alsobad"})
+	if result == nil || len(*result) != 1 {
+		t.Errorf("Expected 1 valid mapping, got %v", result)
+	}
+}
+
+func TestManager_CreateServiceFWD_NoSelector(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Service without selector should fail
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-selector",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: nil,
+			Ports: []v1.ServicePort{
+				{Port: 80},
+			},
+		},
+	}
+
+	_, err := mgr.CreateServiceFWD("ctx", "default", svc)
+	if err == nil {
+		t.Error("Expected error for service without selector")
+	}
+	if err != nil && !contains(err.Error(), "no pod selector") {
+		t.Errorf("Expected 'no pod selector' error, got: %v", err)
+	}
+}
+
+func TestManager_CreateServiceFWD_EmptySelector(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Service with empty selector should fail
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "empty-selector",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{},
+			Ports: []v1.ServicePort{
+				{Port: 80},
+			},
+		},
+	}
+
+	_, err := mgr.CreateServiceFWD("ctx", "default", svc)
+	if err == nil {
+		t.Error("Expected error for service with empty selector")
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
+}
+
+func containsAt(s, substr string, start int) bool {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
