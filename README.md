@@ -10,7 +10,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/txn2/kubefwd)](https://hub.docker.com/r/txn2/kubefwd)
 [![GitHub Downloads](https://img.shields.io/github/downloads/txn2/kubefwd/total)](https://github.com/txn2/kubefwd/releases)
 
-**[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[TUI Guide](https://kubefwd.com/tui-guide/)**
+**[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[TUI Guide](https://kubefwd.com/tui-guide/)** | **[API Reference](https://kubefwd.com/api-reference/)** | **[MCP (AI Integration)](https://kubefwd.com/mcp-integration/)**
 
 ## Develop Locally, Connect to Kubernetes
 

@@ -871,6 +871,28 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 		return nil, fmt.Errorf("failed to create service forward: %w", err)
 	}
 
+	// Subscribe to PodAdded events BEFORE adding to registry
+	// This ensures we don't miss the event
+	podAddedCh := make(chan events.Event, 10)
+	var unsubscribe func()
+
+	if bus := fwdtui.GetEventBus(); bus != nil {
+		busUnsubscribe := bus.Subscribe(events.PodAdded, func(e events.Event) {
+			// Only capture events for this service
+			if e.ServiceKey == key {
+				select {
+				case podAddedCh <- e:
+				default:
+					// Channel full, event already captured
+				}
+			}
+		})
+		unsubscribe = func() {
+			busUnsubscribe() // Remove handler from bus to prevent memory leak
+			close(podAddedCh)
+		}
+	}
+
 	// Add to registry (this starts forwarding asynchronously)
 	fwdsvcregistry.Add(svcfwd)
 
@@ -887,16 +909,39 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 		})
 	}
 
-	// Return response with available info
-	// Note: LocalIP and Hostnames are allocated asynchronously per-pod
-	// Client should poll /services/:key for complete info
+	// Wait for at least one pod to be added (up to 10 seconds)
+	// This ensures the service is in the state store before we return
+	var localIP string
+	var hostnames []string
+
+	if unsubscribe != nil {
+		timeout := time.After(10 * time.Second)
+		select {
+		case e := <-podAddedCh:
+			localIP = e.LocalIP
+			hostnames = e.Hostnames
+		case <-timeout:
+			// Timeout waiting for pod - service may still be starting
+			// Check the state store as a fallback
+			if store := fwdtui.GetStore(); store != nil {
+				if svcSnapshot := store.GetService(key); svcSnapshot != nil {
+					if len(svcSnapshot.PortForwards) > 0 {
+						localIP = svcSnapshot.PortForwards[0].LocalIP
+						hostnames = svcSnapshot.PortForwards[0].Hostnames
+					}
+				}
+			}
+		}
+		unsubscribe()
+	}
+
 	return &types.AddServiceResponse{
 		Key:         key,
 		ServiceName: req.ServiceName,
 		Namespace:   req.Namespace,
 		Context:     ctx,
-		LocalIP:     "",  // Allocated asynchronously
-		Hostnames:   nil, // Set asynchronously
+		LocalIP:     localIP,
+		Hostnames:   hostnames,
 		Ports:       ports,
 	}, nil
 }
