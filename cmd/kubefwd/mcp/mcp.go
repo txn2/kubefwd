@@ -118,6 +118,11 @@ func runMCP(cmd *cobra.Command, args []string) {
 	k8sDiscovery := fwdmcp.NewKubernetesDiscoveryHTTP(apiURL)
 	connectionInfo := fwdmcp.NewConnectionInfoProviderHTTP(apiURL)
 
+	// Create enhanced HTTP adapters for AI-optimized tools
+	analysisProvider := fwdmcp.NewAnalysisProviderHTTP(apiURL)
+	httpTrafficProvider := fwdmcp.NewHTTPTrafficProviderHTTP(apiURL)
+	historyProvider := fwdmcp.NewHistoryProviderHTTP(apiURL)
+
 	// Initialize MCP server
 	server := fwdmcp.Init(Version)
 	server.SetStateReader(stateReader)
@@ -133,6 +138,11 @@ func runMCP(cmd *cobra.Command, args []string) {
 	server.SetServiceCRUD(serviceCRUD)
 	server.SetKubernetesDiscovery(k8sDiscovery)
 	server.SetConnectionInfoProvider(connectionInfo)
+
+	// Set enhanced providers for AI-optimized tools
+	server.SetAnalysisProvider(analysisProvider)
+	server.SetHTTPTrafficProvider(httpTrafficProvider)
+	server.SetHistoryProvider(historyProvider)
 
 	log.Info("MCP server initialized, starting stdio transport...")
 
