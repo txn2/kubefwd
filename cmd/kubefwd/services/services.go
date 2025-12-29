@@ -205,13 +205,6 @@ Try:
 	// Initialize API mode if enabled
 	if apiMode {
 		fwdapi.Enable()
-		// API mode also needs the TUI state store and event bus for data access
-		// Enable TUI components without actually running the TUI
-		if !tuiMode {
-			fwdtui.Version = Version
-			fwdtui.Enable()
-			fwdmetrics.GetRegistry().Start()
-		}
 
 		// In API mode, enable auto-reconnect by default unless user explicitly disabled it
 		if !cmd.Flags().Changed("auto-reconnect") {
@@ -222,12 +215,6 @@ Try:
 	// Initialize MCP mode if enabled
 	if mcpMode {
 		fwdmcp.Enable()
-		// MCP mode needs the TUI state store for data access
-		if !tuiMode && !apiMode {
-			fwdtui.Version = Version
-			fwdtui.Enable()
-			fwdmetrics.GetRegistry().Start()
-		}
 
 		// In MCP mode, enable auto-reconnect by default unless user explicitly disabled it
 		if !cmd.Flags().Changed("auto-reconnect") {
@@ -410,6 +397,7 @@ Try:
 	if fwdapi.IsEnabled() {
 		// Initialize event infrastructure for API mode (allows events without TUI)
 		fwdtui.InitEventInfrastructure()
+		fwdmetrics.GetRegistry().Start()
 
 		apiManager = fwdapi.Init(stopListenCh, triggerShutdown, Version)
 
@@ -435,6 +423,10 @@ Try:
 
 	// Initialize MCP server if in MCP mode
 	if fwdmcp.IsEnabled() {
+		// Initialize event infrastructure for MCP mode (allows events without TUI)
+		fwdtui.InitEventInfrastructure()
+		fwdmetrics.GetRegistry().Start()
+
 		mcpServer = fwdmcp.Init(Version)
 
 		// Set up adapters for MCP data access (reuse API adapters)
