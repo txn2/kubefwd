@@ -56,6 +56,8 @@ nav:
     - Configuration: configuration.md
     - Advanced Usage: advanced-usage.md
     - Troubleshooting: troubleshooting.md
+  - REST API: api-reference.md
+  - MCP: mcp-integration.md
   - Reference:
     - Architecture: architecture.md
     - Comparison: comparison.md
