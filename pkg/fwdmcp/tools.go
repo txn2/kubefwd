@@ -122,19 +122,19 @@ func (s *Server) registerTools() {
 	// add_service - Forward a single service
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "add_service",
-		Description: "Forward a single service to localhost. Returns local IP, hostnames (added to /etc/hosts), and mapped ports.",
+		Description: "Forward a single service to localhost. Returns local IP, hostnames (added to /etc/hosts), and mapped ports. Requires namespace and service_name.",
 	}, s.handleAddService)
 
 	// remove_service - Stop forwarding a service
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "remove_service",
-		Description: "Stop forwarding a service. Removes /etc/hosts entries and releases the allocated IP.",
+		Description: "Stop forwarding a service. Removes /etc/hosts entries and releases the allocated IP. Requires key (e.g., 'servicename.namespace.context').",
 	}, s.handleRemoveService)
 
 	// get_connection_info - Get connection details
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_connection_info",
-		Description: "Get connection details for a forwarded service: IP address, hostnames, ports, and environment variables. Use after add_service to get ready-to-use connection strings.",
+		Description: "Get connection details for a forwarded service: IP address, hostnames, ports, and environment variables. Use after add_service to get ready-to-use connection strings. Requires service_name.",
 	}, s.handleGetConnectionInfo)
 
 	// list_k8s_namespaces - Discover namespaces
@@ -146,7 +146,7 @@ func (s *Server) registerTools() {
 	// list_k8s_services - Discover services
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_k8s_services",
-		Description: "List services in a namespace with type, ports, and forwarding status. Use to discover what can be forwarded.",
+		Description: "List services in a namespace with type, ports, and forwarding status. Use to discover what can be forwarded. Requires namespace.",
 	}, s.handleListK8sServices)
 
 	// find_services - Search forwards
@@ -172,13 +172,13 @@ func (s *Server) registerTools() {
 	// get_service - Get service details
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_service",
-		Description: "Get detailed service info: all port forwards, pods, hostnames, traffic bytes/rates, and error state.",
+		Description: "Get detailed service info: all port forwards, pods, hostnames, traffic bytes/rates, and error state. Requires key (e.g., 'servicename.namespace.context').",
 	}, s.handleGetService)
 
 	// reconnect_service - Force reconnection
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "reconnect_service",
-		Description: "Reconnect a service to its pods. Use when service is in error state. Forces immediate reconnection attempt.",
+		Description: "Reconnect a service to its pods. Use when service is in error state. Forces immediate reconnection attempt. Requires key (e.g., 'servicename.namespace.context').",
 	}, s.handleReconnectService)
 
 	// reconnect_all_errors - Batch reconnect
@@ -190,7 +190,7 @@ func (s *Server) registerTools() {
 	// sync_service - Re-sync pods
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "sync_service",
-		Description: "Re-sync pods for a service. Discovers pod changes and updates forwards. Use after deployments or pod restarts.",
+		Description: "Re-sync pods for a service. Discovers pod changes and updates forwards. Use after deployments or pod restarts. Requires key (e.g., 'servicename.namespace.context').",
 	}, s.handleSyncService)
 
 	// get_health - Get health status
@@ -234,7 +234,7 @@ func (s *Server) registerTools() {
 	// get_http_traffic - View HTTP requests
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_http_traffic",
-		Description: "View HTTP requests through a forward: method, path, status code, response time. Debug API calls and verify connectivity.",
+		Description: "View HTTP requests through a forward: method, path, status code, response time. Debug API calls and verify connectivity. Requires service_key (e.g., 'myservice.namespace.context') or forward_key.",
 	}, s.handleGetHTTPTraffic)
 
 	// list_contexts - List clusters
@@ -246,7 +246,7 @@ func (s *Server) registerTools() {
 	// get_history - Access history
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_history",
-		Description: "Access event, error, or reconnection history. Filter by type and service key. Analyze patterns over time.",
+		Description: "Access event, error, or reconnection history. Filter by type and service key. Analyze patterns over time. Requires type ('events', 'errors', or 'reconnections').",
 	}, s.handleGetHistory)
 }
 
