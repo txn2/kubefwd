@@ -136,6 +136,15 @@ func NewManager(cfg ManagerConfig) *NamespaceManager {
 
 // StartWatcher starts a namespace watcher for the given context and namespace
 func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts) (*NamespaceInfo, error) {
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := m.configGetter.GetCurrentContext(m.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -200,6 +209,15 @@ func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts)
 
 // StopWatcher stops the namespace watcher for the given context and namespace
 func (m *NamespaceManager) StopWatcher(ctx, namespace string) error {
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := m.configGetter.GetCurrentContext(m.configPath)
+		if err != nil {
+			return fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
 	m.mu.Lock()
 	key := WatcherKey(namespace, ctx)
 	watcher, ok := m.watchers[key]
