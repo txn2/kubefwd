@@ -111,6 +111,51 @@ func (s *Server) registerPrompts() {
 		Description: "Guide for monitoring kubefwd traffic and health",
 		Arguments:   []*mcp.PromptArgument{},
 	}, s.handleMonitorPrompt)
+
+	// === Debugging and quick access prompts ===
+
+	// debug_service - Systematic debugging for a specific service
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "debug_service",
+		Description: "Systematic debugging workflow for a specific service with HTTP traffic inspection",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "service_name",
+				Description: "Name of the service to debug",
+				Required:    true,
+			},
+			{
+				Name:        "symptom",
+				Description: "What's going wrong (e.g., 'no response', '500 errors', 'timeout')",
+				Required:    false,
+			},
+		},
+	}, s.handleDebugServicePrompt)
+
+	// quick_connect - Fastest path to connect to a service
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "quick_connect",
+		Description: "Fastest path from 'I need to connect to X' to a working connection",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "service_name",
+				Description: "Name of the service to connect to",
+				Required:    true,
+			},
+			{
+				Name:        "namespace",
+				Description: "Namespace containing the service (optional, will search if not specified)",
+				Required:    false,
+			},
+		},
+	}, s.handleQuickConnectPrompt)
+
+	// analyze_issues - AI-guided comprehensive issue resolution
+	s.mcpServer.AddPrompt(&mcp.Prompt{
+		Name:        "analyze_issues",
+		Description: "Comprehensive analysis of all kubefwd issues with prioritized resolution steps",
+		Arguments:   []*mcp.PromptArgument{},
+	}, s.handleAnalyzeIssuesPrompt)
 }
 
 // Prompt handlers
@@ -575,6 +620,269 @@ Format your response as a monitoring dashboard summary, easy to scan quickly.`
 
 	return &mcp.GetPromptResult{
 		Description: "Monitoring and observability guide for kubefwd",
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+// === Debugging and quick access prompt handlers ===
+
+func (s *Server) handleDebugServicePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	serviceName := ""
+	symptom := ""
+
+	if req.Params.Arguments != nil {
+		if v, ok := req.Params.Arguments["service_name"]; ok {
+			serviceName = v
+		}
+		if v, ok := req.Params.Arguments["symptom"]; ok {
+			symptom = v
+		}
+	}
+
+	content := fmt.Sprintf(`You are performing a systematic debug of a Kubernetes service through kubefwd.
+
+**Target Service**: %s
+`, serviceName)
+
+	if symptom != "" {
+		content += fmt.Sprintf("**Reported Symptom**: %s\n", symptom)
+	}
+
+	content += `
+## Debugging Workflow
+
+### Step 1: Check Service Status
+1. Use 'find_services' with query='` + serviceName + `' to find the service
+2. If found, use 'get_service' with the full key to get detailed status
+3. If not found, the service may not be forwarded - check with 'list_k8s_services'
+
+**What to look for:**
+- Is the service in 'active', 'error', or 'partial' status?
+- Are there any error messages?
+- What pods are backing the service?
+
+### Step 2: Analyze HTTP Traffic (if applicable)
+1. Use 'get_http_traffic' with service_key to inspect recent requests
+2. Look for patterns:
+   - Are requests reaching the service?
+   - What status codes are being returned?
+   - Are there timeout issues?
+
+**What to look for:**
+- 4xx errors (client-side issues, wrong paths)
+- 5xx errors (server-side issues, service unhealthy)
+- No traffic at all (DNS/routing issue)
+
+### Step 3: Check Diagnostics
+1. Use 'diagnose_errors' to get error analysis
+2. For specific service issues, the error type helps identify the cause:
+   - **connection_refused**: Pod not ready or wrong port
+   - **timeout**: Network policy or pod unresponsive
+   - **pod_not_found**: Pod deleted, needs sync
+
+### Step 4: Examine History (for recurring issues)
+1. Use 'get_history' with type='errors' to see past errors
+2. Use 'get_history' with type='reconnections' and service_key to see reconnection attempts
+3. Look for patterns - is this a recurring issue?
+
+### Step 5: Take Action
+Based on findings:
+- **If pod not ready**: Wait for pod to be ready, use 'sync_service'
+- **If connection issues**: Use 'reconnect_service' to retry
+- **If wrong port/config**: Service configuration may need review
+- **If no pods**: Use 'sync_service' with force=true
+
+### Step 6: Verify Fix
+1. After taking action, use 'get_service' to confirm status is 'active'
+2. Use 'get_http_traffic' to confirm traffic is flowing
+3. Report the resolution
+
+Be methodical and report findings at each step. Provide actionable recommendations.`
+
+	return &mcp.GetPromptResult{
+		Description: fmt.Sprintf("Debug service: %s", serviceName),
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+func (s *Server) handleQuickConnectPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	serviceName := ""
+	namespace := ""
+
+	if req.Params.Arguments != nil {
+		if v, ok := req.Params.Arguments["service_name"]; ok {
+			serviceName = v
+		}
+		if v, ok := req.Params.Arguments["namespace"]; ok {
+			namespace = v
+		}
+	}
+
+	content := fmt.Sprintf(`You are helping the user connect to a Kubernetes service as fast as possible.
+
+**Target Service**: %s
+`, serviceName)
+
+	if namespace != "" {
+		content += fmt.Sprintf("**Namespace**: %s\n", namespace)
+	}
+
+	content += `
+## Quick Connect Workflow
+
+### Step 1: Find the Service (< 5 seconds)
+`
+	if namespace != "" {
+		content += fmt.Sprintf(`Use 'list_k8s_services' with namespace='%s' to find the service.
+`, namespace)
+	} else {
+		content += `Use 'find_services' with query='` + serviceName + `' to search forwarded services.
+If not found, use 'list_k8s_namespaces' then 'list_k8s_services' to find it.
+`
+	}
+
+	content += `
+### Step 2: Forward if Needed
+If the service is not already forwarded:
+- Use 'add_service' with namespace and service_name
+- Wait for forwarding to start
+- Confirm with 'get_service'
+
+### Step 3: Get Connection Info (the deliverable)
+Use 'get_connection_info' with service_name='` + serviceName + `' and provide:
+
+**Ready-to-use connection details:**
+` + "```" + `
+Host:       <service-hostname>
+IP:         <local-ip>
+Port:       <port>
+` + "```" + `
+
+**For databases, provide connection string:**
+` + "```bash" + `
+# PostgreSQL
+postgresql://user:pass@` + serviceName + `:5432/dbname
+
+# MySQL
+mysql://user:pass@` + serviceName + `:3306/dbname
+
+# MongoDB
+mongodb://` + serviceName + `:27017
+
+# Redis
+redis://` + serviceName + `:6379
+` + "```" + `
+
+**For HTTP services, provide:**
+` + "```bash" + `
+# Base URL
+http://` + serviceName + `:<port>
+
+# Quick test
+curl http://` + serviceName + `/health
+` + "```" + `
+
+**Environment variables:**
+` + "```bash" + `
+export ` + serviceName + `_HOST=` + serviceName + `
+export ` + serviceName + `_PORT=<port>
+` + "```" + `
+
+### Goal
+The user should be able to copy-paste something and immediately connect. Be concise but complete.`
+
+	return &mcp.GetPromptResult{
+		Description: fmt.Sprintf("Quick connect to: %s", serviceName),
+		Messages: []*mcp.PromptMessage{
+			{
+				Role:    "user",
+				Content: &mcp.TextContent{Text: content},
+			},
+		},
+	}, nil
+}
+
+func (s *Server) handleAnalyzeIssuesPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	content := `You are performing a comprehensive analysis of all kubefwd issues with prioritized resolution.
+
+## Analysis Workflow
+
+### Step 1: Get Full Analysis
+Use 'get_analysis' to get AI-optimized analysis including:
+- Overall status (healthy/degraded/unhealthy)
+- All detected issues with severity
+- Recommendations from the system
+- Suggested actions with API endpoints
+
+### Step 2: Quick Status Check
+Use 'get_quick_status' to verify current state:
+- Is it ok, issues, or error?
+- How many errors?
+- What's the uptime?
+
+### Step 3: Prioritize Issues
+From the analysis, organize issues by priority:
+
+**🔴 CRITICAL (Fix First)**
+- Services completely unavailable
+- Multiple pods failing
+- Core infrastructure services affected
+
+**🟠 HIGH (Fix Soon)**
+- Partial service availability
+- Connection timeouts
+- Recent failures that may cascade
+
+**🟡 MEDIUM (Schedule Fix)**
+- Intermittent issues
+- Performance degradation
+- Non-critical services affected
+
+**🟢 LOW (Monitor)**
+- Cosmetic issues
+- Services with auto-recovery
+- Already resolving
+
+### Step 4: Resolution Plan
+For each issue, provide:
+1. **What's wrong**: Clear description
+2. **Why it matters**: Impact on users/services
+3. **How to fix**: Specific tool call or action
+4. **Verification**: How to confirm it's fixed
+
+### Step 5: Execute Fixes
+For automated fixes:
+- Use 'reconnect_service' for connection issues
+- Use 'sync_service' for stale pod data
+- Use 'reconnect_all_errors' for bulk recovery
+
+### Step 6: Check History for Patterns
+Use 'get_history' with type='errors' to identify:
+- Recurring issues that need permanent fixes
+- Services that fail frequently
+- Time patterns (e.g., during deployments)
+
+### Step 7: Report Summary
+Provide a summary:
+- Issues found: X
+- Issues resolved: Y
+- Manual intervention needed: Z
+- Recommendations for prevention
+
+Be thorough but actionable. Focus on getting the user's environment healthy.`
+
+	return &mcp.GetPromptResult{
+		Description: "Comprehensive issue analysis and resolution",
 		Messages: []*mcp.PromptMessage{
 			{
 				Role:    "user",
