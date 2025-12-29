@@ -1,5 +1,29 @@
 # MCP Integration
 
+## What is MCP?
+
+The **Model Context Protocol (MCP)** is an open standard that lets AI assistants connect to external tools and services. Instead of just answering questions, your AI can actually *do things*: forward ports, query databases, run commands, and interact with APIs.
+
+kubefwd's MCP integration gives your AI assistant full access to Kubernetes port forwarding capabilities. Your AI can discover services, establish connections, monitor traffic, stream logs, and troubleshoot issues, all through natural conversation.
+
+**Supported AI Platforms:**
+
+| Platform | Support |
+|----------|---------|
+| **Claude** (Desktop & Code) | Full support |
+| **ChatGPT** | Full support |
+| **Cursor** | Full support |
+| **Windsurf** | Full support |
+| **VS Code Copilot** | Full support |
+| **Gemini** | Full support |
+| **Zed** | Preview |
+| **Cline** | Full support |
+| **JetBrains IDEs** | Planned |
+
+---
+
+## Why MCP?
+
 Don't ask about kubefwd. Ask about your work.
 
 Need a database connection? Say "I need to connect to PostgreSQL in staging." Your AI handles the infrastructure. Want to test a deployment? Say "Test my new API and show me the logs." kubefwd becomes invisible.
@@ -115,6 +139,56 @@ sudo -E kubefwd  # Idle mode, API enabled
 === "Cursor"
 
     Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+=== "Windsurf"
+
+    Open Windsurf, click the hammer (MCP) icon in Cascade sidebar, then Configure:
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+=== "ChatGPT"
+
+    In ChatGPT settings, add a custom MCP connector pointing to kubefwd.
+    See [OpenAI MCP docs](https://platform.openai.com/docs/guides/tools-connectors-mcp) for details.
+
+=== "VS Code Copilot"
+
+    Add to your VS Code settings or `.vscode/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+=== "Cline"
+
+    In Cline settings (VS Code extension), add MCP server:
 
     ```json
     {
