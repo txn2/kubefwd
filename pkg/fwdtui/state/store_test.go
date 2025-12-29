@@ -1322,3 +1322,114 @@ func TestRemoveByNamespace_NoMatch(t *testing.T) {
 		t.Errorf("Expected 1 forward remaining, got %d", store.Count())
 	}
 }
+
+// TestRemoveByNamespace_BlocksNewAdds tests that RemoveByNamespace blocks future AddForward calls
+// This prevents race condition where in-flight port forward events re-add entries after removal
+func TestRemoveByNamespace_BlocksNewAdds(t *testing.T) {
+	store := NewStore(100)
+
+	// Add a forward
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Fatalf("Expected 1 forward, got %d", store.Count())
+	}
+
+	// Remove the namespace
+	removed := store.RemoveByNamespace("ns1", "ctx1")
+	if removed != 1 {
+		t.Errorf("Expected 1 removed, got %d", removed)
+	}
+
+	if store.Count() != 0 {
+		t.Errorf("Expected 0 forwards after removal, got %d", store.Count())
+	}
+
+	// Try to add a new forward for the removed namespace (simulating in-flight event)
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+	})
+
+	// The add should be blocked - count should still be 0
+	if store.Count() != 0 {
+		t.Errorf("Expected blocked namespace to prevent AddForward, but count is %d", store.Count())
+	}
+
+	// Adding to a different namespace should still work
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc2.ns2.ctx1.pod1.8080",
+		ServiceKey:  "svc2.ns2.ctx1",
+		ServiceName: "svc2",
+		Namespace:   "ns2",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Errorf("Expected AddForward to work for unblocked namespace, got count %d", store.Count())
+	}
+}
+
+// TestUnblockNamespace tests that UnblockNamespace allows AddForward again
+func TestUnblockNamespace(t *testing.T) {
+	store := NewStore(100)
+
+	// Add and remove a namespace
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod1.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+	})
+	store.RemoveByNamespace("ns1", "ctx1")
+
+	// Verify blocked
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod2.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+	})
+	if store.Count() != 0 {
+		t.Errorf("Expected namespace to be blocked, got count %d", store.Count())
+	}
+
+	// Unblock the namespace
+	store.UnblockNamespace("ns1", "ctx1")
+
+	// Now AddForward should work
+	store.AddForward(ForwardSnapshot{
+		Key:         "svc1.ns1.ctx1.pod3.8080",
+		ServiceKey:  "svc1.ns1.ctx1",
+		ServiceName: "svc1",
+		Namespace:   "ns1",
+		Context:     "ctx1",
+		PodName:     "pod3",
+		LocalPort:   "8080",
+	})
+
+	if store.Count() != 1 {
+		t.Errorf("Expected AddForward to work after UnblockNamespace, got count %d", store.Count())
+	}
+}
