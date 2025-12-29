@@ -1,12 +1,18 @@
 package fwdapi
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdcfg"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdns"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -573,4 +579,204 @@ func CreateAPIAdapters() (types.StateReader, types.MetricsProvider, types.Servic
 // CreateDiagnosticsAdapter creates the diagnostics adapter
 func CreateDiagnosticsAdapter(getManager func() types.ManagerInfo) types.DiagnosticsProvider {
 	return NewDiagnosticsProviderAdapter(fwdtui.GetStore, getManager)
+}
+
+// KubernetesDiscoveryAdapter provides Kubernetes resource discovery using the NamespaceManager
+type KubernetesDiscoveryAdapter struct {
+	getNsManager func() *fwdns.NamespaceManager
+	configGetter *fwdcfg.ConfigGetter
+	configPath   string
+}
+
+// NewKubernetesDiscoveryAdapter creates a new KubernetesDiscoveryAdapter
+func NewKubernetesDiscoveryAdapter(getNsManager func() *fwdns.NamespaceManager, configPath string) *KubernetesDiscoveryAdapter {
+	return &KubernetesDiscoveryAdapter{
+		getNsManager: getNsManager,
+		configGetter: fwdcfg.NewConfigGetter(),
+		configPath:   configPath,
+	}
+}
+
+// ListNamespaces returns available namespaces in the cluster
+func (a *KubernetesDiscoveryAdapter) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	// Get or create clientSet for this context
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		// Try to create one
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	// List namespaces from the cluster
+	nsList, err := clientSet.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+
+	// Get list of forwarded namespaces
+	forwardedNs := make(map[string]bool)
+	for _, w := range nsManager.ListWatchers() {
+		if w.Context == ctx {
+			forwardedNs[w.Namespace] = true
+		}
+	}
+
+	result := make([]types.K8sNamespace, len(nsList.Items))
+	for i, ns := range nsList.Items {
+		result[i] = types.K8sNamespace{
+			Name:      ns.Name,
+			Status:    string(ns.Status.Phase),
+			Forwarded: forwardedNs[ns.Name],
+		}
+	}
+
+	return result, nil
+}
+
+// ListServices returns available services in a namespace
+func (a *KubernetesDiscoveryAdapter) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	// Get or create clientSet for this context
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	// List services from the cluster
+	svcList, err := clientSet.CoreV1().Services(namespace).List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+
+	// Build map of forwarded services
+	forwardedSvcs := make(map[string]string) // service name -> forward key
+	for _, svc := range fwdsvcregistry.GetAll() {
+		if svc.Namespace == namespace && svc.Context == ctx {
+			key := svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
+			forwardedSvcs[svc.Svc.Name] = key
+		}
+	}
+
+	result := make([]types.K8sService, len(svcList.Items))
+	for i, svc := range svcList.Items {
+		ports := make([]types.K8sServicePort, len(svc.Spec.Ports))
+		for j, port := range svc.Spec.Ports {
+			ports[j] = types.K8sServicePort{
+				Name:       port.Name,
+				Port:       port.Port,
+				TargetPort: port.TargetPort.String(),
+				Protocol:   string(port.Protocol),
+			}
+		}
+
+		forwardKey, forwarded := forwardedSvcs[svc.Name]
+		result[i] = types.K8sService{
+			Name:       svc.Name,
+			Namespace:  svc.Namespace,
+			Type:       string(svc.Spec.Type),
+			ClusterIP:  svc.Spec.ClusterIP,
+			Ports:      ports,
+			Selector:   svc.Spec.Selector,
+			Forwarded:  forwarded,
+			ForwardKey: forwardKey,
+		}
+	}
+
+	return result, nil
+}
+
+// GetService returns details for a specific service
+func (a *KubernetesDiscoveryAdapter) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	svc, err := clientSet.CoreV1().Services(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("service not found: %w", err)
+	}
+
+	ports := make([]types.K8sServicePort, len(svc.Spec.Ports))
+	for i, port := range svc.Spec.Ports {
+		ports[i] = types.K8sServicePort{
+			Name:       port.Name,
+			Port:       port.Port,
+			TargetPort: port.TargetPort.String(),
+			Protocol:   string(port.Protocol),
+		}
+	}
+
+	// Check if forwarded
+	key := name + "." + namespace + "." + ctx
+	forwarded := fwdsvcregistry.Get(key) != nil
+
+	return &types.K8sService{
+		Name:       svc.Name,
+		Namespace:  svc.Namespace,
+		Type:       string(svc.Spec.Type),
+		ClusterIP:  svc.Spec.ClusterIP,
+		Ports:      ports,
+		Selector:   svc.Spec.Selector,
+		Forwarded:  forwarded,
+		ForwardKey: key,
+	}, nil
+}
+
+// ListContexts returns available Kubernetes contexts
+func (a *KubernetesDiscoveryAdapter) ListContexts() (*types.K8sContextsResponse, error) {
+	rawConfig, err := a.configGetter.GetClientConfig(a.configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	contexts := make([]types.K8sContext, 0, len(rawConfig.Contexts))
+	for name, ctx := range rawConfig.Contexts {
+		contexts = append(contexts, types.K8sContext{
+			Name:      name,
+			Cluster:   ctx.Cluster,
+			User:      ctx.AuthInfo,
+			Namespace: ctx.Namespace,
+			Active:    name == rawConfig.CurrentContext,
+		})
+	}
+
+	return &types.K8sContextsResponse{
+		Contexts:       contexts,
+		CurrentContext: rawConfig.CurrentContext,
+	}, nil
 }
