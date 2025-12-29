@@ -30,8 +30,9 @@ const (
 	// APIPort is the port the API server listens on
 	APIPort = "80"
 
-	// APIHostname is the hostname added to /etc/hosts
-	APIHostname = "api.kubefwd.local"
+	// Hostname is the hostname added to /etc/hosts for the web interface
+	// API is available at /api, docs at /docs, future web UI at /
+	Hostname = "kubefwd.internal"
 )
 
 var (
@@ -264,7 +265,8 @@ func (m *Manager) Run() error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Infof("API server listening on http://%s (http://%s/)", addr, APIHostname)
+	log.Infof("Server listening on http://%s (http://%s/)", addr, Hostname)
+	log.Infof("API: http://%s/api  Docs: http://%s/docs", Hostname, Hostname)
 
 	// Start server in goroutine
 	errCh := make(chan error, 1)
