@@ -201,12 +201,15 @@ func (a *namespaceManagerAdapter) ListNamespaces() []types.NamespaceInfoResponse
 	result := make([]types.NamespaceInfoResponse, len(watchers))
 	for i, w := range watchers {
 		result[i] = types.NamespaceInfoResponse{
-			Key:          w.Key,
-			Namespace:    w.Namespace,
-			Context:      w.Context,
-			ServiceCount: w.ServiceCount,
-			ActiveCount:  w.ActiveCount,
-			ErrorCount:   w.ErrorCount,
+			Key:           w.Key,
+			Namespace:     w.Namespace,
+			Context:       w.Context,
+			ServiceCount:  w.ServiceCount,
+			ActiveCount:   w.ActiveCount,
+			ErrorCount:    w.ErrorCount,
+			Running:       w.Running,
+			LabelSelector: w.LabelSelector,
+			FieldSelector: w.FieldSelector,
 		}
 	}
 	return result
@@ -219,12 +222,15 @@ func (a *namespaceManagerAdapter) GetNamespace(ctx, namespace string) (*types.Na
 	}
 	info := w.Info()
 	return &types.NamespaceInfoResponse{
-		Key:          info.Key,
-		Namespace:    info.Namespace,
-		Context:      info.Context,
-		ServiceCount: info.ServiceCount,
-		ActiveCount:  info.ActiveCount,
-		ErrorCount:   info.ErrorCount,
+		Key:           info.Key,
+		Namespace:     info.Namespace,
+		Context:       info.Context,
+		ServiceCount:  info.ServiceCount,
+		ActiveCount:   info.ActiveCount,
+		ErrorCount:    info.ErrorCount,
+		Running:       info.Running,
+		LabelSelector: info.LabelSelector,
+		FieldSelector: info.FieldSelector,
 	}, nil
 }
 

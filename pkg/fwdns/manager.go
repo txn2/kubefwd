@@ -183,8 +183,12 @@ func (m *NamespaceManager) StartWatcher(ctx, namespace string, opts WatcherOpts)
 		doneCh:        make(chan struct{}),
 		ipLock:        &sync.Mutex{},
 		startedAt:     time.Now(),
-		running:       true, // Set running before goroutine starts to avoid race condition
 	}
+
+	// Set running with mutex for proper memory visibility
+	watcher.runningMu.Lock()
+	watcher.running = true
+	watcher.runningMu.Unlock()
 
 	m.watchers[key] = watcher
 
