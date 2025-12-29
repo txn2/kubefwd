@@ -24,6 +24,8 @@ const (
 
 	ShutdownStarted
 	ShutdownComplete
+
+	NamespaceRemoved
 )
 
 // String returns a string representation of the event type
@@ -49,6 +51,8 @@ func (e EventType) String() string {
 		return "ShutdownStarted"
 	case ShutdownComplete:
 		return "ShutdownComplete"
+	case NamespaceRemoved:
+		return "NamespaceRemoved"
 	default:
 		return "Unknown"
 	}
@@ -119,5 +123,16 @@ func NewPodEvent(eventType EventType, service, namespace, context, podName, regi
 		Context:     context,
 		PodKey:      podName,
 		PodName:     podName,
+	}
+}
+
+// NewNamespaceRemovedEvent creates a new namespace removal event
+// This event signals that all services in the given namespace/context should be removed
+func NewNamespaceRemovedEvent(namespace, context string) Event {
+	return Event{
+		Type:      NamespaceRemoved,
+		Timestamp: time.Now(),
+		Namespace: namespace,
+		Context:   context,
 	}
 }
