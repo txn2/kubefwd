@@ -24,6 +24,8 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 // WatcherKey creates a unique key for a namespace/context combination
@@ -238,8 +240,14 @@ func (m *NamespaceManager) StopWatcher(ctx, namespace string) error {
 	// Wait for it to finish
 	<-watcher.Done()
 
-	// Remove all services for this namespace
+	// Remove all services for this namespace from the registry
 	m.removeNamespaceServices(namespace, ctx)
+
+	// Emit NamespaceRemoved event to clean up the state store
+	// This ensures both TUI and MCP state are properly updated
+	if fwdtui.EventsEnabled() {
+		fwdtui.Emit(events.NewNamespaceRemovedEvent(namespace, ctx))
+	}
 
 	// Remove from map
 	m.mu.Lock()
