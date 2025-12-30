@@ -103,6 +103,17 @@ type GetHistoryInput struct {
 	Count      int    `json:"count,omitempty" jsonschema:"Number of entries to return (default varies by type)"`
 }
 
+type GetPodLogsInput struct {
+	Namespace  string `json:"namespace" jsonschema:"The Kubernetes namespace"`
+	PodName    string `json:"pod_name" jsonschema:"Name of the pod to get logs from"`
+	Context    string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
+	Container  string `json:"container,omitempty" jsonschema:"Container name (default: first container)"`
+	TailLines  int    `json:"tail_lines,omitempty" jsonschema:"Number of lines from end (default: 100, max: 1000)"`
+	SinceTime  string `json:"since_time,omitempty" jsonschema:"RFC3339 timestamp to start from (e.g., 2024-01-15T10:30:00Z)"`
+	Previous   bool   `json:"previous,omitempty" jsonschema:"Get logs from previous container instance"`
+	Timestamps bool   `json:"timestamps,omitempty" jsonschema:"Include timestamps in log output"`
+}
+
 // registerTools registers all MCP tools
 func (s *Server) registerTools() {
 	// === Developer-focused tools (primary use cases) ===
@@ -148,6 +159,12 @@ func (s *Server) registerTools() {
 		Name:        "list_k8s_services",
 		Description: "List services in a namespace with type, ports, and forwarding status. Use to discover what can be forwarded. Requires namespace.",
 	}, s.handleListK8sServices)
+
+	// get_pod_logs - Get logs from a pod
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_pod_logs",
+		Description: "Get logs from a Kubernetes pod. Useful for debugging services. Returns recent log lines from the pod's container. Requires namespace and pod_name. Get pod names from the forwards in get_service or list_services output.",
+	}, s.handleGetPodLogs)
 
 	// find_services - Search forwards
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
@@ -979,6 +996,59 @@ func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolReq
 		if svc.Forwarded {
 			forwarded++
 		}
+	}
+
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
+}
+
+func (s *Server) handleGetPodLogs(ctx context.Context, req *mcp.CallToolRequest, input GetPodLogsInput) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace is required")
+	}
+
+	if input.PodName == "" {
+		return nil, nil, NewInvalidInputError("pod_name", "", "pod_name is required")
+	}
+
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
+	}
+
+	opts := types.PodLogsOptions{
+		Container:  input.Container,
+		TailLines:  input.TailLines,
+		SinceTime:  input.SinceTime,
+		Previous:   input.Previous,
+		Timestamps: input.Timestamps,
+	}
+
+	logs, err := k8s.GetPodLogs(k8sContext, input.Namespace, input.PodName, opts)
+	if err != nil {
+		return nil, nil, ClassifyError(err, map[string]interface{}{
+			"namespace": input.Namespace,
+			"pod":       input.PodName,
+			"context":   k8sContext,
+		})
+	}
+
+	result := map[string]interface{}{
+		"podName":       logs.PodName,
+		"namespace":     logs.Namespace,
+		"context":       logs.Context,
+		"containerName": logs.ContainerName,
+		"logs":          logs.Logs,
+		"lineCount":     logs.LineCount,
+		"truncated":     logs.Truncated,
 	}
 
 	// Return nil to let SDK auto-populate Content with full JSON data
