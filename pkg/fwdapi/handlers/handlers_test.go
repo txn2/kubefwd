@@ -2682,6 +2682,22 @@ func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opt
 	}, nil
 }
 
+func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
+}
+
 // Namespaces Handler Tests
 
 func TestNamespacesHandler_List(t *testing.T) {

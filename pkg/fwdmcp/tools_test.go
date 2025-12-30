@@ -619,6 +619,46 @@ func (m *mockK8sDiscovery) GetPodLogs(ctx, namespace, podName string, opts types
 	}, nil
 }
 
+func (m *mockK8sDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	return []types.K8sPod{
+		{Name: "pod-1", Namespace: namespace, Phase: "Running", Status: "Running", Ready: "1/1"},
+		{Name: "pod-2", Namespace: namespace, Phase: "Running", Status: "Running", Ready: "1/1"},
+	}, nil
+}
+
+func (m *mockK8sDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	return &types.K8sPodDetail{
+		Name:      podName,
+		Namespace: namespace,
+		Context:   ctx,
+		Phase:     "Running",
+		Status:    "Running",
+		Containers: []types.K8sContainerInfo{
+			{Name: "main", Image: "nginx:latest", Ready: true, State: "Running"},
+		},
+	}, nil
+}
+
+func (m *mockK8sDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	return []types.K8sEvent{
+		{Type: "Normal", Reason: "Scheduled", Message: "Successfully assigned pod"},
+		{Type: "Normal", Reason: "Pulled", Message: "Container image already present"},
+	}, nil
+}
+
+func (m *mockK8sDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	return &types.K8sEndpoints{
+		Name:      serviceName,
+		Namespace: namespace,
+		Subsets: []types.K8sEndpointSubset{
+			{
+				Addresses: []types.K8sEndpointAddress{{IP: "10.0.0.1", PodName: "pod-1"}},
+				Ports:     []types.K8sEndpointPort{{Port: 80, Protocol: "TCP"}},
+			},
+		},
+	}, nil
+}
+
 // mockConnectionInfoProvider implements ConnectionInfoProvider for testing
 type mockConnectionInfoProvider struct {
 	services []types.ConnectionInfoResponse
