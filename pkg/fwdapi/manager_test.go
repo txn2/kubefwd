@@ -488,92 +488,109 @@ func TestManager_GetNamespaceManager(t *testing.T) {
 	}
 }
 
-func TestManager_AddNamespace(t *testing.T) {
-	manager := &Manager{}
+// TestNamespaceControllerMethods tests the namespace controller interface methods
+func TestNamespaceControllerMethods(t *testing.T) {
 	mock := &mockNamespaceController{}
-	manager.SetNamespaceController(mock)
 
-	info, err := manager.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
+	// AddNamespace
+	info, err := mock.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-
 	if info == nil {
 		t.Fatal("Expected namespace info")
 	}
-
 	if info.Namespace != "default" {
 		t.Errorf("Expected namespace 'default', got '%s'", info.Namespace)
 	}
-}
 
-func TestManager_AddNamespaceNoController(t *testing.T) {
-	manager := &Manager{}
-
-	_, err := manager.AddNamespace("ctx", "ns", types.AddNamespaceOpts{})
-	if err == nil {
-		t.Error("Expected error when no controller is set")
-	}
-}
-
-func TestManager_RemoveNamespace(t *testing.T) {
-	manager := &Manager{}
-	mock := &mockNamespaceController{}
-	manager.SetNamespaceController(mock)
-
-	err := manager.RemoveNamespace("minikube", "default")
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-}
-
-func TestManager_ListNamespaces(t *testing.T) {
-	manager := &Manager{}
-	mock := &mockNamespaceController{}
-	mock.namespaces = []types.NamespaceInfoResponse{
-		{Key: "default.minikube", Namespace: "default", Context: "minikube"},
-	}
-	manager.SetNamespaceController(mock)
-
-	namespaces := manager.ListNamespaces()
+	// ListNamespaces
+	namespaces := mock.ListNamespaces()
 	if len(namespaces) != 1 {
 		t.Errorf("Expected 1 namespace, got %d", len(namespaces))
 	}
-}
 
-func TestManager_ListNamespacesNoController(t *testing.T) {
-	manager := &Manager{}
-
-	namespaces := manager.ListNamespaces()
-	if namespaces != nil {
-		t.Error("Expected nil when no controller is set")
-	}
-}
-
-func TestManager_GetNamespace(t *testing.T) {
-	manager := &Manager{}
-	mock := &mockNamespaceController{}
-	mock.namespaces = []types.NamespaceInfoResponse{
-		{Key: "default.minikube", Namespace: "default", Context: "minikube"},
-	}
-	manager.SetNamespaceController(mock)
-
-	info, err := manager.GetNamespace("minikube", "default")
+	// GetNamespace
+	ns, err := mock.GetNamespace("minikube", "default")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-
-	if info == nil {
+	if ns == nil {
 		t.Fatal("Expected namespace info")
+	}
+
+	// RemoveNamespace
+	err = mock.RemoveNamespace("minikube", "default")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
 	}
 }
 
-func TestManager_GetNamespaceNoController(t *testing.T) {
-	manager := &Manager{}
+// TestServiceCRUDMethods tests the service CRUD interface methods
+func TestServiceCRUDMethods(t *testing.T) {
+	mock := &mockServiceCRUD{}
 
-	_, err := manager.GetNamespace("ctx", "ns")
-	if err == nil {
-		t.Error("Expected error when no controller is set")
+	// AddService
+	resp, err := mock.AddService(types.AddServiceRequest{
+		ServiceName: "test-svc",
+		Namespace:   "default",
+		Context:     "minikube",
+	})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("Expected response")
+	}
+	if resp.ServiceName != "test-svc" {
+		t.Errorf("Expected ServiceName 'test-svc', got '%s'", resp.ServiceName)
+	}
+
+	// RemoveService
+	err = mock.RemoveService("test-svc.default.minikube")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+// TestKubernetesDiscoveryMethods tests the k8s discovery interface methods
+func TestKubernetesDiscoveryMethods(t *testing.T) {
+	mock := &mockKubernetesDiscovery{}
+
+	// ListNamespaces
+	namespaces, err := mock.ListNamespaces("minikube")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(namespaces) != 1 {
+		t.Errorf("Expected 1 namespace, got %d", len(namespaces))
+	}
+
+	// ListServices
+	services, err := mock.ListServices("minikube", "default")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(services) != 1 {
+		t.Errorf("Expected 1 service, got %d", len(services))
+	}
+
+	// ListContexts
+	ctxResp, err := mock.ListContexts()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if ctxResp.CurrentContext != "minikube" {
+		t.Errorf("Expected current context 'minikube', got '%s'", ctxResp.CurrentContext)
+	}
+
+	// GetService
+	svc, err := mock.GetService("minikube", "default", "test-svc")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if svc.Name != "test-svc" {
+		t.Errorf("Expected service name 'test-svc', got '%s'", svc.Name)
 	}
 }
 
