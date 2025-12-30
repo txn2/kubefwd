@@ -441,7 +441,7 @@ func (a *DiagnosticsProviderAdapter) GetForwardDiagnostic(key string) (*types.Fo
 }
 
 func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSnapshot) (types.ForwardDiagnostic, error) {
-	// Calculate connection state
+
 	connState := "disconnected"
 	switch fwd.Status {
 	case state.StatusPending:
@@ -451,7 +451,6 @@ func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSn
 	case state.StatusActive:
 		connState = "connected"
 	case state.StatusError:
-
 		connState = "error"
 	case state.StatusStopping:
 		connState = "stopping"
