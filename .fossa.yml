@@ -1,0 +1,29 @@
+# FOSSA configuration for kubefwd
+# See: https://github.com/fossas/fossa-cli/blob/master/docs/references/files/fossa-yml.md
+
+version: 3
+
+project:
+  id: github.com/txn2/kubefwd
+  name: kubefwd
+  team: txn2
+  policy: default
+
+# Analyze only Go modules (the actual distributed software)
+# Exclude documentation build tooling (Python/pip dependencies)
+targets:
+  only:
+    - type: go
+
+# Exclude paths that contain non-source dependencies
+paths:
+  exclude:
+    # Documentation build dependencies (MkDocs, Pygments, etc.)
+    - .github/requirements-docs.txt
+    - docs/
+    # Test fixtures and scripts
+    - test/scripts/
+    - test/manifests/
+    # Build artifacts
+    - dist/
+    - mcpb/
