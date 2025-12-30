@@ -36,10 +36,10 @@ const (
 )
 
 var (
-	apiEnabled bool
-	apiManager *Manager
-	once       sync.Once
-	mu         sync.RWMutex
+	apiEnabled  bool
+	apiManager  *Manager
+	initialized bool
+	mu          sync.RWMutex
 )
 
 // Manager manages the API server lifecycle
@@ -98,21 +98,28 @@ func GetManager() *Manager {
 
 // Init initializes the API manager
 func Init(shutdownChan <-chan struct{}, triggerShutdown func(), version string) *Manager {
-	once.Do(func() {
-		apiManager = &Manager{
-			stopChan:        make(chan struct{}),
-			doneChan:        make(chan struct{}),
-			startTime:       time.Now(),
-			triggerShutdown: triggerShutdown,
-			version:         version,
-		}
+	mu.Lock()
+	defer mu.Unlock()
 
-		// Listen for external shutdown signal
-		go func() {
-			<-shutdownChan
-			apiManager.Stop()
-		}()
-	})
+	if initialized {
+		return apiManager
+	}
+
+	apiManager = &Manager{
+		stopChan:        make(chan struct{}),
+		doneChan:        make(chan struct{}),
+		startTime:       time.Now(),
+		triggerShutdown: triggerShutdown,
+		version:         version,
+	}
+
+	// Listen for external shutdown signal
+	go func() {
+		<-shutdownChan
+		apiManager.Stop()
+	}()
+
+	initialized = true
 	return apiManager
 }
 

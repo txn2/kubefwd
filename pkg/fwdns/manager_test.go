@@ -1,6 +1,7 @@
 package fwdns
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -847,16 +848,8 @@ func TestNamespaceWatcher_Done(t *testing.T) {
 	}
 }
 
-// Helper function to check if string contains substring
+// Helper function to check if string contains substring.
+// Delegates to the standard library to avoid custom reimplementation.
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
-}
-
-func containsAt(s, substr string, start int) bool {
-	for i := start; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(s, substr)
 }
