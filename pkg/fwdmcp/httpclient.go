@@ -928,6 +928,49 @@ func (k *KubernetesDiscoveryHTTP) GetService(ctx, namespace, name string) (*type
 	return &resp.Data, nil
 }
 
+func (k *KubernetesDiscoveryHTTP) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+	if opts.Container != "" {
+		params.Set("container", opts.Container)
+	}
+	if opts.TailLines > 0 {
+		params.Set("tail_lines", strconv.Itoa(opts.TailLines))
+	}
+	if opts.SinceTime != "" {
+		params.Set("since_time", opts.SinceTime)
+	}
+	if opts.Previous {
+		params.Set("previous", "true")
+	}
+	if opts.Timestamps {
+		params.Set("timestamps", "true")
+	}
+
+	path := fmt.Sprintf("/v1/kubernetes/pods/%s/%s/logs", url.PathEscape(namespace), url.PathEscape(podName))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool                  `json:"success"`
+		Data    types.PodLogsResponse `json:"data"`
+		Error   *types.ErrorInfo      `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
 // ============================================================================
 // ConnectionInfoProviderHTTP implements types.ConnectionInfoProvider via REST API
 // ============================================================================
