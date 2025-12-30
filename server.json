@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.txn2/kubefwd",
+  "description": "Kubernetes port forwarding for local development with automatic /etc/hosts entries.",
+  "repository": {
+    "url": "https://github.com/txn2/kubefwd",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-arm64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-amd64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-windows-amd64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
+    }
+  ],
+  "tags": [
+    "kubernetes",
+    "k8s",
+    "port-forward",
+    "development",
+    "microservices",
+    "devops"
+  ]
+}

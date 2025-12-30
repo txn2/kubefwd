@@ -266,11 +266,8 @@ func TestGetLogBufferProvider(t *testing.T) {
 		t.Fatal("GetLogBufferProvider returned nil")
 	}
 
-	// Verify it implements the interface
-	_, ok := provider.(types.LogBufferProvider)
-	if !ok {
-		t.Error("GetLogBufferProvider should return a LogBufferProvider")
-	}
+	// Verify we can call methods on the provider (type already enforced by return type)
+	_ = provider.GetLast(10)
 }
 
 func TestInitLogBuffer(t *testing.T) {
