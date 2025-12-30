@@ -140,6 +140,18 @@ type KubernetesDiscovery interface {
 
 	// GetPodLogs returns logs from a pod backing a forwarded service
 	GetPodLogs(ctx, namespace, podName string, opts PodLogsOptions) (*PodLogsResponse, error)
+
+	// ListPods returns pods in a namespace, optionally filtered by label selector
+	ListPods(ctx, namespace string, opts ListPodsOptions) ([]K8sPod, error)
+
+	// GetPod returns detailed information about a specific pod
+	GetPod(ctx, namespace, podName string) (*K8sPodDetail, error)
+
+	// GetEvents returns Kubernetes events for a resource
+	GetEvents(ctx, namespace string, opts GetEventsOptions) ([]K8sEvent, error)
+
+	// GetEndpoints returns endpoints for a service
+	GetEndpoints(ctx, namespace, serviceName string) (*K8sEndpoints, error)
 }
 
 // PodLogsOptions configures pod log retrieval

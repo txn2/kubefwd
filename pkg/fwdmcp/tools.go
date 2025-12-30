@@ -114,6 +114,33 @@ type GetPodLogsInput struct {
 	Timestamps bool   `json:"timestamps,omitempty" jsonschema:"Include timestamps in log output"`
 }
 
+type ListPodsInput struct {
+	Namespace     string `json:"namespace" jsonschema:"The Kubernetes namespace"`
+	Context       string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
+	LabelSelector string `json:"label_selector,omitempty" jsonschema:"Label selector (e.g., 'app=nginx,version=v1')"`
+	ServiceName   string `json:"service_name,omitempty" jsonschema:"Filter to pods backing this service"`
+}
+
+type GetPodInput struct {
+	Namespace string `json:"namespace" jsonschema:"The Kubernetes namespace"`
+	PodName   string `json:"pod_name" jsonschema:"Name of the pod"`
+	Context   string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
+}
+
+type GetEventsInput struct {
+	Namespace    string `json:"namespace" jsonschema:"The Kubernetes namespace"`
+	Context      string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
+	ResourceKind string `json:"resource_kind,omitempty" jsonschema:"Filter by resource kind (Pod, Service, Deployment, etc.)"`
+	ResourceName string `json:"resource_name,omitempty" jsonschema:"Filter by resource name"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max events to return (default: 50)"`
+}
+
+type GetEndpointsInput struct {
+	Namespace   string `json:"namespace" jsonschema:"The Kubernetes namespace"`
+	ServiceName string `json:"service_name" jsonschema:"Name of the service"`
+	Context     string `json:"context,omitempty" jsonschema:"Kubernetes context (default: current context)"`
+}
+
 // registerTools registers all MCP tools
 func (s *Server) registerTools() {
 	// === Developer-focused tools (primary use cases) ===
@@ -163,8 +190,32 @@ func (s *Server) registerTools() {
 	// get_pod_logs - Get logs from a pod
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_pod_logs",
-		Description: "Get logs from a Kubernetes pod. Useful for debugging services. Returns recent log lines from the pod's container. Requires namespace and pod_name. Get pod names from the forwards in get_service or list_services output.",
+		Description: "Get logs from a Kubernetes pod. Useful for debugging services. Returns recent log lines from the pod's container. Requires namespace and pod_name. Get pod names from list_pods or get_service output.",
 	}, s.handleGetPodLogs)
+
+	// list_pods - List pods in a namespace
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "list_pods",
+		Description: "List Kubernetes pods with status, ready state, restarts, and age. Filter by label selector or service name. Essential for finding which pods back a service. Requires namespace.",
+	}, s.handleListPods)
+
+	// get_pod - Get detailed pod info
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_pod",
+		Description: "Get detailed pod information including containers, status, conditions, resources, and events. Use to diagnose pod issues. Requires namespace and pod_name.",
+	}, s.handleGetPod)
+
+	// get_events - Get Kubernetes events
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_events",
+		Description: "Get Kubernetes events for debugging. Shows scheduling, pulling, starting, killing events. Filter by resource kind (Pod, Service) and name. Critical for diagnosing startup failures.",
+	}, s.handleGetEvents)
+
+	// get_endpoints - Get service endpoints
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "get_endpoints",
+		Description: "Get endpoints for a Kubernetes service. Shows which pods are backing the service and their ready state. Useful for debugging service-to-pod routing.",
+	}, s.handleGetEndpoints)
 
 	// find_services - Search forwards
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
@@ -1053,6 +1104,155 @@ func (s *Server) handleGetPodLogs(ctx context.Context, req *mcp.CallToolRequest,
 
 	// Return nil to let SDK auto-populate Content with full JSON data
 	return nil, result, nil
+}
+
+func (s *Server) handleListPods(ctx context.Context, req *mcp.CallToolRequest, input ListPodsInput) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace is required")
+	}
+
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
+	}
+
+	opts := types.ListPodsOptions{
+		LabelSelector: input.LabelSelector,
+		ServiceName:   input.ServiceName,
+	}
+
+	pods, err := k8s.ListPods(k8sContext, input.Namespace, opts)
+	if err != nil {
+		return nil, nil, ClassifyError(err, map[string]interface{}{
+			"namespace": input.Namespace,
+			"context":   k8sContext,
+		})
+	}
+
+	result := map[string]interface{}{
+		"pods":      pods,
+		"namespace": input.Namespace,
+		"count":     len(pods),
+	}
+
+	return nil, result, nil
+}
+
+func (s *Server) handleGetPod(ctx context.Context, req *mcp.CallToolRequest, input GetPodInput) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace is required")
+	}
+
+	if input.PodName == "" {
+		return nil, nil, NewInvalidInputError("pod_name", "", "pod_name is required")
+	}
+
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
+	}
+
+	pod, err := k8s.GetPod(k8sContext, input.Namespace, input.PodName)
+	if err != nil {
+		return nil, nil, ClassifyError(err, map[string]interface{}{
+			"namespace": input.Namespace,
+			"pod":       input.PodName,
+			"context":   k8sContext,
+		})
+	}
+
+	return nil, pod, nil
+}
+
+func (s *Server) handleGetEvents(ctx context.Context, req *mcp.CallToolRequest, input GetEventsInput) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace is required")
+	}
+
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
+	}
+
+	opts := types.GetEventsOptions{
+		ResourceKind: input.ResourceKind,
+		ResourceName: input.ResourceName,
+		Limit:        input.Limit,
+	}
+
+	events, err := k8s.GetEvents(k8sContext, input.Namespace, opts)
+	if err != nil {
+		return nil, nil, ClassifyError(err, map[string]interface{}{
+			"namespace": input.Namespace,
+			"context":   k8sContext,
+		})
+	}
+
+	result := map[string]interface{}{
+		"events":    events,
+		"namespace": input.Namespace,
+		"count":     len(events),
+	}
+
+	return nil, result, nil
+}
+
+func (s *Server) handleGetEndpoints(ctx context.Context, req *mcp.CallToolRequest, input GetEndpointsInput) (*mcp.CallToolResult, any, error) {
+	k8s := s.getK8sDiscovery()
+	if k8s == nil {
+		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
+	}
+
+	if input.Namespace == "" {
+		return nil, nil, NewInvalidInputError("namespace", "", "namespace is required")
+	}
+
+	if input.ServiceName == "" {
+		return nil, nil, NewInvalidInputError("service_name", "", "service_name is required")
+	}
+
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
+			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
+		}
+	}
+
+	endpoints, err := k8s.GetEndpoints(k8sContext, input.Namespace, input.ServiceName)
+	if err != nil {
+		return nil, nil, ClassifyError(err, map[string]interface{}{
+			"namespace": input.Namespace,
+			"service":   input.ServiceName,
+			"context":   k8sContext,
+		})
+	}
+
+	return nil, endpoints, nil
 }
 
 func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolRequest, input FindServicesInput) (*mcp.CallToolResult, any, error) {

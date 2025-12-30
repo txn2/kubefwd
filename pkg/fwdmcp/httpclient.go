@@ -971,6 +971,133 @@ func (k *KubernetesDiscoveryHTTP) GetPodLogs(ctx, namespace, podName string, opt
 	return &resp.Data, nil
 }
 
+func (k *KubernetesDiscoveryHTTP) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+	if opts.LabelSelector != "" {
+		params.Set("label_selector", opts.LabelSelector)
+	}
+	if opts.ServiceName != "" {
+		params.Set("service_name", opts.ServiceName)
+	}
+
+	path := fmt.Sprintf("/v1/kubernetes/pods/%s", url.PathEscape(namespace))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool             `json:"success"`
+		Data    []types.K8sPod   `json:"data"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+
+	path := fmt.Sprintf("/v1/kubernetes/pods/%s/%s", url.PathEscape(namespace), url.PathEscape(podName))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool               `json:"success"`
+		Data    types.K8sPodDetail `json:"data"`
+		Error   *types.ErrorInfo   `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+	if opts.ResourceKind != "" {
+		params.Set("resource_kind", opts.ResourceKind)
+	}
+	if opts.ResourceName != "" {
+		params.Set("resource_name", opts.ResourceName)
+	}
+	if opts.Limit > 0 {
+		params.Set("limit", strconv.Itoa(opts.Limit))
+	}
+
+	path := fmt.Sprintf("/v1/kubernetes/events/%s", url.PathEscape(namespace))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool             `json:"success"`
+		Data    []types.K8sEvent `json:"data"`
+		Error   *types.ErrorInfo `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Data, nil
+}
+
+func (k *KubernetesDiscoveryHTTP) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	params := url.Values{}
+	if ctx != "" {
+		params.Set("context", ctx)
+	}
+
+	path := fmt.Sprintf("/v1/kubernetes/endpoints/%s/%s", url.PathEscape(namespace), url.PathEscape(serviceName))
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp struct {
+		Success bool               `json:"success"`
+		Data    types.K8sEndpoints `json:"data"`
+		Error   *types.ErrorInfo   `json:"error"`
+	}
+
+	if err := k.client.Get(path, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return &resp.Data, nil
+}
+
 // ============================================================================
 // ConnectionInfoProviderHTTP implements types.ConnectionInfoProvider via REST API
 // ============================================================================

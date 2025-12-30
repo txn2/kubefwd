@@ -403,6 +403,148 @@ type K8sContext struct {
 	Active    bool   `json:"active"`              // true if this is the current context
 }
 
+// === Pod Types ===
+
+// ListPodsOptions configures pod listing
+type ListPodsOptions struct {
+	LabelSelector string // e.g., "app=nginx,version=v1"
+	FieldSelector string // e.g., "status.phase=Running"
+	ServiceName   string // filter to pods backing this service
+}
+
+// K8sPod represents a Kubernetes pod (summary view)
+type K8sPod struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Phase         string            `json:"phase"`    // Pending, Running, Succeeded, Failed, Unknown
+	Status        string            `json:"status"`   // Human-readable status
+	Ready         string            `json:"ready"`    // e.g., "1/1", "0/2"
+	Restarts      int32             `json:"restarts"` // total restart count across containers
+	Age           string            `json:"age"`      // human-readable age
+	IP            string            `json:"ip,omitempty"`
+	Node          string            `json:"node,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	Containers    []string          `json:"containers"` // container names
+	StartTime     *time.Time        `json:"startTime,omitempty"`
+	ServiceName   string            `json:"serviceName,omitempty"`   // if backing a service
+	IsForwarded   bool              `json:"isForwarded"`             // true if currently forwarded
+	ForwardedPort string            `json:"forwardedPort,omitempty"` // local port if forwarded
+}
+
+// K8sPodDetail represents detailed pod information
+type K8sPodDetail struct {
+	Name        string             `json:"name"`
+	Namespace   string             `json:"namespace"`
+	Context     string             `json:"context"`
+	Phase       string             `json:"phase"`
+	Status      string             `json:"status"` // detailed status message
+	Message     string             `json:"message,omitempty"`
+	Reason      string             `json:"reason,omitempty"`
+	IP          string             `json:"ip,omitempty"`
+	HostIP      string             `json:"hostIP,omitempty"`
+	Node        string             `json:"node,omitempty"`
+	StartTime   *time.Time         `json:"startTime,omitempty"`
+	Labels      map[string]string  `json:"labels,omitempty"`
+	Annotations map[string]string  `json:"annotations,omitempty"`
+	Containers  []K8sContainerInfo `json:"containers"`
+	Conditions  []K8sPodCondition  `json:"conditions,omitempty"`
+	Volumes     []string           `json:"volumes,omitempty"` // volume names
+	QoSClass    string             `json:"qosClass,omitempty"`
+	IsForwarded bool               `json:"isForwarded"`
+	ForwardKey  string             `json:"forwardKey,omitempty"`
+}
+
+// K8sContainerInfo represents container information within a pod
+type K8sContainerInfo struct {
+	Name         string              `json:"name"`
+	Image        string              `json:"image"`
+	Ready        bool                `json:"ready"`
+	Started      bool                `json:"started"`
+	RestartCount int32               `json:"restartCount"`
+	State        string              `json:"state"` // Running, Waiting, Terminated
+	StateReason  string              `json:"stateReason,omitempty"`
+	StateMessage string              `json:"stateMessage,omitempty"`
+	LastState    string              `json:"lastState,omitempty"` // previous state if any
+	Ports        []K8sContainerPort  `json:"ports,omitempty"`
+	Resources    *K8sResourceRequire `json:"resources,omitempty"`
+}
+
+// K8sContainerPort represents a container port
+type K8sContainerPort struct {
+	Name          string `json:"name,omitempty"`
+	ContainerPort int32  `json:"containerPort"`
+	Protocol      string `json:"protocol"`
+}
+
+// K8sResourceRequire represents resource requests/limits
+type K8sResourceRequire struct {
+	CPURequest    string `json:"cpuRequest,omitempty"`
+	CPULimit      string `json:"cpuLimit,omitempty"`
+	MemoryRequest string `json:"memoryRequest,omitempty"`
+	MemoryLimit   string `json:"memoryLimit,omitempty"`
+}
+
+// K8sPodCondition represents a pod condition
+type K8sPodCondition struct {
+	Type    string `json:"type"` // PodScheduled, Ready, Initialized, ContainersReady
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// === Event Types ===
+
+// GetEventsOptions configures event retrieval
+type GetEventsOptions struct {
+	ResourceKind string // Pod, Service, Deployment, etc.
+	ResourceName string // name of the resource
+	Limit        int    // max events to return (default 50)
+}
+
+// K8sEvent represents a Kubernetes event
+type K8sEvent struct {
+	Type           string    `json:"type"`   // Normal, Warning
+	Reason         string    `json:"reason"` // e.g., Scheduled, Pulled, Created, Started, Killing
+	Message        string    `json:"message"`
+	Count          int32     `json:"count"`
+	FirstTimestamp time.Time `json:"firstTimestamp"`
+	LastTimestamp  time.Time `json:"lastTimestamp"`
+	Source         string    `json:"source"` // component that generated the event
+	ObjectKind     string    `json:"objectKind,omitempty"`
+	ObjectName     string    `json:"objectName,omitempty"`
+}
+
+// === Endpoint Types ===
+
+// K8sEndpoints represents endpoints for a service
+type K8sEndpoints struct {
+	Name      string              `json:"name"`
+	Namespace string              `json:"namespace"`
+	Subsets   []K8sEndpointSubset `json:"subsets"`
+}
+
+// K8sEndpointSubset represents a subset of endpoints
+type K8sEndpointSubset struct {
+	Addresses         []K8sEndpointAddress `json:"addresses,omitempty"`
+	NotReadyAddresses []K8sEndpointAddress `json:"notReadyAddresses,omitempty"`
+	Ports             []K8sEndpointPort    `json:"ports,omitempty"`
+}
+
+// K8sEndpointAddress represents an endpoint address
+type K8sEndpointAddress struct {
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname,omitempty"`
+	NodeName string `json:"nodeName,omitempty"`
+	PodName  string `json:"podName,omitempty"` // target ref
+}
+
+// K8sEndpointPort represents an endpoint port
+type K8sEndpointPort struct {
+	Name     string `json:"name,omitempty"`
+	Port     int32  `json:"port"`
+	Protocol string `json:"protocol"`
+}
+
 // === Connection Info Types (for developer-focused MCP) ===
 
 // ConnectionInfoResponse provides connection information for a forwarded service
