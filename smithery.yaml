@@ -1,0 +1,19 @@
+# Smithery.ai MCP Server Configuration
+# https://smithery.ai/docs
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      apiUrl:
+        type: string
+        description: "URL of the kubefwd REST API"
+        default: "http://kubefwd.internal/api"
+    required: []
+  commandFunction: |
+    (config) => ({
+      command: 'kubefwd',
+      args: ['mcp', ...(config.apiUrl ? ['--api-url', config.apiUrl] : [])],
+      env: {}
+    })
