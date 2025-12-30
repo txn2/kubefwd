@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.txn2/kubefwd",
+  "description": "Kubernetes port forwarding for local development with automatic /etc/hosts entries.",
+  "repository": {
+    "url": "https://github.com/txn2/kubefwd",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "docker",
+      "identifier": "txn2/kubefwd",
+      "version": "0.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "arguments": ["mcp"],
+      "environmentVariables": []
+    }
+  ],
+  "tags": [
+    "kubernetes",
+    "k8s",
+    "port-forward",
+    "development",
+    "microservices",
+    "devops"
+  ]
+}
