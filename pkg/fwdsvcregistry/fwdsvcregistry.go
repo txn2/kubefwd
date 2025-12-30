@@ -56,6 +56,9 @@ func Get(key string) *fwdservice.ServiceFWD {
 
 // GetAll returns a slice of all services in the registry
 func GetAll() []*fwdservice.ServiceFWD {
+	if svcRegistry == nil {
+		return nil
+	}
 	svcRegistry.mutex.Lock()
 	defer svcRegistry.mutex.Unlock()
 	result := make([]*fwdservice.ServiceFWD, 0, len(svcRegistry.services))

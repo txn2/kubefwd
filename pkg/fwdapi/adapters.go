@@ -441,15 +441,19 @@ func (a *DiagnosticsProviderAdapter) GetForwardDiagnostic(key string) (*types.Fo
 }
 
 func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSnapshot) (types.ForwardDiagnostic, error) {
-	// Calculate connection state
+
 	connState := "disconnected"
 	switch fwd.Status {
-	case state.StatusActive:
-		connState = "connected"
+	case state.StatusPending:
+		connState = "pending"
 	case state.StatusConnecting:
 		connState = "connecting"
+	case state.StatusActive:
+		connState = "connected"
 	case state.StatusError:
 		connState = "error"
+	case state.StatusStopping:
+		connState = "stopping"
 	}
 
 	// Calculate uptime and idle duration
@@ -836,6 +840,13 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 			return nil, fmt.Errorf("failed to get current context: %w", err)
 		}
 		ctx = currentCtx
+	}
+
+	// Unblock the namespace in case it was previously blocked via remove_namespace.
+	// This prevents a race condition where the namespace was blocked but we're now adding
+	// a service individually (not via namespace watcher).
+	if store := fwdtui.GetStore(); store != nil {
+		store.UnblockNamespace(req.Namespace, ctx)
 	}
 
 	// Check if service is already being forwarded

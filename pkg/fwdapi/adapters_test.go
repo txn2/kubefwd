@@ -555,12 +555,12 @@ func TestDiagnosticsProviderAdapter_buildForwardDiagnostic(t *testing.T) {
 			expectedState: "error",
 		},
 		{
-			name: "disconnected forward",
+			name: "pending forward",
 			fwd: &state.ForwardSnapshot{
 				Key:    "test-key",
 				Status: state.StatusPending,
 			},
-			expectedState: "disconnected",
+			expectedState: "pending",
 		},
 	}
 

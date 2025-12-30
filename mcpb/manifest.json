@@ -32,12 +32,12 @@
     "mcp_config": {
       "command": "${__dirname}/kubefwd",
       "args": ["mcp"],
-      "env": {}
-    },
-    "platform_overrides": {
-      "win32": {
-        "command": "${__dirname}/kubefwd.exe",
-        "args": ["mcp"]
+      "env": {},
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/kubefwd.exe",
+          "args": ["mcp"]
+        }
       }
     }
   },
@@ -47,6 +47,18 @@
     "runtimes": {}
   },
   "tools": [
+    {
+      "name": "list_k8s_namespaces",
+      "description": "List available Kubernetes namespaces (read-only discovery)"
+    },
+    {
+      "name": "list_k8s_services",
+      "description": "List services in a namespace (read-only discovery)"
+    },
+    {
+      "name": "list_contexts",
+      "description": "List Kubernetes contexts from kubeconfig"
+    },
     {
       "name": "add_namespace",
       "description": "Forward all services in a namespace to localhost"
@@ -72,12 +84,36 @@
       "description": "List all forwarded services"
     },
     {
+      "name": "get_service",
+      "description": "Get detailed info for a specific service"
+    },
+    {
       "name": "find_services",
       "description": "Search forwarded services"
     },
     {
+      "name": "list_hostnames",
+      "description": "List all /etc/hosts entries created by kubefwd"
+    },
+    {
       "name": "get_quick_status",
       "description": "Fast health check"
+    },
+    {
+      "name": "get_health",
+      "description": "Get kubefwd health status and uptime"
+    },
+    {
+      "name": "get_metrics",
+      "description": "Get bandwidth metrics and traffic stats"
+    },
+    {
+      "name": "get_logs",
+      "description": "Get kubefwd log entries"
+    },
+    {
+      "name": "get_analysis",
+      "description": "Full analysis with issues and recommendations"
     },
     {
       "name": "diagnose_errors",
@@ -86,6 +122,22 @@
     {
       "name": "reconnect_service",
       "description": "Reconnect a failed service"
+    },
+    {
+      "name": "reconnect_all_errors",
+      "description": "Reconnect all errored services at once"
+    },
+    {
+      "name": "sync_service",
+      "description": "Re-sync pods for a service after deployments"
+    },
+    {
+      "name": "get_http_traffic",
+      "description": "View HTTP requests through a forward"
+    },
+    {
+      "name": "get_history",
+      "description": "Access event, error, or reconnection history"
     }
   ],
   "user_config": {

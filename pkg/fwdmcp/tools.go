@@ -738,19 +738,35 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 		return nil, nil, fmt.Errorf("failed to add namespace: %w", err)
 	}
 
+	// Query the K8s API directly for the service count.
+	// This is immediate - no need to wait for the informer.
+	serviceCount := 0
+	if k8s := s.getK8sDiscovery(); k8s != nil {
+		if services, err := k8s.ListServices(k8sContext, input.Namespace); err == nil {
+			serviceCount = len(services)
+		}
+	}
+
 	result := map[string]interface{}{
 		"success":      true,
 		"key":          info.Key,
 		"namespace":    info.Namespace,
 		"context":      info.Context,
-		"serviceCount": info.ServiceCount,
+		"serviceCount": serviceCount,
 		"message":      fmt.Sprintf("Started forwarding namespace %s", input.Namespace),
+	}
+
+	// Build message based on discovered services
+	var message string
+	if serviceCount > 0 {
+		message = fmt.Sprintf("Started forwarding namespace %s. Discovered %d services.", input.Namespace, serviceCount)
+	} else {
+		message = fmt.Sprintf("Started forwarding namespace %s. Services will be discovered automatically.", input.Namespace)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Started forwarding namespace %s. Discovered %d services.",
-				input.Namespace, info.ServiceCount)},
+			&mcp.TextContent{Text: message},
 		},
 	}, result, nil
 }
