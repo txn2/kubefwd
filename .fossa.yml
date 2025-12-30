@@ -11,9 +11,9 @@ project:
 
 # Analyze only Go modules (the actual distributed software)
 # Exclude documentation build tooling (Python/pip dependencies)
-analyze:
-  types:
-    - gomod
+targets:
+  only:
+    - type: go
 
 # Exclude paths that contain non-source dependencies
 paths:
