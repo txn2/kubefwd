@@ -327,12 +327,9 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 		},
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d services (%d active, %d with errors)",
-				len(filtered), summary.ActiveServices, summary.ErrorCount)},
-		},
-	}, result, nil
+	// Return nil CallToolResult to let SDK auto-populate Content with JSON
+	// This ensures clients receive the full structured data, not just a summary
+	return nil, result, nil
 }
 
 func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest, input GetServiceInput) (*mcp.CallToolResult, any, error) {
@@ -391,12 +388,8 @@ func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest,
 		"forwards":      forwards,
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Service %s: %s (%d forwards, %d active, %d errors)",
-				svc.ServiceName, status, len(svc.PortForwards), svc.ActiveCount, svc.ErrorCount)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
@@ -473,16 +466,8 @@ func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequ
 		"overallHealth": health,
 	}
 
-	summary := fmt.Sprintf("Found %d errors. Overall health: %s", len(errors), health)
-	if len(errors) > 0 {
-		summary += fmt.Sprintf(". Most common issue: %s", errors[0]["errorType"])
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: summary},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRequest, input ReconnectServiceInput) (*mcp.CallToolResult, any, error) {
@@ -505,11 +490,8 @@ func (s *Server) handleReconnectService(ctx context.Context, req *mcp.CallToolRe
 		"message": "Reconnection triggered successfully",
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Reconnection triggered for service: %s", input.Key)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
@@ -526,11 +508,8 @@ func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallTool
 		"message":   fmt.Sprintf("Reconnection triggered for %d services", count),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Triggered reconnection for %d errored services", count)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest, input GetMetricsInput) (*mcp.CallToolResult, any, error) {
@@ -581,12 +560,8 @@ func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest,
 		result["services"] = services
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Metrics: %d services, %d forwards, %.2f KB/s in, %.2f KB/s out",
-				summary.TotalServices, summary.TotalForwards, rateIn/1024, rateOut/1024)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, input GetLogsInput) (*mcp.CallToolResult, any, error) {
@@ -630,11 +605,8 @@ func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, in
 		"count": len(filtered),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d log entries", len(filtered))},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleGetHealth(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
@@ -672,12 +644,8 @@ func (s *Server) handleGetHealth(ctx context.Context, req *mcp.CallToolRequest, 
 		result["tuiEnabled"] = manager.TUIEnabled()
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("kubefwd %s: %s (%d services, %d errors)",
-				s.version, status, summary.TotalServices, summary.ErrorCount)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest, input SyncServiceInput) (*mcp.CallToolResult, any, error) {
@@ -701,11 +669,8 @@ func (s *Server) handleSyncService(ctx context.Context, req *mcp.CallToolRequest
 		"message": "Pod sync triggered successfully",
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Pod sync triggered for service: %s (force=%v)", input.Key, input.Force)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 // === Developer-focused tool handlers ===
@@ -756,19 +721,8 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 		"message":      fmt.Sprintf("Started forwarding namespace %s", input.Namespace),
 	}
 
-	// Build message based on discovered services
-	var message string
-	if serviceCount > 0 {
-		message = fmt.Sprintf("Started forwarding namespace %s. Discovered %d services.", input.Namespace, serviceCount)
-	} else {
-		message = fmt.Sprintf("Started forwarding namespace %s. Services will be discovered automatically.", input.Namespace)
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: message},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolRequest, input RemoveNamespaceInput) (*mcp.CallToolResult, any, error) {
@@ -800,11 +754,8 @@ func (s *Server) handleRemoveNamespace(ctx context.Context, req *mcp.CallToolReq
 		"message":   "Namespace watcher stopped and services removed",
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Stopped forwarding namespace %s", input.Namespace)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest, input AddServiceInput) (*mcp.CallToolResult, any, error) {
@@ -852,12 +803,8 @@ func (s *Server) handleAddService(ctx context.Context, req *mcp.CallToolRequest,
 		"ports":       resp.Ports,
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Forwarding service %s. Connect via %s or hostnames: %v",
-				resp.ServiceName, resp.LocalIP, resp.Hostnames)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolRequest, input RemoveServiceInput) (*mcp.CallToolResult, any, error) {
@@ -880,11 +827,8 @@ func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolReque
 		"message": "Service forwarding stopped",
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Stopped forwarding service: %s", input.Key)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolRequest, input GetConnectionInfoInput) (*mcp.CallToolResult, any, error) {
@@ -933,12 +877,8 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 					"status":    "active",
 				}
 
-				return &mcp.CallToolResult{
-					Content: []mcp.Content{
-						&mcp.TextContent{Text: fmt.Sprintf("Service %s available at %s. Hostnames: %v",
-							svc.ServiceName, localIP, unique(hostnames))},
-					},
-				}, result, nil
+				// Return nil to let SDK auto-populate Content with full JSON data
+				return nil, result, nil
 			}
 		}
 
@@ -964,12 +904,8 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 		return nil, nil, fmt.Errorf("failed to get connection info: %w", err)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Service %s available at %s. Hostnames: %v. Ports: %v",
-				info.Service, info.LocalIP, info.Hostnames, info.Ports)},
-		},
-	}, info, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, info, nil
 }
 
 func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolRequest, input ListK8sNamespacesInput) (*mcp.CallToolResult, any, error) {
@@ -1004,12 +940,8 @@ func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolR
 		}
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d namespaces (%d currently forwarding)",
-				len(namespaces), forwarded)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolRequest, input ListK8sServicesInput) (*mcp.CallToolResult, any, error) {
@@ -1049,12 +981,8 @@ func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolReq
 		}
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d services in namespace %s (%d currently forwarding)",
-				len(services), input.Namespace, forwarded)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolRequest, input FindServicesInput) (*mcp.CallToolResult, any, error) {
@@ -1113,11 +1041,8 @@ func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolReques
 		"count":    len(matches),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d matching services", len(matches))},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleListHostnames(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
@@ -1149,11 +1074,8 @@ func (s *Server) handleListHostnames(ctx context.Context, req *mcp.CallToolReque
 		"total":     len(hostnames),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d hostnames in /etc/hosts", len(hostnames))},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 // unique returns a slice with duplicate strings removed
@@ -1182,20 +1104,8 @@ func (s *Server) handleGetAnalysis(ctx context.Context, req *mcp.CallToolRequest
 		return nil, nil, fmt.Errorf("failed to get analysis: %w", err)
 	}
 
-	// Build summary message
-	summary := fmt.Sprintf("Status: %s. %s", resp.Status, resp.Summary)
-	if len(resp.Issues) > 0 {
-		summary += fmt.Sprintf(" (%d issues found)", len(resp.Issues))
-	}
-	if len(resp.Recommendations) > 0 {
-		summary += fmt.Sprintf(" %d recommendations available.", len(resp.Recommendations))
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: summary},
-		},
-	}, resp, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, resp, nil
 }
 
 func (s *Server) handleGetQuickStatus(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
@@ -1209,11 +1119,8 @@ func (s *Server) handleGetQuickStatus(ctx context.Context, req *mcp.CallToolRequ
 		return nil, nil, fmt.Errorf("failed to get status: %w", err)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Status: %s - %s", resp.Status, resp.Message)},
-		},
-	}, resp, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, resp, nil
 }
 
 func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequest, input GetHTTPTrafficInput) (*mcp.CallToolResult, any, error) {
@@ -1234,16 +1141,8 @@ func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequ
 			return nil, nil, fmt.Errorf("failed to get forward HTTP traffic: %w", err)
 		}
 
-		summary := fmt.Sprintf("HTTP traffic for forward %s: %d requests", input.ForwardKey, resp.Summary.TotalRequests)
-		if resp.Summary.TotalRequests > 0 {
-			summary += fmt.Sprintf(" (last request: %s)", resp.Summary.LastRequest.Format(time.RFC3339))
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: summary},
-			},
-		}, resp, nil
+		// Return nil to let SDK auto-populate Content with full JSON data
+		return nil, resp, nil
 	}
 
 	if input.ServiceKey != "" {
@@ -1253,14 +1152,8 @@ func (s *Server) handleGetHTTPTraffic(ctx context.Context, req *mcp.CallToolRequ
 			return nil, nil, fmt.Errorf("failed to get service HTTP traffic: %w", err)
 		}
 
-		summary := fmt.Sprintf("HTTP traffic for service %s: %d requests across %d forwards",
-			input.ServiceKey, resp.Summary.TotalRequests, len(resp.Forwards))
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: summary},
-			},
-		}, resp, nil
+		// Return nil to let SDK auto-populate Content with full JSON data
+		return nil, resp, nil
 	}
 
 	return nil, nil, fmt.Errorf("either service_key or forward_key must be provided")
@@ -1283,12 +1176,8 @@ func (s *Server) handleListContexts(ctx context.Context, req *mcp.CallToolReques
 		"count":    len(resp.Contexts),
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Found %d Kubernetes contexts. Current: %s",
-				len(resp.Contexts), resp.CurrentContext)},
-		},
-	}, result, nil
+	// Return nil to let SDK auto-populate Content with full JSON data
+	return nil, result, nil
 }
 
 func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest, input GetHistoryInput) (*mcp.CallToolResult, any, error) {
@@ -1327,15 +1216,8 @@ func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest,
 			"events": events,
 			"count":  len(events),
 		}
-		filterMsg := ""
-		if input.EventType != "" {
-			filterMsg = fmt.Sprintf(" (filtered by type: %s)", input.EventType)
-		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d historical events%s", len(events), filterMsg)},
-			},
-		}, result, nil
+		// Return nil to let SDK auto-populate Content with full JSON data
+		return nil, result, nil
 
 	case "errors":
 		errors, err := history.GetErrors(count)
@@ -1347,11 +1229,8 @@ func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest,
 			"errors": errors,
 			"count":  len(errors),
 		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d historical errors", len(errors))},
-			},
-		}, result, nil
+		// Return nil to let SDK auto-populate Content with full JSON data
+		return nil, result, nil
 
 	case "reconnections", "reconnects":
 		reconnects, err := history.GetReconnects(count, input.ServiceKey)
@@ -1363,15 +1242,8 @@ func (s *Server) handleGetHistory(ctx context.Context, req *mcp.CallToolRequest,
 			"reconnections": reconnects,
 			"count":         len(reconnects),
 		}
-		filterMsg := ""
-		if input.ServiceKey != "" {
-			filterMsg = fmt.Sprintf(" for service %s", input.ServiceKey)
-		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Retrieved %d reconnection records%s", len(reconnects), filterMsg)},
-			},
-		}, result, nil
+		// Return nil to let SDK auto-populate Content with full JSON data
+		return nil, result, nil
 
 	default:
 		return nil, nil, fmt.Errorf("invalid history type: %s (valid types: events, errors, reconnections)", input.Type)
