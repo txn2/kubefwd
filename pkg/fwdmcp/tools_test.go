@@ -1111,3 +1111,323 @@ func TestHandleListHostnames(t *testing.T) {
 		t.Errorf("Expected 3 hostnames, got %d", dataMap["total"])
 	}
 }
+
+func TestHandleListPods(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleListPods(context.Background(), nil, ListPodsInput{
+		Namespace: "default",
+	})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts:       []types.K8sContext{{Name: "dev", Active: true}},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test missing namespace
+	_, _, err = server.handleListPods(context.Background(), nil, ListPodsInput{})
+	if err == nil {
+		t.Error("Expected error when namespace is missing")
+	}
+
+	// Test successful list
+	_, data, err := server.handleListPods(context.Background(), nil, ListPodsInput{
+		Namespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	dataMap := data.(map[string]interface{})
+	pods := dataMap["pods"].([]types.K8sPod)
+	if len(pods) != 2 {
+		t.Errorf("Expected 2 pods, got %d", len(pods))
+	}
+
+	// Test with label selector
+	_, data, err = server.handleListPods(context.Background(), nil, ListPodsInput{
+		Namespace:     "default",
+		LabelSelector: "app=api",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["namespace"].(string) != "default" {
+		t.Errorf("Expected namespace 'default', got %v", dataMap["namespace"])
+	}
+
+	// Test with service name filter
+	_, data, err = server.handleListPods(context.Background(), nil, ListPodsInput{
+		Namespace:   "default",
+		ServiceName: "api-service",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 2 {
+		t.Errorf("Expected count 2, got %v", dataMap["count"])
+	}
+}
+
+func TestHandleGetPod(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleGetPod(context.Background(), nil, GetPodInput{
+		Namespace: "default",
+		PodName:   "api-pod-123",
+	})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts:       []types.K8sContext{{Name: "dev", Active: true}},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test missing namespace
+	_, _, err = server.handleGetPod(context.Background(), nil, GetPodInput{
+		PodName: "api-pod-123",
+	})
+	if err == nil {
+		t.Error("Expected error when namespace is missing")
+	}
+
+	// Test missing pod name
+	_, _, err = server.handleGetPod(context.Background(), nil, GetPodInput{
+		Namespace: "default",
+	})
+	if err == nil {
+		t.Error("Expected error when pod_name is missing")
+	}
+
+	// Test successful get
+	_, data, err := server.handleGetPod(context.Background(), nil, GetPodInput{
+		Namespace: "default",
+		PodName:   "api-pod-123",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	podDetail := data.(*types.K8sPodDetail)
+	if podDetail.Name != "api-pod-123" {
+		t.Errorf("Expected pod name 'api-pod-123', got %v", podDetail.Name)
+	}
+	if podDetail.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got %v", podDetail.Namespace)
+	}
+	if len(podDetail.Containers) != 1 {
+		t.Errorf("Expected 1 container, got %d", len(podDetail.Containers))
+	}
+}
+
+func TestHandleGetEvents(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleGetEvents(context.Background(), nil, GetEventsInput{
+		Namespace: "default",
+	})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts:       []types.K8sContext{{Name: "dev", Active: true}},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test missing namespace
+	_, _, err = server.handleGetEvents(context.Background(), nil, GetEventsInput{})
+	if err == nil {
+		t.Error("Expected error when namespace is missing")
+	}
+
+	// Test successful get
+	_, data, err := server.handleGetEvents(context.Background(), nil, GetEventsInput{
+		Namespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	dataMap := data.(map[string]interface{})
+	events := dataMap["events"].([]types.K8sEvent)
+	if len(events) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(events))
+	}
+
+	// Test with resource filter
+	_, data, err = server.handleGetEvents(context.Background(), nil, GetEventsInput{
+		Namespace:    "default",
+		ResourceKind: "Pod",
+		ResourceName: "api-pod-123",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["namespace"].(string) != "default" {
+		t.Errorf("Expected namespace 'default', got %v", dataMap["namespace"])
+	}
+}
+
+func TestHandleGetEndpoints(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleGetEndpoints(context.Background(), nil, GetEndpointsInput{
+		Namespace:   "default",
+		ServiceName: "api-service",
+	})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts:       []types.K8sContext{{Name: "dev", Active: true}},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test missing namespace
+	_, _, err = server.handleGetEndpoints(context.Background(), nil, GetEndpointsInput{
+		ServiceName: "api-service",
+	})
+	if err == nil {
+		t.Error("Expected error when namespace is missing")
+	}
+
+	// Test missing service name
+	_, _, err = server.handleGetEndpoints(context.Background(), nil, GetEndpointsInput{
+		Namespace: "default",
+	})
+	if err == nil {
+		t.Error("Expected error when service_name is missing")
+	}
+
+	// Test successful get
+	_, data, err := server.handleGetEndpoints(context.Background(), nil, GetEndpointsInput{
+		Namespace:   "default",
+		ServiceName: "api-service",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	endpoints := data.(*types.K8sEndpoints)
+	if endpoints.Name != "api-service" {
+		t.Errorf("Expected service name 'api-service', got %v", endpoints.Name)
+	}
+	if endpoints.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got %v", endpoints.Namespace)
+	}
+	if len(endpoints.Subsets) != 1 {
+		t.Errorf("Expected 1 subset, got %d", len(endpoints.Subsets))
+	}
+	if len(endpoints.Subsets[0].Addresses) != 1 {
+		t.Errorf("Expected 1 address, got %d", len(endpoints.Subsets[0].Addresses))
+	}
+}
+
+func TestHandleListContexts(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleListContexts(context.Background(), nil, struct{}{})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts: []types.K8sContext{
+				{Name: "dev", Cluster: "dev-cluster", Active: true},
+				{Name: "prod", Cluster: "prod-cluster", Active: false},
+			},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test successful list
+	_, data, err := server.handleListContexts(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	dataMap := data.(map[string]interface{})
+	if dataMap["current"].(string) != "dev" {
+		t.Errorf("Expected current context 'dev', got %v", dataMap["current"])
+	}
+	if dataMap["count"].(int) != 2 {
+		t.Errorf("Expected 2 contexts, got %v", dataMap["count"])
+	}
+	contexts := dataMap["contexts"].([]types.K8sContext)
+	if len(contexts) != 2 {
+		t.Errorf("Expected 2 contexts in list, got %d", len(contexts))
+	}
+}
+
+func TestHandleGetAnalysis(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil analysis provider - this covers the handler entry point
+	_, _, err := server.handleGetAnalysis(context.Background(), nil, struct{}{})
+	if err == nil {
+		t.Error("Expected error when analysis provider is nil")
+	}
+}
+
+func TestHandleGetQuickStatus(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil analysis provider - this covers the handler entry point
+	_, _, err := server.handleGetQuickStatus(context.Background(), nil, struct{}{})
+	if err == nil {
+		t.Error("Expected error when analysis provider is nil")
+	}
+}
+
+func TestHandleGetHistory(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil history provider - this covers the handler entry point
+	_, _, err := server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "events"})
+	if err == nil {
+		t.Error("Expected error when history provider is nil")
+	}
+}
