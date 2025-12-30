@@ -3,6 +3,7 @@ package fwdapi
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -941,6 +942,501 @@ func splitLogLines(content string) []string {
 	}
 
 	return lines
+}
+
+// ListPods returns pods in a namespace
+func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	listOpts := metav1.ListOptions{}
+	if opts.LabelSelector != "" {
+		listOpts.LabelSelector = opts.LabelSelector
+	}
+	if opts.FieldSelector != "" {
+		listOpts.FieldSelector = opts.FieldSelector
+	}
+
+	// If filtering by service, get service selector
+	if opts.ServiceName != "" {
+		svc, err := clientSet.CoreV1().Services(namespace).Get(context.Background(), opts.ServiceName, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get service: %w", err)
+		}
+		if len(svc.Spec.Selector) > 0 {
+			var selectors []string
+			for k, v := range svc.Spec.Selector {
+				selectors = append(selectors, fmt.Sprintf("%s=%s", k, v))
+			}
+			if listOpts.LabelSelector != "" {
+				listOpts.LabelSelector += ","
+			}
+			listOpts.LabelSelector += strings.Join(selectors, ",")
+		}
+	}
+
+	podList, err := clientSet.CoreV1().Pods(namespace).List(context.Background(), listOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	result := make([]types.K8sPod, len(podList.Items))
+	for i, pod := range podList.Items {
+		result[i] = a.convertPodToK8sPod(&pod, opts.ServiceName)
+	}
+
+	return result, nil
+}
+
+// convertPodToK8sPod converts a k8s Pod to our K8sPod type
+func (a *KubernetesDiscoveryAdapter) convertPodToK8sPod(pod *corev1.Pod, serviceName string) types.K8sPod {
+	// Calculate ready count
+	readyCount := 0
+	totalCount := len(pod.Spec.Containers)
+	var restarts int32
+	containerNames := make([]string, 0, len(pod.Spec.Containers))
+
+	for _, c := range pod.Spec.Containers {
+		containerNames = append(containerNames, c.Name)
+	}
+
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Ready {
+			readyCount++
+		}
+		restarts += cs.RestartCount
+	}
+
+	// Calculate age
+	age := ""
+	if pod.Status.StartTime != nil {
+		age = formatDuration(time.Since(pod.Status.StartTime.Time))
+	}
+
+	// Determine status string
+	status := string(pod.Status.Phase)
+	if pod.DeletionTimestamp != nil {
+		status = "Terminating"
+	} else if len(pod.Status.ContainerStatuses) > 0 {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				status = cs.State.Waiting.Reason
+				break
+			}
+			if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+				status = cs.State.Terminated.Reason
+				break
+			}
+		}
+	}
+
+	// Check if forwarded
+	isForwarded := false
+	forwardedPort := ""
+	if svc := fwdsvcregistry.Get(serviceName + "." + pod.Namespace); svc != nil {
+		for _, fwd := range svc.PortForwards {
+			if fwd.PodName == pod.Name {
+				isForwarded = true
+				break
+			}
+		}
+	}
+
+	var startTime *time.Time
+	if pod.Status.StartTime != nil {
+		t := pod.Status.StartTime.Time
+		startTime = &t
+	}
+
+	return types.K8sPod{
+		Name:          pod.Name,
+		Namespace:     pod.Namespace,
+		Phase:         string(pod.Status.Phase),
+		Status:        status,
+		Ready:         fmt.Sprintf("%d/%d", readyCount, totalCount),
+		Restarts:      restarts,
+		Age:           age,
+		IP:            pod.Status.PodIP,
+		Node:          pod.Spec.NodeName,
+		Labels:        pod.Labels,
+		Containers:    containerNames,
+		StartTime:     startTime,
+		ServiceName:   serviceName,
+		IsForwarded:   isForwarded,
+		ForwardedPort: forwardedPort,
+	}
+}
+
+// formatDuration formats a duration in human-readable form
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// GetPod returns detailed information about a specific pod
+func (a *KubernetesDiscoveryAdapter) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	pod, err := clientSet.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod: %w", err)
+	}
+
+	return a.convertPodToK8sPodDetail(pod, ctx), nil
+}
+
+// convertPodToK8sPodDetail converts a k8s Pod to detailed K8sPodDetail
+func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, ctx string) *types.K8sPodDetail {
+	// Determine overall status
+	status := string(pod.Status.Phase)
+	message := pod.Status.Message
+	reason := pod.Status.Reason
+
+	if pod.DeletionTimestamp != nil {
+		status = "Terminating"
+	}
+
+	// Build container info
+	containers := make([]types.K8sContainerInfo, 0, len(pod.Spec.Containers))
+	containerStatusMap := make(map[string]corev1.ContainerStatus)
+	for _, cs := range pod.Status.ContainerStatuses {
+		containerStatusMap[cs.Name] = cs
+	}
+
+	for _, c := range pod.Spec.Containers {
+		ci := types.K8sContainerInfo{
+			Name:  c.Name,
+			Image: c.Image,
+		}
+
+		// Add ports
+		for _, p := range c.Ports {
+			ci.Ports = append(ci.Ports, types.K8sContainerPort{
+				Name:          p.Name,
+				ContainerPort: p.ContainerPort,
+				Protocol:      string(p.Protocol),
+			})
+		}
+
+		// Add resource info
+		if c.Resources.Requests != nil || c.Resources.Limits != nil {
+			ci.Resources = &types.K8sResourceRequire{}
+			if cpu := c.Resources.Requests.Cpu(); cpu != nil {
+				ci.Resources.CPURequest = cpu.String()
+			}
+			if mem := c.Resources.Requests.Memory(); mem != nil {
+				ci.Resources.MemoryRequest = mem.String()
+			}
+			if cpu := c.Resources.Limits.Cpu(); cpu != nil {
+				ci.Resources.CPULimit = cpu.String()
+			}
+			if mem := c.Resources.Limits.Memory(); mem != nil {
+				ci.Resources.MemoryLimit = mem.String()
+			}
+		}
+
+		// Add status info
+		if cs, ok := containerStatusMap[c.Name]; ok {
+			ci.Ready = cs.Ready
+			ci.Started = cs.Started != nil && *cs.Started
+			ci.RestartCount = cs.RestartCount
+
+			if cs.State.Running != nil {
+				ci.State = "Running"
+			} else if cs.State.Waiting != nil {
+				ci.State = "Waiting"
+				ci.StateReason = cs.State.Waiting.Reason
+				ci.StateMessage = cs.State.Waiting.Message
+			} else if cs.State.Terminated != nil {
+				ci.State = "Terminated"
+				ci.StateReason = cs.State.Terminated.Reason
+				ci.StateMessage = cs.State.Terminated.Message
+			}
+
+			if cs.LastTerminationState.Terminated != nil {
+				ci.LastState = fmt.Sprintf("Terminated: %s", cs.LastTerminationState.Terminated.Reason)
+			}
+		}
+
+		containers = append(containers, ci)
+	}
+
+	// Build conditions
+	conditions := make([]types.K8sPodCondition, 0, len(pod.Status.Conditions))
+	for _, c := range pod.Status.Conditions {
+		conditions = append(conditions, types.K8sPodCondition{
+			Type:    string(c.Type),
+			Status:  string(c.Status),
+			Reason:  c.Reason,
+			Message: c.Message,
+		})
+	}
+
+	// Build volume names
+	volumes := make([]string, 0, len(pod.Spec.Volumes))
+	for _, v := range pod.Spec.Volumes {
+		volumes = append(volumes, v.Name)
+	}
+
+	var startTime *time.Time
+	if pod.Status.StartTime != nil {
+		t := pod.Status.StartTime.Time
+		startTime = &t
+	}
+
+	// Check if forwarded
+	isForwarded := false
+	forwardKey := ""
+	allSvcs := fwdsvcregistry.GetAll()
+	for _, svc := range allSvcs {
+		if svc.Namespace == pod.Namespace {
+			for _, fwd := range svc.PortForwards {
+				if fwd.PodName == pod.Name {
+					isForwarded = true
+					forwardKey = svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
+					break
+				}
+			}
+		}
+		if isForwarded {
+			break
+		}
+	}
+
+	return &types.K8sPodDetail{
+		Name:        pod.Name,
+		Namespace:   pod.Namespace,
+		Context:     ctx,
+		Phase:       string(pod.Status.Phase),
+		Status:      status,
+		Message:     message,
+		Reason:      reason,
+		IP:          pod.Status.PodIP,
+		HostIP:      pod.Status.HostIP,
+		Node:        pod.Spec.NodeName,
+		StartTime:   startTime,
+		Labels:      pod.Labels,
+		Annotations: pod.Annotations,
+		Containers:  containers,
+		Conditions:  conditions,
+		Volumes:     volumes,
+		QoSClass:    string(pod.Status.QOSClass),
+		IsForwarded: isForwarded,
+		ForwardKey:  forwardKey,
+	}
+}
+
+// GetEvents returns Kubernetes events for a resource
+func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	listOpts := metav1.ListOptions{}
+
+	// Build field selector for specific resource
+	if opts.ResourceKind != "" && opts.ResourceName != "" {
+		listOpts.FieldSelector = fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s",
+			opts.ResourceKind, opts.ResourceName)
+	}
+
+	eventList, err := clientSet.CoreV1().Events(namespace).List(context.Background(), listOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list events: %w", err)
+	}
+
+	// Sort by last timestamp (most recent first)
+	events := eventList.Items
+	for i := 0; i < len(events)-1; i++ {
+		for j := i + 1; j < len(events); j++ {
+			if events[j].LastTimestamp.After(events[i].LastTimestamp.Time) {
+				events[i], events[j] = events[j], events[i]
+			}
+		}
+	}
+
+	// Apply limit
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if len(events) > limit {
+		events = events[:limit]
+	}
+
+	result := make([]types.K8sEvent, len(events))
+	for i, e := range events {
+		result[i] = types.K8sEvent{
+			Type:           e.Type,
+			Reason:         e.Reason,
+			Message:        e.Message,
+			Count:          e.Count,
+			FirstTimestamp: e.FirstTimestamp.Time,
+			LastTimestamp:  e.LastTimestamp.Time,
+			Source:         e.Source.Component,
+			ObjectKind:     e.InvolvedObject.Kind,
+			ObjectName:     e.InvolvedObject.Name,
+		}
+	}
+
+	return result, nil
+}
+
+// GetEndpoints returns endpoints for a service
+func (a *KubernetesDiscoveryAdapter) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	endpoints, err := clientSet.CoreV1().Endpoints(namespace).Get(context.Background(), serviceName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get endpoints: %w", err)
+	}
+
+	result := &types.K8sEndpoints{
+		Name:      endpoints.Name,
+		Namespace: endpoints.Namespace,
+		Subsets:   make([]types.K8sEndpointSubset, len(endpoints.Subsets)),
+	}
+
+	for i, subset := range endpoints.Subsets {
+		result.Subsets[i] = types.K8sEndpointSubset{
+			Addresses:         make([]types.K8sEndpointAddress, len(subset.Addresses)),
+			NotReadyAddresses: make([]types.K8sEndpointAddress, len(subset.NotReadyAddresses)),
+			Ports:             make([]types.K8sEndpointPort, len(subset.Ports)),
+		}
+
+		for j, addr := range subset.Addresses {
+			result.Subsets[i].Addresses[j] = types.K8sEndpointAddress{
+				IP:       addr.IP,
+				Hostname: addr.Hostname,
+			}
+			if addr.NodeName != nil {
+				result.Subsets[i].Addresses[j].NodeName = *addr.NodeName
+			}
+			if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
+				result.Subsets[i].Addresses[j].PodName = addr.TargetRef.Name
+			}
+		}
+
+		for j, addr := range subset.NotReadyAddresses {
+			result.Subsets[i].NotReadyAddresses[j] = types.K8sEndpointAddress{
+				IP:       addr.IP,
+				Hostname: addr.Hostname,
+			}
+			if addr.NodeName != nil {
+				result.Subsets[i].NotReadyAddresses[j].NodeName = *addr.NodeName
+			}
+			if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
+				result.Subsets[i].NotReadyAddresses[j].PodName = addr.TargetRef.Name
+			}
+		}
+
+		for j, port := range subset.Ports {
+			result.Subsets[i].Ports[j] = types.K8sEndpointPort{
+				Name:     port.Name,
+				Port:     port.Port,
+				Protocol: string(port.Protocol),
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // ServiceCRUDAdapter implements types.ServiceCRUD for adding/removing individual services
