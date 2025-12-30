@@ -432,6 +432,34 @@ func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*type
 	return &types.K8sService{Name: name, Namespace: namespace}, nil
 }
 
+func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	return &types.PodLogsResponse{
+		PodName:       podName,
+		Namespace:     namespace,
+		Context:       ctx,
+		ContainerName: opts.Container,
+		Logs:          []string{"mock log line"},
+		LineCount:     1,
+		Truncated:     false,
+	}, nil
+}
+
+func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
+}
+
 // Tests for additional manager methods
 
 func TestManager_SetDiagnosticsProvider(t *testing.T) {

@@ -977,3 +977,203 @@ func TestServiceCRUDAdapter_AddService_ErrorCases(t *testing.T) {
 		})
 	}
 }
+
+// Test splitLogLines helper function
+func TestSplitLogLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: []string{},
+		},
+		{
+			name:     "single line no newline",
+			input:    "hello world",
+			expected: []string{"hello world"},
+		},
+		{
+			name:     "single line with newline",
+			input:    "hello world\n",
+			expected: []string{"hello world"},
+		},
+		{
+			name:     "multiple lines with LF",
+			input:    "line1\nline2\nline3",
+			expected: []string{"line1", "line2", "line3"},
+		},
+		{
+			name:     "multiple lines with CRLF",
+			input:    "line1\r\nline2\r\nline3",
+			expected: []string{"line1", "line2", "line3"},
+		},
+		{
+			name:     "mixed line endings",
+			input:    "line1\nline2\r\nline3\n",
+			expected: []string{"line1", "line2", "line3"},
+		},
+		{
+			name:     "empty lines",
+			input:    "line1\n\nline3",
+			expected: []string{"line1", "", "line3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := splitLogLines(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d lines, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, line := range result {
+				if line != tt.expected[i] {
+					t.Errorf("Line %d: expected '%s', got '%s'", i, tt.expected[i], line)
+				}
+			}
+		})
+	}
+}
+
+// Test formatDuration helper function
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		expected string
+	}{
+		{
+			name:     "zero duration",
+			duration: 0,
+			expected: "0s",
+		},
+		{
+			name:     "seconds",
+			duration: 45 * time.Second,
+			expected: "45s",
+		},
+		{
+			name:     "minutes only",
+			duration: 5 * time.Minute,
+			expected: "5m",
+		},
+		{
+			name:     "minutes and seconds shows minutes only",
+			duration: 5*time.Minute + 30*time.Second,
+			expected: "5m",
+		},
+		{
+			name:     "hours only",
+			duration: 2 * time.Hour,
+			expected: "2h",
+		},
+		{
+			name:     "hours and minutes shows hours only",
+			duration: 2*time.Hour + 15*time.Minute,
+			expected: "2h",
+		},
+		{
+			name:     "days only",
+			duration: 72 * time.Hour,
+			expected: "3d",
+		},
+		{
+			name:     "days and hours shows days only",
+			duration: 48*time.Hour + 6*time.Hour,
+			expected: "2d",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatDuration(tt.duration)
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// Test KubernetesDiscoveryAdapter pod methods with nil manager
+func TestKubernetesDiscoveryAdapter_GetPodLogs_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.GetPodLogs("test-context", "default", "test-pod", types.PodLogsOptions{})
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{})
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.GetPod("test-context", "default", "test-pod")
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{})
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEndpoints_NilManager(t *testing.T) {
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.GetEndpoints("test-context", "default", "my-service")
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
