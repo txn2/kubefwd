@@ -3,7 +3,7 @@ module github.com/txn2/kubefwd
 go 1.25.0
 
 require (
-	github.com/bep/debounce v1.2.0
+	github.com/bep/debounce v1.2.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
