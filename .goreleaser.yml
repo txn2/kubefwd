@@ -9,6 +9,8 @@ env:
 before:
   hooks:
     - go mod download
+    # Update version in server.json for MCP registry
+    - sed -i'' -e 's/"version": "0.0.0"/"version": "{{ .Version }}"/g' server.json
 
 builds:
   - id: kubefwd
