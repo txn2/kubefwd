@@ -14,6 +14,24 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+// waitForCondition polls the provided condition until it returns true or the timeout elapses.
+func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if condition() {
+			return
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("condition not met within %s", timeout)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // createMockServiceFWD creates a mock ServiceFWD for testing
 func createMockServiceFWD(name, namespace, context string) *fwdservice.ServiceFWD {
 	svc := &v1.Service{
@@ -77,16 +95,13 @@ func TestAdd_SingleService(t *testing.T) {
 
 	Add(svc)
 
-	// Give time for async add
-	time.Sleep(50 * time.Millisecond)
-
-	svcRegistry.mutex.Lock()
-	_, found := svcRegistry.services[svc.String()]
-	svcRegistry.mutex.Unlock()
-
-	if !found {
-		t.Error("Expected service to be added to registry")
-	}
+	// Wait for async add to complete
+	waitForCondition(t, 1*time.Second, func() bool {
+		svcRegistry.mutex.Lock()
+		_, found := svcRegistry.services[svc.String()]
+		svcRegistry.mutex.Unlock()
+		return found
+	})
 }
 
 // TestAdd_DuplicateService tests that adding the same service twice is idempotent
@@ -104,15 +119,12 @@ func TestAdd_DuplicateService(t *testing.T) {
 	Add(svc)
 	Add(svc)
 
-	time.Sleep(50 * time.Millisecond)
-
-	svcRegistry.mutex.Lock()
-	count := len(svcRegistry.services)
-	svcRegistry.mutex.Unlock()
-
-	if count != 1 {
-		t.Errorf("Expected 1 service in registry, got %d", count)
-	}
+	waitForCondition(t, 1*time.Second, func() bool {
+		svcRegistry.mutex.Lock()
+		count := len(svcRegistry.services)
+		svcRegistry.mutex.Unlock()
+		return count == 1
+	})
 }
 
 // TestAdd_MultipleServices tests adding multiple different services
@@ -132,15 +144,12 @@ func TestAdd_MultipleServices(t *testing.T) {
 	Add(svc2)
 	Add(svc3)
 
-	time.Sleep(100 * time.Millisecond)
-
-	svcRegistry.mutex.Lock()
-	count := len(svcRegistry.services)
-	svcRegistry.mutex.Unlock()
-
-	if count != 3 {
-		t.Errorf("Expected 3 services in registry, got %d", count)
-	}
+	waitForCondition(t, 1*time.Second, func() bool {
+		svcRegistry.mutex.Lock()
+		count := len(svcRegistry.services)
+		svcRegistry.mutex.Unlock()
+		return count == 3
+	})
 }
 
 // TestAdd_AfterShutdown tests that adding after shutdown is a no-op
