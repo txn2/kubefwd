@@ -881,7 +881,9 @@ func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pod logs: %w", err)
 	}
-	defer logStream.Close()
+	defer func() {
+		_ = logStream.Close()
+	}()
 
 	// Read logs with size limit (1MB max)
 	const maxLogSize = 1024 * 1024 // 1MB
@@ -921,17 +923,18 @@ func splitLogLines(content string) []string {
 	var currentLine []byte
 
 	for i := 0; i < len(content); i++ {
-		if content[i] == '\n' {
+		switch content[i] {
+		case '\n':
 			lines = append(lines, string(currentLine))
 			currentLine = nil
-		} else if content[i] == '\r' {
+		case '\r':
 			// Handle \r\n
 			if i+1 < len(content) && content[i+1] == '\n' {
 				lines = append(lines, string(currentLine))
 				currentLine = nil
 				i++ // skip the \n
 			}
-		} else {
+		default:
 			currentLine = append(currentLine, content[i])
 		}
 	}
