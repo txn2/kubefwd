@@ -738,27 +738,12 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 		return nil, nil, fmt.Errorf("failed to add namespace: %w", err)
 	}
 
-	// Wait briefly for initial service discovery to complete.
-	// Services are discovered asynchronously by the informer, so we wait for
-	// a short period to give a more accurate count.
+	// Query the K8s API directly for the service count.
+	// This is immediate - no need to wait for the informer.
 	serviceCount := 0
-	state := s.getState()
-	if state != nil {
-		// Wait up to 3 seconds for services to be discovered
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			services := state.GetServices()
-			count := 0
-			for _, svc := range services {
-				if svc.Namespace == input.Namespace && svc.Context == k8sContext {
-					count++
-				}
-			}
-			if count > 0 {
-				serviceCount = count
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
+	if k8s := s.getK8sDiscovery(); k8s != nil {
+		if services, err := k8s.ListServices(k8sContext, input.Namespace); err == nil {
+			serviceCount = len(services)
 		}
 	}
 
