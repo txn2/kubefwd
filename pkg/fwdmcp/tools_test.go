@@ -33,12 +33,9 @@ func TestHandleListServices(t *testing.T) {
 	server.SetStateReader(mock)
 
 	// Test basic list
-	result, data, err := server.handleListServices(context.Background(), nil, ListServicesInput{})
+	_, data, err := server.handleListServices(context.Background(), nil, ListServicesInput{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Expected non-nil result")
 	}
 	if data == nil {
 		t.Fatal("Expected non-nil data")
@@ -136,12 +133,9 @@ func TestHandleGetService(t *testing.T) {
 	}
 
 	// Test valid service
-	result, data, err := server.handleGetService(context.Background(), nil, GetServiceInput{Key: "svc1.default.ctx1"})
+	_, data, err := server.handleGetService(context.Background(), nil, GetServiceInput{Key: "svc1.default.ctx1"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Error("Expected non-nil result")
 	}
 	if data == nil {
 		t.Error("Expected non-nil data")
@@ -189,12 +183,9 @@ func TestHandleDiagnoseErrors(t *testing.T) {
 	}
 	server.SetStateReader(mock)
 
-	result, data, err := server.handleDiagnoseErrors(context.Background(), nil, struct{}{})
+	_, data, err := server.handleDiagnoseErrors(context.Background(), nil, struct{}{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Error("Expected non-nil result")
 	}
 
 	dataMap := data.(map[string]interface{})
@@ -230,13 +221,11 @@ func TestHandleReconnectService(t *testing.T) {
 	server.SetServiceController(mock)
 
 	// Test successful reconnect
-	result, data, err := server.handleReconnectService(context.Background(), nil, ReconnectServiceInput{Key: "svc1"})
+	_, data, err := server.handleReconnectService(context.Background(), nil, ReconnectServiceInput{Key: "svc1"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if !dataMap["success"].(bool) {
 		t.Error("Expected success to be true")
@@ -264,13 +253,11 @@ func TestHandleReconnectAllErrors(t *testing.T) {
 	mock := &mockServiceController{reconnected: 5}
 	server.SetServiceController(mock)
 
-	result, data, err := server.handleReconnectAllErrors(context.Background(), nil, struct{}{})
+	_, data, err := server.handleReconnectAllErrors(context.Background(), nil, struct{}{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["triggered"].(int) != 5 {
 		t.Errorf("Expected 5 triggered, got %d", dataMap["triggered"])
@@ -302,13 +289,11 @@ func TestHandleGetMetrics(t *testing.T) {
 	server.SetMetricsProvider(metricsProvider)
 
 	// Test summary scope
-	result, data, err := server.handleGetMetrics(context.Background(), nil, GetMetricsInput{})
+	_, data, err := server.handleGetMetrics(context.Background(), nil, GetMetricsInput{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["totalBytesIn"].(uint64) != 1000 {
 		t.Errorf("Expected 1000 bytesIn, got %d", dataMap["totalBytesIn"])
@@ -359,16 +344,14 @@ func TestHandleGetLogs(t *testing.T) {
 	server.SetStateReader(mock)
 
 	// Test default count
-	result, _, err := server.handleGetLogs(context.Background(), nil, GetLogsInput{})
+	_, _, err = server.handleGetLogs(context.Background(), nil, GetLogsInput{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
 
 	// Test with count
-	_, data, err := server.handleGetLogs(context.Background(), nil, GetLogsInput{Count: 2})
+	var data any
+	_, data, err = server.handleGetLogs(context.Background(), nil, GetLogsInput{Count: 2})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -421,13 +404,11 @@ func TestHandleGetHealth(t *testing.T) {
 	}
 	server.SetStateReader(mock)
 
-	result, data, err := server.handleGetHealth(context.Background(), nil, struct{}{})
+	_, data, err := server.handleGetHealth(context.Background(), nil, struct{}{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["status"].(string) != "healthy" {
 		t.Errorf("Expected healthy status, got %s", dataMap["status"])
@@ -490,13 +471,11 @@ func TestHandleSyncService(t *testing.T) {
 	server.SetServiceController(mock)
 
 	// Test successful sync
-	result, data, err := server.handleSyncService(context.Background(), nil, SyncServiceInput{Key: "svc1", Force: false})
+	_, data, err := server.handleSyncService(context.Background(), nil, SyncServiceInput{Key: "svc1", Force: false})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if !dataMap["success"].(bool) {
 		t.Error("Expected success to be true")
@@ -675,16 +654,14 @@ func TestHandleAddNamespace(t *testing.T) {
 	server.SetNamespaceController(mock)
 
 	// Test successful add
-	result, data, err := server.handleAddNamespace(context.Background(), nil, AddNamespaceInput{
+	_, data, err := server.handleAddNamespace(context.Background(), nil, AddNamespaceInput{
 		Namespace: "staging",
 		Context:   "minikube",
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["namespace"].(string) != "staging" {
 		t.Errorf("Expected namespace 'staging', got '%s'", dataMap["namespace"])
@@ -713,16 +690,14 @@ func TestHandleRemoveNamespace(t *testing.T) {
 	server.SetNamespaceController(mock)
 
 	// Test successful remove
-	result, data, err := server.handleRemoveNamespace(context.Background(), nil, RemoveNamespaceInput{
+	_, data, err := server.handleRemoveNamespace(context.Background(), nil, RemoveNamespaceInput{
 		Namespace: "staging",
 		Context:   "minikube",
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if !dataMap["success"].(bool) {
 		t.Error("Expected success to be true")
@@ -754,7 +729,7 @@ func TestHandleAddService(t *testing.T) {
 	server.SetServiceCRUD(mock)
 
 	// Test successful add
-	result, data, err := server.handleAddService(context.Background(), nil, AddServiceInput{
+	_, data, err := server.handleAddService(context.Background(), nil, AddServiceInput{
 		Namespace:   "staging",
 		ServiceName: "postgres",
 		Context:     "minikube",
@@ -762,9 +737,7 @@ func TestHandleAddService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["serviceName"].(string) != "postgres" {
 		t.Errorf("Expected serviceName 'postgres', got '%s'", dataMap["serviceName"])
@@ -796,13 +769,11 @@ func TestHandleRemoveService(t *testing.T) {
 	server.SetServiceCRUD(mock)
 
 	// Test successful remove
-	result, data, err := server.handleRemoveService(context.Background(), nil, RemoveServiceInput{Key: "postgres.staging.minikube"})
+	_, data, err := server.handleRemoveService(context.Background(), nil, RemoveServiceInput{Key: "postgres.staging.minikube"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if !dataMap["success"].(bool) {
 		t.Error("Expected success to be true")
@@ -843,16 +814,14 @@ func TestHandleGetConnectionInfo(t *testing.T) {
 	server.SetConnectionInfoProvider(mock)
 
 	// Test successful get
-	result, data, err := server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+	_, data, err := server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
 		ServiceName: "postgres",
 		Namespace:   "staging",
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	// Data is returned as *types.ConnectionInfoResponse
 	connInfo := data.(*types.ConnectionInfoResponse)
 	if connInfo.Service != "postgres" {
@@ -884,13 +853,11 @@ func TestHandleListK8sNamespaces(t *testing.T) {
 	server.SetKubernetesDiscovery(mock)
 
 	// Test successful list
-	result, data, err := server.handleListK8sNamespaces(context.Background(), nil, ListK8sNamespacesInput{})
+	_, data, err := server.handleListK8sNamespaces(context.Background(), nil, ListK8sNamespacesInput{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	namespaces := dataMap["namespaces"].([]types.K8sNamespace)
 	if len(namespaces) != 2 {
@@ -929,13 +896,11 @@ func TestHandleListK8sServices(t *testing.T) {
 	server.SetKubernetesDiscovery(mock)
 
 	// Test successful list
-	result, data, err := server.handleListK8sServices(context.Background(), nil, ListK8sServicesInput{Namespace: "default"})
+	_, data, err := server.handleListK8sServices(context.Background(), nil, ListK8sServicesInput{Namespace: "default"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	services := dataMap["services"].([]types.K8sService)
 	if len(services) != 2 {
@@ -980,13 +945,11 @@ func TestHandleFindServices(t *testing.T) {
 	server.SetStateReader(mockState)
 
 	// Test successful find
-	result, data, err := server.handleFindServices(context.Background(), nil, FindServicesInput{Query: "postgres"})
+	_, data, err := server.handleFindServices(context.Background(), nil, FindServicesInput{Query: "postgres"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["count"].(int) != 1 { // Should find only postgres
 		t.Errorf("Expected 1 service, got %d", dataMap["count"])
@@ -1024,13 +987,11 @@ func TestHandleListHostnames(t *testing.T) {
 	server.SetStateReader(mockState)
 
 	// Test successful list
-	result, data, err := server.handleListHostnames(context.Background(), nil, struct{}{})
+	_, data, err := server.handleListHostnames(context.Background(), nil, struct{}{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Error("Expected non-nil result")
-	}
+	// Result is nil because the SDK auto-populates Content from the data
 	dataMap := data.(map[string]interface{})
 	if dataMap["total"].(int) != 3 {
 		t.Errorf("Expected 3 hostnames, got %d", dataMap["total"])

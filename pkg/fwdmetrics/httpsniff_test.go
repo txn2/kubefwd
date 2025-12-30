@@ -1,6 +1,7 @@
 package fwdmetrics
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ func TestHTTPSnifferRingBufferWrap(t *testing.T) {
 
 	// Add more entries than the buffer can hold
 	for i := 0; i < 10; i++ {
-		request := "GET /page" + string(rune('0'+i)) + " HTTP/1.1\r\n\r\n"
+		request := fmt.Sprintf("GET /page%d HTTP/1.1\r\n\r\n", i)
 		sniffer.SniffRequest([]byte(request))
 
 		response := "HTTP/1.1 200 OK\r\n\r\n"
@@ -225,7 +226,7 @@ func TestHTTPSnifferGetLogs(t *testing.T) {
 
 	// Add 5 logs
 	for i := 0; i < 5; i++ {
-		sniffer.SniffRequest([]byte("GET /page" + string(rune('0'+i)) + " HTTP/1.1\r\n\r\n"))
+		sniffer.SniffRequest([]byte(fmt.Sprintf("GET /page%d HTTP/1.1\r\n\r\n", i)))
 		sniffer.SniffResponse([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 	}
 
@@ -396,7 +397,7 @@ func TestHTTPSnifferChronologicalOrder(t *testing.T) {
 
 	// Add logs with identifiable paths
 	for i := 0; i < 5; i++ {
-		path := "/order" + string(rune('0'+i))
+		path := fmt.Sprintf("/order%d", i)
 		sniffer.SniffRequest([]byte("GET " + path + " HTTP/1.1\r\n\r\n"))
 		sniffer.SniffResponse([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 	}
@@ -405,7 +406,7 @@ func TestHTTPSnifferChronologicalOrder(t *testing.T) {
 
 	// Verify chronological order (oldest first)
 	for i, log := range logs {
-		expectedPath := "/order" + string(rune('0'+i))
+		expectedPath := fmt.Sprintf("/order%d", i)
 		if log.Path != expectedPath {
 			t.Errorf("log %d: expected %s, got %s (order wrong)", i, expectedPath, log.Path)
 		}

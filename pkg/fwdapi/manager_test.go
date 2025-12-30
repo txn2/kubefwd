@@ -1,7 +1,6 @@
 package fwdapi
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +16,7 @@ func resetGlobalState() {
 	defer mu.Unlock()
 	apiEnabled = false
 	apiManager = nil
-	once = sync.Once{} // This allows Init to run again
+	initialized = false
 }
 
 func TestEnable(t *testing.T) {

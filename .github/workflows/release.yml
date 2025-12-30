@@ -55,7 +55,7 @@ jobs:
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
         with:
           distribution: goreleaser
-          version: latest
+          version: "~> v2.13"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,9 +91,15 @@ jobs:
         id: hash
         run: |
           cd dist
-          # Include main archives and MCPB bundles in provenance
-          (sha256sum *.tar.gz *.zip 2>/dev/null; sha256sum mcpb/*.mcpb 2>/dev/null) | base64 -w0 > /tmp/hashes.txt || true
-          echo "hashes=$(cat /tmp/hashes.txt)" >> "$GITHUB_OUTPUT"
+          # Find all release artifacts and generate hashes
+          # Using find to avoid glob expansion issues when files don't exist
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.mcpb" \) -exec sha256sum {} \; > /tmp/hashes.txt
+          if [ -s /tmp/hashes.txt ]; then
+            cat /tmp/hashes.txt | base64 -w0 > /tmp/hashes_b64.txt
+            echo "hashes=$(cat /tmp/hashes_b64.txt)" >> "$GITHUB_OUTPUT"
+          else
+            echo "No artifacts found for hashing"
+          fi
 
       - name: Install mcp-publisher
         run: |

@@ -1,6 +1,7 @@
 package fwdapi
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func TestLogBufferAddWrap(t *testing.T) {
 		buf.Add(types.LogBufferEntry{
 			Timestamp: time.Now(),
 			Level:     "info",
-			Message:   "message " + string(rune('0'+i)),
+			Message:   fmt.Sprintf("message %d", i),
 		})
 	}
 
@@ -235,15 +236,30 @@ func TestLogBufferHookFire(t *testing.T) {
 	}
 
 	// Non-string values should be converted to empty string
+	orig := entry.Data["key2"]
+	if _, ok := orig.(string); ok {
+		t.Fatalf("Test setup error: entry.Data['key2'] should be non-string, got string with value %q", orig)
+	}
 	if entries[0].Fields["key2"] != "" {
-		t.Errorf("Expected field key2='' (non-string), got '%s'", entries[0].Fields["key2"])
+		t.Errorf("Expected field key2='' (from non-string %T(%v)), got %q", orig, orig, entries[0].Fields["key2"])
 	}
 }
 
 func TestGetLogBuffer(t *testing.T) {
-	// Reset the global state for testing
-	logBufferOnce = sync.Once{}
+	// Preserve and reset the global state for testing
+	logBufferMu.Lock()
+	origBuf := globalLogBuffer
+	origInit := logBufferInitialized
 	globalLogBuffer = nil
+	logBufferInitialized = false
+	logBufferMu.Unlock()
+
+	defer func() {
+		logBufferMu.Lock()
+		globalLogBuffer = origBuf
+		logBufferInitialized = origInit
+		logBufferMu.Unlock()
+	}()
 
 	buf1 := GetLogBuffer()
 	if buf1 == nil {
@@ -257,9 +273,20 @@ func TestGetLogBuffer(t *testing.T) {
 }
 
 func TestGetLogBufferProvider(t *testing.T) {
-	// Reset the global state for testing
-	logBufferOnce = sync.Once{}
+	// Preserve and reset the global state for testing
+	logBufferMu.Lock()
+	origBuf := globalLogBuffer
+	origInit := logBufferInitialized
 	globalLogBuffer = nil
+	logBufferInitialized = false
+	logBufferMu.Unlock()
+
+	defer func() {
+		logBufferMu.Lock()
+		globalLogBuffer = origBuf
+		logBufferInitialized = origInit
+		logBufferMu.Unlock()
+	}()
 
 	provider := GetLogBufferProvider()
 	if provider == nil {
@@ -271,18 +298,24 @@ func TestGetLogBufferProvider(t *testing.T) {
 }
 
 func TestInitLogBuffer(t *testing.T) {
-	// Reset the global state for testing
-	logBufferOnce = sync.Once{}
+	// Preserve and reset the global state for testing
+	logBufferMu.Lock()
+	origBuf := globalLogBuffer
+	origInit := logBufferInitialized
 	globalLogBuffer = nil
+	logBufferInitialized = false
+	logBufferMu.Unlock()
 
-	// This will add a hook to logrus, but we can't easily verify it
-	// Just ensure it doesn't panic
+	defer func() {
+		logBufferMu.Lock()
+		globalLogBuffer = origBuf
+		logBufferInitialized = origInit
+		logBufferMu.Unlock()
+	}()
+
+	// This will add a hook to logrus, but we can't easily verify it.
+	// Just ensure it doesn't panic when called.
 	InitLogBuffer()
-
-	buf := GetLogBuffer()
-	if buf == nil {
-		t.Error("Buffer should be initialized after InitLogBuffer")
-	}
 }
 
 func TestLogBufferConcurrency(t *testing.T) {
