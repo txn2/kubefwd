@@ -606,6 +606,19 @@ func (m *mockK8sDiscovery) GetService(ctx, namespace, name string) (*types.K8sSe
 	return nil, errors.New("not found")
 }
 
+func (m *mockK8sDiscovery) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	// Return mock pod logs
+	return &types.PodLogsResponse{
+		PodName:       podName,
+		Namespace:     namespace,
+		Context:       ctx,
+		ContainerName: opts.Container,
+		Logs:          []string{"mock log line 1", "mock log line 2"},
+		LineCount:     2,
+		Truncated:     false,
+	}, nil
+}
+
 // mockConnectionInfoProvider implements ConnectionInfoProvider for testing
 type mockConnectionInfoProvider struct {
 	services []types.ConnectionInfoResponse
@@ -912,6 +925,67 @@ func TestHandleListK8sServices(t *testing.T) {
 	_, _, err = server.handleListK8sServices(context.Background(), nil, ListK8sServicesInput{Namespace: "default"})
 	if err == nil {
 		t.Error("Expected error when list fails")
+	}
+}
+
+func TestHandleGetPodLogs(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil k8s discovery
+	_, _, err := server.handleGetPodLogs(context.Background(), nil, GetPodLogsInput{
+		Namespace: "default",
+		PodName:   "api-pod-123",
+	})
+	if err == nil {
+		t.Error("Expected error when k8s discovery is nil")
+	}
+
+	// Set up mock
+	mock := &mockK8sDiscovery{
+		contexts: &types.K8sContextsResponse{
+			Contexts:       []types.K8sContext{{Name: "dev", Active: true}},
+			CurrentContext: "dev",
+		},
+	}
+	server.SetKubernetesDiscovery(mock)
+
+	// Test missing namespace
+	_, _, err = server.handleGetPodLogs(context.Background(), nil, GetPodLogsInput{
+		PodName: "api-pod-123",
+	})
+	if err == nil {
+		t.Error("Expected error when namespace is missing")
+	}
+
+	// Test missing pod name
+	_, _, err = server.handleGetPodLogs(context.Background(), nil, GetPodLogsInput{
+		Namespace: "default",
+	})
+	if err == nil {
+		t.Error("Expected error when pod_name is missing")
+	}
+
+	// Test successful log retrieval
+	_, data, err := server.handleGetPodLogs(context.Background(), nil, GetPodLogsInput{
+		Namespace: "default",
+		PodName:   "api-pod-123",
+		TailLines: 50,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	dataMap := data.(map[string]interface{})
+	if dataMap["podName"].(string) != "api-pod-123" {
+		t.Errorf("Expected podName 'api-pod-123', got %v", dataMap["podName"])
+	}
+	if dataMap["namespace"].(string) != "default" {
+		t.Errorf("Expected namespace 'default', got %v", dataMap["namespace"])
+	}
+	logs := dataMap["logs"].([]string)
+	if len(logs) != 2 {
+		t.Errorf("Expected 2 log lines, got %d", len(logs))
 	}
 }
 

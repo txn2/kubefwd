@@ -2670,6 +2670,18 @@ func (m *mockKubernetesDiscovery) ListContexts() (*types.K8sContextsResponse, er
 	return m.contexts, nil
 }
 
+func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	return &types.PodLogsResponse{
+		PodName:       podName,
+		Namespace:     namespace,
+		Context:       ctx,
+		ContainerName: opts.Container,
+		Logs:          []string{"mock log line 1", "mock log line 2"},
+		LineCount:     2,
+		Truncated:     false,
+	}, nil
+}
+
 // Namespaces Handler Tests
 
 func TestNamespacesHandler_List(t *testing.T) {

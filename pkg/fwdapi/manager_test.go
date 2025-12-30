@@ -432,6 +432,18 @@ func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*type
 	return &types.K8sService{Name: name, Namespace: namespace}, nil
 }
 
+func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	return &types.PodLogsResponse{
+		PodName:       podName,
+		Namespace:     namespace,
+		Context:       ctx,
+		ContainerName: opts.Container,
+		Logs:          []string{"mock log line"},
+		LineCount:     1,
+		Truncated:     false,
+	}, nil
+}
+
 // Tests for additional manager methods
 
 func TestManager_SetDiagnosticsProvider(t *testing.T) {
