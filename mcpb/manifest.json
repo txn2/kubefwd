@@ -32,12 +32,12 @@
     "mcp_config": {
       "command": "${__dirname}/kubefwd",
       "args": ["mcp"],
-      "env": {}
-    },
-    "platform_overrides": {
-      "win32": {
-        "command": "${__dirname}/kubefwd.exe",
-        "args": ["mcp"]
+      "env": {},
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/kubefwd.exe",
+          "args": ["mcp"]
+        }
       }
     }
   },
