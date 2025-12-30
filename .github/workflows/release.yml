@@ -95,6 +95,21 @@ jobs:
           (sha256sum *.tar.gz *.zip 2>/dev/null; sha256sum mcpb/*.mcpb 2>/dev/null) | base64 -w0 > /tmp/hashes.txt || true
           echo "hashes=$(cat /tmp/hashes.txt)" >> "$GITHUB_OUTPUT"
 
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz
+          sudo mv mcp-publisher /usr/local/bin/
+
+      - name: Publish to MCP Registry
+        run: |
+          # Login using GitHub OIDC (id-token: write permission required)
+          mcp-publisher login github-oidc
+
+          # Publish the server to the MCP registry
+          mcp-publisher publish
+        env:
+          # OIDC token is automatically available via ACTIONS_ID_TOKEN_REQUEST_*
+
   provenance:
     needs: [release]
     if: needs.release.outputs.hashes != ''
