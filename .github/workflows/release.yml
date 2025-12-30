@@ -100,6 +100,29 @@ jobs:
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz
           sudo mv mcp-publisher /usr/local/bin/
 
+      - name: Prepare server.json for MCP Registry
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Calculate SHA-256 hashes for each MCPB bundle
+          SHA_DARWIN_ARM64=$(sha256sum dist/mcpb/kubefwd-${VERSION}-darwin-arm64.mcpb | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(sha256sum dist/mcpb/kubefwd-${VERSION}-darwin-amd64.mcpb | cut -d' ' -f1)
+          SHA_WINDOWS_AMD64=$(sha256sum dist/mcpb/kubefwd-${VERSION}-windows-amd64.mcpb | cut -d' ' -f1)
+
+          # Update server.json with version and SHA-256 hashes
+          sed -i "s/0.0.0/${VERSION}/g" server.json
+          sed -i "s/kubefwd-0.0.0-darwin-arm64.mcpb/kubefwd-${VERSION}-darwin-arm64.mcpb/" server.json
+          sed -i "s/kubefwd-0.0.0-darwin-amd64.mcpb/kubefwd-${VERSION}-darwin-amd64.mcpb/" server.json
+          sed -i "s/kubefwd-0.0.0-windows-amd64.mcpb/kubefwd-${VERSION}-windows-amd64.mcpb/" server.json
+
+          # Replace placeholder hashes (in order: arm64, amd64, windows)
+          sed -i "0,/PLACEHOLDER_SHA256/{s/PLACEHOLDER_SHA256/${SHA_DARWIN_ARM64}/}" server.json
+          sed -i "0,/PLACEHOLDER_SHA256/{s/PLACEHOLDER_SHA256/${SHA_DARWIN_AMD64}/}" server.json
+          sed -i "0,/PLACEHOLDER_SHA256/{s/PLACEHOLDER_SHA256/${SHA_WINDOWS_AMD64}/}" server.json
+
+          echo "Updated server.json:"
+          cat server.json
+
       - name: Publish to MCP Registry
         run: |
           # Login using GitHub OIDC (id-token: write permission required)
@@ -107,8 +130,6 @@ jobs:
 
           # Publish the server to the MCP registry
           mcp-publisher publish
-        env:
-          # OIDC token is automatically available via ACTIONS_ID_TOKEN_REQUEST_*
 
   provenance:
     needs: [release]

@@ -9,14 +9,19 @@
   "version": "0.0.0",
   "packages": [
     {
-      "registryType": "docker",
-      "identifier": "txn2/kubefwd",
-      "version": "0.0.0",
-      "transport": {
-        "type": "stdio"
-      },
-      "arguments": ["mcp"],
-      "environmentVariables": []
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-arm64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-amd64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-windows-amd64.mcpb",
+      "file_sha256": "PLACEHOLDER_SHA256"
     }
   ],
   "tags": [
