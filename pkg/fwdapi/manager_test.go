@@ -346,10 +346,245 @@ func (m *mockEventStreamer) SubscribeType(eventType events.EventType) (<-chan ev
 	return ch, func() { close(ch) }
 }
 
+// Additional mock implementations
+
+type mockDiagnosticsProvider struct{}
+
+func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
+	return types.DiagnosticSummary{}
+}
+func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
+	return nil, nil
+}
+func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
+	return nil, nil
+}
+func (m *mockDiagnosticsProvider) GetNetworkStatus() types.NetworkStatus {
+	return types.NetworkStatus{}
+}
+func (m *mockDiagnosticsProvider) GetErrors(count int) []types.ErrorDetail { return nil }
+
+type mockNamespaceController struct {
+	namespaces []types.NamespaceInfoResponse
+}
+
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+	info := types.NamespaceInfoResponse{
+		Key:       namespace + "." + ctx,
+		Namespace: namespace,
+		Context:   ctx,
+	}
+	m.namespaces = append(m.namespaces, info)
+	return &info, nil
+}
+
+func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+	return nil
+}
+
+func (m *mockNamespaceController) ListNamespaces() []types.NamespaceInfoResponse {
+	return m.namespaces
+}
+
+func (m *mockNamespaceController) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+	for _, ns := range m.namespaces {
+		if ns.Context == ctx && ns.Namespace == namespace {
+			return &ns, nil
+		}
+	}
+	return nil, nil
+}
+
+type mockServiceCRUD struct {
+	mockServiceController
+}
+
+func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddServiceResponse, error) {
+	return &types.AddServiceResponse{
+		Key:         req.ServiceName + "." + req.Namespace + "." + req.Context,
+		ServiceName: req.ServiceName,
+		Namespace:   req.Namespace,
+		Context:     req.Context,
+	}, nil
+}
+
+func (m *mockServiceCRUD) RemoveService(key string) error {
+	return nil
+}
+
+type mockKubernetesDiscovery struct{}
+
+func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	return []types.K8sNamespace{{Name: "default"}}, nil
+}
+
+func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	return []types.K8sService{{Name: "test-svc", Namespace: namespace}}, nil
+}
+
+func (m *mockKubernetesDiscovery) ListContexts() (*types.K8sContextsResponse, error) {
+	return &types.K8sContextsResponse{
+		CurrentContext: "minikube",
+		Contexts:       []types.K8sContext{{Name: "minikube", Cluster: "minikube"}},
+	}, nil
+}
+
+func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+	return &types.K8sService{Name: name, Namespace: namespace}, nil
+}
+
+// Tests for additional manager methods
+
+func TestManager_SetDiagnosticsProvider(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockDiagnosticsProvider{}
+
+	manager.SetDiagnosticsProvider(mock)
+
+	if manager.diagnosticsProvider != mock {
+		t.Error("Expected diagnosticsProvider to be set")
+	}
+}
+
+func TestManager_SetNamespaceController(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockNamespaceController{}
+
+	manager.SetNamespaceController(mock)
+
+	if manager.namespaceController != mock {
+		t.Error("Expected namespaceController to be set")
+	}
+}
+
+func TestManager_SetServiceCRUD(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockServiceCRUD{}
+
+	manager.SetServiceCRUD(mock)
+
+	if manager.serviceCRUD != mock {
+		t.Error("Expected serviceCRUD to be set")
+	}
+}
+
+func TestManager_SetKubernetesDiscovery(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockKubernetesDiscovery{}
+
+	manager.SetKubernetesDiscovery(mock)
+
+	if manager.k8sDiscovery != mock {
+		t.Error("Expected k8sDiscovery to be set")
+	}
+}
+
+func TestManager_GetNamespaceManager(t *testing.T) {
+	manager := &Manager{}
+
+	// Initially nil
+	if manager.GetNamespaceManager() != nil {
+		t.Error("Expected nil namespace manager initially")
+	}
+}
+
+func TestManager_AddNamespace(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockNamespaceController{}
+	manager.SetNamespaceController(mock)
+
+	info, err := manager.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if info == nil {
+		t.Fatal("Expected namespace info")
+	}
+
+	if info.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got '%s'", info.Namespace)
+	}
+}
+
+func TestManager_AddNamespaceNoController(t *testing.T) {
+	manager := &Manager{}
+
+	_, err := manager.AddNamespace("ctx", "ns", types.AddNamespaceOpts{})
+	if err == nil {
+		t.Error("Expected error when no controller is set")
+	}
+}
+
+func TestManager_RemoveNamespace(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockNamespaceController{}
+	manager.SetNamespaceController(mock)
+
+	err := manager.RemoveNamespace("minikube", "default")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+func TestManager_ListNamespaces(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockNamespaceController{}
+	mock.namespaces = []types.NamespaceInfoResponse{
+		{Key: "default.minikube", Namespace: "default", Context: "minikube"},
+	}
+	manager.SetNamespaceController(mock)
+
+	namespaces := manager.ListNamespaces()
+	if len(namespaces) != 1 {
+		t.Errorf("Expected 1 namespace, got %d", len(namespaces))
+	}
+}
+
+func TestManager_ListNamespacesNoController(t *testing.T) {
+	manager := &Manager{}
+
+	namespaces := manager.ListNamespaces()
+	if namespaces != nil {
+		t.Error("Expected nil when no controller is set")
+	}
+}
+
+func TestManager_GetNamespace(t *testing.T) {
+	manager := &Manager{}
+	mock := &mockNamespaceController{}
+	mock.namespaces = []types.NamespaceInfoResponse{
+		{Key: "default.minikube", Namespace: "default", Context: "minikube"},
+	}
+	manager.SetNamespaceController(mock)
+
+	info, err := manager.GetNamespace("minikube", "default")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if info == nil {
+		t.Fatal("Expected namespace info")
+	}
+}
+
+func TestManager_GetNamespaceNoController(t *testing.T) {
+	manager := &Manager{}
+
+	_, err := manager.GetNamespace("ctx", "ns")
+	if err == nil {
+		t.Error("Expected error when no controller is set")
+	}
+}
+
 // Ensure mocks implement the interfaces
 var (
-	_ types.StateReader       = (*mockStateReader)(nil)
-	_ types.MetricsProvider   = (*mockMetricsProvider)(nil)
-	_ types.ServiceController = (*mockServiceController)(nil)
-	_ types.EventStreamer     = (*mockEventStreamer)(nil)
+	_ types.StateReader         = (*mockStateReader)(nil)
+	_ types.MetricsProvider     = (*mockMetricsProvider)(nil)
+	_ types.ServiceController   = (*mockServiceController)(nil)
+	_ types.EventStreamer       = (*mockEventStreamer)(nil)
+	_ types.DiagnosticsProvider = (*mockDiagnosticsProvider)(nil)
+	_ types.NamespaceController = (*mockNamespaceController)(nil)
+	_ types.ServiceCRUD         = (*mockServiceCRUD)(nil)
+	_ types.KubernetesDiscovery = (*mockKubernetesDiscovery)(nil)
 )
