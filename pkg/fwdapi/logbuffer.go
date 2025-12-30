@@ -145,15 +145,22 @@ func (h *LogBufferHook) Fire(entry *log.Entry) error {
 
 // Global log buffer instance
 var (
-	globalLogBuffer *LogBuffer
-	logBufferOnce   sync.Once
+	globalLogBuffer      *LogBuffer
+	logBufferMu          sync.Mutex
+	logBufferInitialized bool
 )
 
 // GetLogBuffer returns the global log buffer, creating it if necessary
 func GetLogBuffer() *LogBuffer {
-	logBufferOnce.Do(func() {
-		globalLogBuffer = NewLogBuffer(1000)
-	})
+	logBufferMu.Lock()
+	defer logBufferMu.Unlock()
+
+	if logBufferInitialized {
+		return globalLogBuffer
+	}
+
+	globalLogBuffer = NewLogBuffer(1000)
+	logBufferInitialized = true
 	return globalLogBuffer
 }
 
