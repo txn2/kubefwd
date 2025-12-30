@@ -2,6 +2,7 @@ package fwdmcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -1272,6 +1273,275 @@ func TestConnectionInfoProviderHTTP_FindServices(t *testing.T) {
 	}
 	if len(results) != 2 {
 		t.Errorf("Expected 2 results for namespace 'staging', got %d", len(results))
+	}
+}
+
+// TestStateReaderHTTP_GetForward tests getting a single forward
+func TestStateReaderHTTP_GetForward(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/forwards/fwd1.svc1.default.ctx1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                  `json:"success"`
+			Data    types.ForwardResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ForwardResponse{
+				Key:         "fwd1.svc1.default.ctx1",
+				ServiceKey:  "svc1.default.ctx1",
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx1",
+				PodName:     "pod1",
+				LocalIP:     "127.1.0.1",
+				LocalPort:   "80",
+				PodPort:     "8080",
+				Status:      "active",
+			},
+		})
+	}))
+	defer server.Close()
+
+	reader := NewStateReaderHTTP(server.URL)
+
+	// Test existing forward
+	fwd := reader.GetForward("fwd1.svc1.default.ctx1")
+	if fwd == nil {
+		t.Fatal("Expected non-nil forward")
+	}
+	if fwd.PodName != "pod1" {
+		t.Errorf("Expected pod name 'pod1', got '%s'", fwd.PodName)
+	}
+	if fwd.LocalIP != "127.1.0.1" {
+		t.Errorf("Expected LocalIP '127.1.0.1', got '%s'", fwd.LocalIP)
+	}
+
+	// Test non-existing forward
+	fwd = reader.GetForward("nonexistent")
+	if fwd != nil {
+		t.Error("Expected nil for non-existent forward")
+	}
+}
+
+// TestMetricsProviderHTTP_GetServiceSnapshot tests getting a single service snapshot
+func TestMetricsProviderHTTP_GetServiceSnapshot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/metrics/services/svc1.default.ctx1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                         `json:"success"`
+			Data    types.ServiceMetricsResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceMetricsResponse{
+				Key:           "svc1.default.ctx1",
+				ServiceName:   "svc1",
+				Namespace:     "default",
+				Context:       "ctx1",
+				TotalBytesIn:  5000,
+				TotalBytesOut: 10000,
+				RateIn:        100.5,
+				RateOut:       200.5,
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewMetricsProviderHTTP(server.URL)
+
+	// Test existing service
+	snapshot := provider.GetServiceSnapshot("svc1.default.ctx1")
+	if snapshot == nil {
+		t.Fatal("Expected non-nil snapshot")
+	}
+	if snapshot.ServiceName != "svc1" {
+		t.Errorf("Expected service name 'svc1', got '%s'", snapshot.ServiceName)
+	}
+	if snapshot.TotalBytesIn != 5000 {
+		t.Errorf("Expected TotalBytesIn 5000, got %d", snapshot.TotalBytesIn)
+	}
+
+	// Test non-existing service
+	snapshot = provider.GetServiceSnapshot("nonexistent")
+	if snapshot != nil {
+		t.Error("Expected nil for non-existent service")
+	}
+}
+
+// TestDiagnosticsProviderHTTP_GetServiceDiagnostic tests getting service diagnostic
+func TestDiagnosticsProviderHTTP_GetServiceDiagnostic(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/diagnostics/services/svc1.default.ctx1" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(struct {
+				Success bool             `json:"success"`
+				Error   *types.ErrorInfo `json:"error"`
+			}{
+				Success: false,
+				Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "service not found"},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                    `json:"success"`
+			Data    types.ServiceDiagnostic `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceDiagnostic{
+				Key:         "svc1.default.ctx1",
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx1",
+				Status:      "healthy",
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewDiagnosticsProviderHTTP(server.URL)
+
+	// Test existing service
+	diag, err := provider.GetServiceDiagnostic("svc1.default.ctx1")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if diag.ServiceName != "svc1" {
+		t.Errorf("Expected service name 'svc1', got '%s'", diag.ServiceName)
+	}
+	if diag.Status != "healthy" {
+		t.Errorf("Expected status 'healthy', got '%s'", diag.Status)
+	}
+
+	// Test non-existing service
+	_, err = provider.GetServiceDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for non-existent service")
+	}
+}
+
+// TestDiagnosticsProviderHTTP_GetForwardDiagnostic tests getting forward diagnostic
+func TestDiagnosticsProviderHTTP_GetForwardDiagnostic(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/diagnostics/forwards/fwd1" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(struct {
+				Success bool             `json:"success"`
+				Error   *types.ErrorInfo `json:"error"`
+			}{
+				Success: false,
+				Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "forward not found"},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                    `json:"success"`
+			Data    types.ForwardDiagnostic `json:"data"`
+		}{
+			Success: true,
+			Data: types.ForwardDiagnostic{
+				Key:        "fwd1",
+				ServiceKey: "svc1.default.ctx1",
+				PodName:    "pod1",
+				Status:     "active",
+				LocalIP:    "127.1.0.1",
+				LocalPort:  "80",
+				PodPort:    "8080",
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewDiagnosticsProviderHTTP(server.URL)
+
+	// Test existing forward
+	diag, err := provider.GetForwardDiagnostic("fwd1")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if diag.PodName != "pod1" {
+		t.Errorf("Expected pod name 'pod1', got '%s'", diag.PodName)
+	}
+	if diag.Status != "active" {
+		t.Errorf("Expected status 'active', got '%s'", diag.Status)
+	}
+
+	// Test non-existing forward
+	_, err = provider.GetForwardDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for non-existent forward")
+	}
+}
+
+// TestDiagnosticsProviderHTTP_GetNetworkStatus tests getting network status
+func TestDiagnosticsProviderHTTP_GetNetworkStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                `json:"success"`
+			Data    types.NetworkStatus `json:"data"`
+		}{
+			Success: true,
+			Data: types.NetworkStatus{
+				LoopbackInterface: "lo0",
+				IPRange:           "127.1.0.1-127.255.255.254",
+				IPsAllocated:      5,
+				PortsInUse:        10,
+				Hostnames:         []string{"svc1", "svc2"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewDiagnosticsProviderHTTP(server.URL)
+	status := provider.GetNetworkStatus()
+
+	if status.LoopbackInterface != "lo0" {
+		t.Errorf("Expected loopback interface 'lo0', got '%s'", status.LoopbackInterface)
+	}
+	if status.IPsAllocated != 5 {
+		t.Errorf("Expected 5 allocated IPs, got %d", status.IPsAllocated)
+	}
+	if status.PortsInUse != 10 {
+		t.Errorf("Expected 10 ports in use, got %d", status.PortsInUse)
+	}
+	if len(status.Hostnames) != 2 {
+		t.Errorf("Expected 2 hostnames, got %d", len(status.Hostnames))
+	}
+}
+
+// TestNewAPIUnavailableError tests the API unavailable error constructor
+func TestNewAPIUnavailableError(t *testing.T) {
+	cause := fmt.Errorf("connection refused")
+	err := NewAPIUnavailableError("http://localhost:8080", cause)
+	if err == nil {
+		t.Fatal("Expected non-nil error")
+	}
+
+	if err.Code != "api_unavailable" {
+		t.Errorf("Expected code 'api_unavailable', got '%s'", err.Code)
+	}
+
+	errMsg := err.Error()
+	if errMsg == "" {
+		t.Error("Expected non-empty error message")
+	}
+
+	// Verify the message contains the API URL
+	if err.Message == "" {
+		t.Error("Expected non-empty message")
+	}
+
+	// Verify diagnosis is provided
+	if err.Diagnosis == "" {
+		t.Error("Expected non-empty diagnosis")
 	}
 }
 

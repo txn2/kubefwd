@@ -778,6 +778,75 @@ func TestManager_CreateServiceFWD_EmptySelector(t *testing.T) {
 	}
 }
 
+func TestManager_GetWatcherByKey(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Test not found
+	watcher := mgr.GetWatcherByKey("nonexistent.key")
+	if watcher != nil {
+		t.Error("Expected nil watcher for non-existent key")
+	}
+
+	// Add a watcher manually
+	testWatcher := &NamespaceWatcher{
+		key:       "default.minikube",
+		namespace: "default",
+		context:   "minikube",
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+	}
+	mgr.mu.Lock()
+	mgr.watchers["default.minikube"] = testWatcher
+	mgr.mu.Unlock()
+
+	// Test found
+	found := mgr.GetWatcherByKey("default.minikube")
+	if found == nil {
+		t.Fatal("Expected to find watcher")
+	}
+	if found.key != "default.minikube" {
+		t.Errorf("Expected key 'default.minikube', got %q", found.key)
+	}
+}
+
+func TestNamespaceWatcher_Done(t *testing.T) {
+	doneCh := make(chan struct{})
+	watcher := &NamespaceWatcher{
+		doneCh: doneCh,
+	}
+
+	// Get the done channel
+	done := watcher.Done()
+	if done == nil {
+		t.Fatal("Expected non-nil done channel")
+	}
+
+	// Verify it's the same channel
+	if done != doneCh {
+		t.Error("Expected Done() to return the doneCh")
+	}
+
+	// Verify it blocks initially
+	select {
+	case <-done:
+		t.Error("Done channel should not be closed initially")
+	default:
+		// Expected
+	}
+
+	// Close and verify
+	close(doneCh)
+	select {
+	case <-done:
+		// Expected
+	default:
+		t.Error("Done channel should be closed after closing doneCh")
+	}
+}
+
 // Helper function to check if string contains substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
