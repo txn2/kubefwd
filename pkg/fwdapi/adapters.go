@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -801,6 +802,145 @@ func (a *KubernetesDiscoveryAdapter) ListContexts() (*types.K8sContextsResponse,
 		Contexts:       contexts,
 		CurrentContext: rawConfig.CurrentContext,
 	}, nil
+}
+
+// GetPodLogs returns logs from a pod
+func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	// If no context specified, use current context
+	if ctx == "" {
+		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current context: %w", err)
+		}
+		ctx = currentCtx
+	}
+
+	nsManager := a.getNsManager()
+	if nsManager == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+
+	// Get or create clientSet for this context
+	clientSet := nsManager.GetClientSet(ctx)
+	if clientSet == nil {
+		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+		}
+		clientSet, err = kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		}
+	}
+
+	// Set defaults
+	tailLines := int64(opts.TailLines)
+	if tailLines <= 0 {
+		tailLines = 100
+	}
+	// Cap at 1000 lines to prevent huge responses
+	if tailLines > 1000 {
+		tailLines = 1000
+	}
+
+	// Build pod log options
+	podLogOpts := &corev1.PodLogOptions{
+		Container:  opts.Container,
+		TailLines:  &tailLines,
+		Previous:   opts.Previous,
+		Timestamps: opts.Timestamps,
+	}
+
+	// Parse sinceTime if provided
+	if opts.SinceTime != "" {
+		sinceTime, err := time.Parse(time.RFC3339, opts.SinceTime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sinceTime format (expected RFC3339): %w", err)
+		}
+		metaSinceTime := metav1.NewTime(sinceTime)
+		podLogOpts.SinceTime = &metaSinceTime
+	}
+
+	// Get the pod first to determine container name if not specified
+	containerName := opts.Container
+	if containerName == "" {
+		pod, err := clientSet.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pod: %w", err)
+		}
+		if len(pod.Spec.Containers) > 0 {
+			containerName = pod.Spec.Containers[0].Name
+			podLogOpts.Container = containerName
+		}
+	}
+
+	// Get the logs
+	req := clientSet.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts)
+	logStream, err := req.Stream(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod logs: %w", err)
+	}
+	defer logStream.Close()
+
+	// Read logs with size limit (1MB max)
+	const maxLogSize = 1024 * 1024 // 1MB
+	buf := make([]byte, maxLogSize)
+	n, err := logStream.Read(buf)
+	if err != nil && err.Error() != "EOF" {
+		// Ignore EOF, it's expected when the stream ends
+		if n == 0 {
+			return nil, fmt.Errorf("failed to read pod logs: %w", err)
+		}
+	}
+
+	truncated := n >= maxLogSize
+
+	// Split into lines
+	logContent := string(buf[:n])
+	lines := splitLogLines(logContent)
+
+	return &types.PodLogsResponse{
+		PodName:       podName,
+		Namespace:     namespace,
+		Context:       ctx,
+		ContainerName: containerName,
+		Logs:          lines,
+		LineCount:     len(lines),
+		Truncated:     truncated,
+	}, nil
+}
+
+// splitLogLines splits log content into lines, handling different line endings
+func splitLogLines(content string) []string {
+	if content == "" {
+		return []string{}
+	}
+
+	var lines []string
+	var currentLine []byte
+
+	for i := 0; i < len(content); i++ {
+		if content[i] == '\n' {
+			lines = append(lines, string(currentLine))
+			currentLine = nil
+		} else if content[i] == '\r' {
+			// Handle \r\n
+			if i+1 < len(content) && content[i+1] == '\n' {
+				lines = append(lines, string(currentLine))
+				currentLine = nil
+				i++ // skip the \n
+			}
+		} else {
+			currentLine = append(currentLine, content[i])
+		}
+	}
+
+	// Add last line if there's content remaining
+	if len(currentLine) > 0 {
+		lines = append(lines, string(currentLine))
+	}
+
+	return lines
 }
 
 // ServiceCRUDAdapter implements types.ServiceCRUD for adding/removing individual services
