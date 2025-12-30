@@ -137,6 +137,29 @@ type KubernetesDiscovery interface {
 
 	// GetService returns details for a specific service
 	GetService(ctx, namespace, name string) (*K8sService, error)
+
+	// GetPodLogs returns logs from a pod backing a forwarded service
+	GetPodLogs(ctx, namespace, podName string, opts PodLogsOptions) (*PodLogsResponse, error)
+}
+
+// PodLogsOptions configures pod log retrieval
+type PodLogsOptions struct {
+	Container  string // specific container (optional, defaults to first)
+	TailLines  int    // number of lines from end (default 100)
+	SinceTime  string // RFC3339 timestamp to start from (optional)
+	Previous   bool   // get logs from previous container instance
+	Timestamps bool   // include timestamps in output
+}
+
+// PodLogsResponse contains log output from a pod
+type PodLogsResponse struct {
+	PodName       string   `json:"podName"`
+	Namespace     string   `json:"namespace"`
+	Context       string   `json:"context"`
+	ContainerName string   `json:"containerName"`
+	Logs          []string `json:"logs"`
+	LineCount     int      `json:"lineCount"`
+	Truncated     bool     `json:"truncated"` // true if logs were truncated due to size
 }
 
 // ConnectionInfoProvider provides developer-focused connection information
