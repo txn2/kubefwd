@@ -591,7 +591,7 @@ func TestStateReaderHTTP_GetFiltered_StatusParsing(t *testing.T) {
 
 // TestHTTPClient_NetworkError tests handling of network errors
 func TestHTTPClient_NetworkError(t *testing.T) {
-	client := NewHTTPClient("http://localhost:99999") // Invalid port
+	client := NewHTTPClient("http://127.0.0.1:65535") // Use unreachable port in valid range
 
 	var result interface{}
 	err := client.Get("/test", &result)
