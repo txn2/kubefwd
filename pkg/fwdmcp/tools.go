@@ -738,19 +738,50 @@ func (s *Server) handleAddNamespace(ctx context.Context, req *mcp.CallToolReques
 		return nil, nil, fmt.Errorf("failed to add namespace: %w", err)
 	}
 
+	// Wait briefly for initial service discovery to complete.
+	// Services are discovered asynchronously by the informer, so we wait for
+	// a short period to give a more accurate count.
+	serviceCount := 0
+	state := s.getState()
+	if state != nil {
+		// Wait up to 3 seconds for services to be discovered
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			services := state.GetServices()
+			count := 0
+			for _, svc := range services {
+				if svc.Namespace == input.Namespace && svc.Context == k8sContext {
+					count++
+				}
+			}
+			if count > 0 {
+				serviceCount = count
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
 	result := map[string]interface{}{
 		"success":      true,
 		"key":          info.Key,
 		"namespace":    info.Namespace,
 		"context":      info.Context,
-		"serviceCount": info.ServiceCount,
+		"serviceCount": serviceCount,
 		"message":      fmt.Sprintf("Started forwarding namespace %s", input.Namespace),
+	}
+
+	// Build message based on discovered services
+	var message string
+	if serviceCount > 0 {
+		message = fmt.Sprintf("Started forwarding namespace %s. Discovered %d services.", input.Namespace, serviceCount)
+	} else {
+		message = fmt.Sprintf("Started forwarding namespace %s. Services will be discovered automatically.", input.Namespace)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Started forwarding namespace %s. Discovered %d services.",
-				input.Namespace, info.ServiceCount)},
+			&mcp.TextContent{Text: message},
 		},
 	}, result, nil
 }
