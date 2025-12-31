@@ -335,7 +335,7 @@ func TestConcurrentAddRemove(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			svc := createMockServiceFWD(
-				"svc-"+string(rune('a'+(n%26))),
+				fmt.Sprintf("svc-%d", n),
 				"default",
 				"ctx",
 			)
@@ -349,7 +349,7 @@ func TestConcurrentAddRemove(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			time.Sleep(time.Millisecond * time.Duration(n%10))
-			name := "svc-" + string(rune('a'+(n%26))) + ".default.ctx"
+			name := fmt.Sprintf("svc-%d.default.ctx", n)
 			RemoveByName(name)
 		}(i)
 	}
