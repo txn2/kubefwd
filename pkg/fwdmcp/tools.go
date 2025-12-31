@@ -1307,9 +1307,10 @@ func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolReques
 		}
 
 		if input.Port > 0 {
+			portStr := fmt.Sprintf("%d", input.Port)
 			found := false
 			for _, fwd := range svc.PortForwards {
-				if fwd.LocalPort == fmt.Sprintf("%d", input.Port) || fwd.PodPort == fmt.Sprintf("%d", input.Port) {
+				if fwd.LocalPort == portStr || fwd.PodPort == portStr {
 					found = true
 					break
 				}
