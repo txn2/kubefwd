@@ -127,6 +127,11 @@ func (m *Manager) setupRouter() *gin.Engine {
 			v1.GET("/kubernetes/services", k8sHandler.ListServices)
 			v1.GET("/kubernetes/services/:namespace/:name", k8sHandler.GetService)
 			v1.GET("/kubernetes/contexts", k8sHandler.ListContexts)
+			v1.GET("/kubernetes/pods/:namespace", k8sHandler.ListPods)
+			v1.GET("/kubernetes/pods/:namespace/:podName", k8sHandler.GetPod)
+			v1.GET("/kubernetes/pods/:namespace/:podName/logs", k8sHandler.GetPodLogs)
+			v1.GET("/kubernetes/events/:namespace", k8sHandler.GetEvents)
+			v1.GET("/kubernetes/endpoints/:namespace/:serviceName", k8sHandler.GetEndpoints)
 		}
 	}
 

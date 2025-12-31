@@ -953,18 +953,50 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 		return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
 	}
 
+	// If namespace is not provided, search for the service
+	if input.Namespace == "" {
+		results, err := connInfo.FindServices(input.ServiceName, input.Port, "")
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to search for service: %w", err)
+		}
+
+		if len(results) == 0 {
+			return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
+		}
+
+		// Filter to exact matches
+		var exactMatches []types.ConnectionInfoResponse
+		for _, r := range results {
+			if r.Service == input.ServiceName {
+				exactMatches = append(exactMatches, r)
+			}
+		}
+
+		if len(exactMatches) == 0 {
+			return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
+		}
+
+		if len(exactMatches) == 1 {
+			return nil, &exactMatches[0], nil
+		}
+
+		// Multiple matches - need namespace to disambiguate
+		var namespaces []string
+		for _, r := range exactMatches {
+			namespaces = append(namespaces, r.Namespace)
+		}
+		return nil, nil, fmt.Errorf("multiple services found with name '%s' in namespaces: %v. Please specify namespace", input.ServiceName, namespaces)
+	}
+
 	// Build key from input: service.namespace.context
-	key := input.ServiceName
-	if input.Namespace != "" {
-		key = input.ServiceName + "." + input.Namespace
-		// Add context if specified, or use current context
-		context := input.Context
-		if context == "" {
-			context = s.getCurrentContext()
-		}
-		if context != "" {
-			key = key + "." + context
-		}
+	key := input.ServiceName + "." + input.Namespace
+	// Add context if specified, or use current context
+	context := input.Context
+	if context == "" {
+		context = s.getCurrentContext()
+	}
+	if context != "" {
+		key = key + "." + context
 	}
 
 	info, err := connInfo.GetConnectionInfo(key)
