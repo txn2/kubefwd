@@ -14,9 +14,9 @@
 All release artifacts are signed using [Cosign](https://github.com/sigstore/cosign) with keyless signing (Sigstore). To verify a release:
 
 ```bash
-# Download the checksum file and its signature
-curl -LO https://github.com/txn2/kubefwd/releases/download/v1.25.6/kubefwd_checksums.txt
-curl -LO https://github.com/txn2/kubefwd/releases/download/v1.25.6/kubefwd_checksums.txt.sigstore.json
+# Download the checksum file and its signature for the desired release version
+curl -LO https://github.com/txn2/kubefwd/releases/download/{VERSION}/kubefwd_checksums.txt
+curl -LO https://github.com/txn2/kubefwd/releases/download/{VERSION}/kubefwd_checksums.txt.sigstore.json
 
 # Verify the signature
 cosign verify-blob \
