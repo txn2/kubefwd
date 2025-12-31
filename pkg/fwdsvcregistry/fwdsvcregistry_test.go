@@ -194,8 +194,8 @@ func TestAdd_ConcurrentAdds(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			svc := createMockServiceFWD(
-				"svc-"+string(rune('a'+n%26)),
-				"ns-"+string(rune('a'+n/26)),
+				fmt.Sprintf("svc-%d", n),
+				fmt.Sprintf("ns-%d", n),
 				"ctx",
 			)
 			Add(svc)
