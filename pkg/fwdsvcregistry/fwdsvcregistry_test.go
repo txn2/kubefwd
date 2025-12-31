@@ -286,7 +286,7 @@ func TestRemoveByName_ConcurrentRemoves(t *testing.T) {
 	services := make([]*fwdservice.ServiceFWD, numServices)
 	for i := 0; i < numServices; i++ {
 		svc := createMockServiceFWD(
-			"svc-"+string(rune('a'+i%26)),
+			fmt.Sprintf("svc-%d", i),
 			"ns-"+string(rune('a'+i/26)),
 			"ctx",
 		)
