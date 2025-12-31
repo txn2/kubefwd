@@ -3,13 +3,13 @@
 ![kubefwd - kubernetes bulk port forwarding](kubefwd-mast2.jpg)
 
 [![GitHub license](https://img.shields.io/github/license/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/blob/master/LICENSE)
-[![CI](https://github.com/txn2/kubefwd/actions/workflows/ci.yml/badge.svg)](https://github.com/txn2/kubefwd/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/txn2/kubefwd/branch/master/graph/badge.svg)](https://codecov.io/gh/txn2/kubefwd)
 [![Go Report Card](https://goreportcard.com/badge/github.com/txn2/kubefwd)](https://goreportcard.com/report/github.com/txn2/kubefwd)
 [![GitHub release](https://img.shields.io/github/release/txn2/kubefwd.svg)](https://github.com/txn2/kubefwd/releases)
 [![GitHub Downloads](https://img.shields.io/github/downloads/txn2/kubefwd/total)](https://github.com/txn2/kubefwd/releases)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/txn2/kubefwd/badge)](https://scorecard.dev/viewer/?uri=github.com/txn2/kubefwd)
-
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11659/badge)](https://www.bestpractices.dev/projects/11659)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
 **[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[TUI Guide](https://kubefwd.com/tui-guide/)** | **[API Reference](https://kubefwd.com/api-reference/)** | **[MCP (AI Integration)](https://kubefwd.com/mcp-integration/)**
 
