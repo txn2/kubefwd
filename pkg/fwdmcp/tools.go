@@ -580,6 +580,10 @@ func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallTool
 	return nil, result, nil
 }
 
+func buildServiceKey(serviceName, namespace, ctx string) string {
+	return serviceName + "." + namespace + "." + ctx
+}
+
 func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest, input GetMetricsInput) (*mcp.CallToolResult, any, error) {
 	metrics := s.getMetrics()
 	state := s.getState()
@@ -616,7 +620,7 @@ func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest,
 		services := make([]map[string]interface{}, len(snapshots))
 		for i, svc := range snapshots {
 			services[i] = map[string]interface{}{
-				"key":           svc.ServiceName + "." + svc.Namespace + "." + svc.Context,
+				"key":           buildServiceKey(svc.ServiceName, svc.Namespace, svc.Context),
 				"serviceName":   svc.ServiceName,
 				"namespace":     svc.Namespace,
 				"totalBytesIn":  svc.TotalBytesIn,
