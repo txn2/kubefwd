@@ -899,6 +899,14 @@ func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolReque
 	return nil, result, nil
 }
 
+func buildConnectionKey(serviceName, namespace, context string) string {
+	key := serviceName + "." + namespace
+	if context != "" {
+		key = key + "." + context
+	}
+	return key
+}
+
 func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolRequest, input GetConnectionInfoInput) (*mcp.CallToolResult, any, error) {
 	connInfo := s.getConnectionInfo()
 	if connInfo == nil {
@@ -989,15 +997,12 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 	}
 
 	// Build key from input: service.namespace.context
-	key := input.ServiceName + "." + input.Namespace
 	// Add context if specified, or use current context
 	context := input.Context
 	if context == "" {
 		context = s.getCurrentContext()
 	}
-	if context != "" {
-		key = key + "." + context
-	}
+	key := buildConnectionKey(input.ServiceName, input.Namespace, context)
 
 	info, err := connInfo.GetConnectionInfo(key)
 	if err != nil {
