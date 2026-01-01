@@ -1,6 +1,6 @@
 site_name: kubefwd
-site_url: https://txn2.github.io/kubefwd
-site_description: Bulk port forwarding Kubernetes services for local development
+site_url: https://kubefwd.com
+site_description: Kubernetes service forwarding with interactive TUI, REST API, and MCP integration. Forward multiple services to unique local IPs for seamless local development.
 site_author: Craig Johnston
 repo_url: https://github.com/txn2/kubefwd
 repo_name: txn2/kubefwd
