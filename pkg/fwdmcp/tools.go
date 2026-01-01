@@ -580,6 +580,10 @@ func (s *Server) handleReconnectAllErrors(ctx context.Context, req *mcp.CallTool
 	return nil, result, nil
 }
 
+func buildServiceKey(serviceName, namespace, ctx string) string {
+	return serviceName + "." + namespace + "." + ctx
+}
+
 func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest, input GetMetricsInput) (*mcp.CallToolResult, any, error) {
 	metrics := s.getMetrics()
 	state := s.getState()
@@ -616,7 +620,7 @@ func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest,
 		services := make([]map[string]interface{}, len(snapshots))
 		for i, svc := range snapshots {
 			services[i] = map[string]interface{}{
-				"key":           svc.ServiceName + "." + svc.Namespace + "." + svc.Context,
+				"key":           buildServiceKey(svc.ServiceName, svc.Namespace, svc.Context),
 				"serviceName":   svc.ServiceName,
 				"namespace":     svc.Namespace,
 				"totalBytesIn":  svc.TotalBytesIn,
@@ -899,6 +903,14 @@ func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolReque
 	return nil, result, nil
 }
 
+func buildConnectionKey(serviceName, namespace, context string) string {
+	key := serviceName + "." + namespace
+	if context != "" {
+		key = key + "." + context
+	}
+	return key
+}
+
 func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolRequest, input GetConnectionInfoInput) (*mcp.CallToolResult, any, error) {
 	connInfo := s.getConnectionInfo()
 	if connInfo == nil {
@@ -989,15 +1001,12 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 	}
 
 	// Build key from input: service.namespace.context
-	key := input.ServiceName + "." + input.Namespace
 	// Add context if specified, or use current context
 	context := input.Context
 	if context == "" {
 		context = s.getCurrentContext()
 	}
-	if context != "" {
-		key = key + "." + context
-	}
+	key := buildConnectionKey(input.ServiceName, input.Namespace, context)
 
 	info, err := connInfo.GetConnectionInfo(key)
 	if err != nil {
@@ -1307,9 +1316,10 @@ func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolReques
 		}
 
 		if input.Port > 0 {
+			portStr := fmt.Sprintf("%d", input.Port)
 			found := false
 			for _, fwd := range svc.PortForwards {
-				if fwd.LocalPort == fmt.Sprintf("%d", input.Port) || fwd.PodPort == fmt.Sprintf("%d", input.Port) {
+				if fwd.LocalPort == portStr || fwd.PodPort == portStr {
 					found = true
 					break
 				}
