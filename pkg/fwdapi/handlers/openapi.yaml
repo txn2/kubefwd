@@ -535,6 +535,252 @@ paths:
               schema:
                 $ref: "#/components/schemas/Response"
 
+  /v1/kubernetes/pods/{namespace}:
+    get:
+      tags: [Kubernetes]
+      summary: List pods in a namespace
+      description: Returns pods with status, ready state, restarts, and age. Filter by label selector or service name.
+      operationId: listK8sPods
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: context
+          in: query
+          description: Kubernetes context (uses current if omitted)
+          schema:
+            type: string
+        - name: labelSelector
+          in: query
+          description: Label selector to filter pods (e.g., "app=nginx,version=v1")
+          schema:
+            type: string
+        - name: serviceName
+          in: query
+          description: Filter to pods backing this service
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of pods
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Namespace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/kubernetes/pods/{namespace}/{podName}:
+    get:
+      tags: [Kubernetes]
+      summary: Get pod details
+      description: Returns detailed pod information including containers, status, conditions, resources, and recent events
+      operationId: getK8sPod
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: podName
+          in: path
+          required: true
+          description: Pod name
+          schema:
+            type: string
+        - name: context
+          in: query
+          description: Kubernetes context (uses current if omitted)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pod details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Pod not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/kubernetes/pods/{namespace}/{podName}/logs:
+    get:
+      tags: [Kubernetes]
+      summary: Get pod logs
+      description: Returns log output from a pod's container. Useful for debugging services.
+      operationId: getK8sPodLogs
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: podName
+          in: path
+          required: true
+          description: Pod name
+          schema:
+            type: string
+        - name: context
+          in: query
+          description: Kubernetes context (uses current if omitted)
+          schema:
+            type: string
+        - name: container
+          in: query
+          description: Container name (defaults to first container)
+          schema:
+            type: string
+        - name: tailLines
+          in: query
+          description: Number of lines from end (default 100, max 1000)
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: sinceTime
+          in: query
+          description: RFC3339 timestamp to start from (e.g., 2024-01-15T10:30:00Z)
+          schema:
+            type: string
+            format: date-time
+        - name: previous
+          in: query
+          description: Get logs from previous container instance
+          schema:
+            type: boolean
+            default: false
+        - name: timestamps
+          in: query
+          description: Include timestamps in log output
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Pod logs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          podName:
+                            type: string
+                          namespace:
+                            type: string
+                          containerName:
+                            type: string
+                          logs:
+                            type: string
+                          lineCount:
+                            type: integer
+                          truncated:
+                            type: boolean
+        "404":
+          description: Pod not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/kubernetes/events/{namespace}:
+    get:
+      tags: [Kubernetes]
+      summary: Get Kubernetes events
+      description: Returns Kubernetes events for debugging. Shows scheduling, pulling, starting, killing events. Critical for diagnosing startup failures.
+      operationId: getK8sEvents
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: context
+          in: query
+          description: Kubernetes context (uses current if omitted)
+          schema:
+            type: string
+        - name: resourceKind
+          in: query
+          description: Filter by resource kind (Pod, Service, Deployment, etc.)
+          schema:
+            type: string
+        - name: resourceName
+          in: query
+          description: Filter by resource name
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Max events to return (default 50)
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Kubernetes events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+
+  /v1/kubernetes/endpoints/{namespace}/{serviceName}:
+    get:
+      tags: [Kubernetes]
+      summary: Get service endpoints
+      description: Returns endpoints for a Kubernetes service. Shows which pods are backing the service and their ready state. Useful for debugging service-to-pod routing.
+      operationId: getK8sEndpoints
+      parameters:
+        - name: namespace
+          in: path
+          required: true
+          description: Kubernetes namespace
+          schema:
+            type: string
+        - name: serviceName
+          in: path
+          required: true
+          description: Service name
+          schema:
+            type: string
+        - name: context
+          in: query
+          description: Kubernetes context (uses current if omitted)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service endpoints
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "404":
+          description: Service or endpoints not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/metrics:
     get:
       tags: [Metrics]

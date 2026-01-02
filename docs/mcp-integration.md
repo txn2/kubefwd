@@ -231,6 +231,14 @@ That's it. Start talking to your AI about your work.
 - **Get connection info** - Get ready-to-use connection strings, IPs, hostnames, and environment variables
 - **Find services** - Search forwarded services by name pattern, port, or namespace
 
+### Pod Debugging
+
+- **List pods** - See pods with status, ready state, restarts, and age; filter by labels or service
+- **Get pod details** - Inspect containers, conditions, resources, and recent events
+- **Get pod logs** - Stream logs from containers with tail, timestamps, and time filtering
+- **Get Kubernetes events** - View scheduling, pulling, starting events for diagnosing failures
+- **Get service endpoints** - See which pods back a service and their ready state
+
 ### Monitoring & Debugging
 
 - **Quick status** - Fast health check of kubefwd (healthy/degraded/unhealthy)
@@ -264,7 +272,7 @@ The MCP bridge runs without sudo and communicates with kubefwd via REST API. You
 
 For custom integrations, kubefwd MCP provides:
 
-??? note "23 Tools"
+??? note "28 Tools"
 
     | Category | Tools |
     |----------|-------|
@@ -272,6 +280,8 @@ For custom integrations, kubefwd MCP provides:
     | Namespace | `add_namespace`, `remove_namespace` |
     | Service | `add_service`, `remove_service`, `list_services`, `get_service`, `find_services` |
     | Connection | `get_connection_info`, `list_hostnames` |
+    | Pods | `list_pods`, `get_pod`, `get_pod_logs` |
+    | Kubernetes | `get_events`, `get_endpoints` |
     | Health | `get_health`, `get_quick_status`, `get_metrics`, `get_analysis`, `diagnose_errors` |
     | Traffic | `get_http_traffic`, `get_history`, `get_logs` |
     | Control | `reconnect_service`, `reconnect_all_errors`, `sync_service` |
