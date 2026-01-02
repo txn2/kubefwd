@@ -308,6 +308,95 @@ Get details for a specific Kubernetes service.
 curl http://kubefwd.internal/api/v1/kubernetes/services/default/api-gateway
 ```
 
+### GET /api/v1/kubernetes/pods/:namespace
+
+List pods in a namespace with status, ready state, restarts, and age.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| context | string | Kubernetes context (uses current if omitted) |
+| labelSelector | string | Filter pods by labels (e.g., "app=nginx") |
+| serviceName | string | Filter to pods backing this service |
+
+```bash
+# List all pods in namespace
+curl http://kubefwd.internal/api/v1/kubernetes/pods/default
+
+# Filter by label
+curl "http://kubefwd.internal/api/v1/kubernetes/pods/default?labelSelector=app=nginx"
+
+# Filter by service
+curl "http://kubefwd.internal/api/v1/kubernetes/pods/default?serviceName=api-gateway"
+```
+
+### GET /api/v1/kubernetes/pods/:namespace/:podName
+
+Get detailed pod information including containers, status, conditions, and resources.
+
+```bash
+curl http://kubefwd.internal/api/v1/kubernetes/pods/default/api-gateway-7d4f5b6c8-abc12
+```
+
+### GET /api/v1/kubernetes/pods/:namespace/:podName/logs
+
+Get logs from a pod's container.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| context | string | Kubernetes context (uses current if omitted) |
+| container | string | Container name (defaults to first container) |
+| tailLines | integer | Lines from end (default: 100, max: 1000) |
+| sinceTime | string | RFC3339 timestamp to start from |
+| previous | boolean | Get logs from previous container instance |
+| timestamps | boolean | Include timestamps in output |
+
+```bash
+# Get last 100 lines
+curl http://kubefwd.internal/api/v1/kubernetes/pods/default/api-gateway-7d4f5b6c8-abc12/logs
+
+# Get last 50 lines with timestamps
+curl "http://kubefwd.internal/api/v1/kubernetes/pods/default/api-gateway-7d4f5b6c8-abc12/logs?tailLines=50&timestamps=true"
+
+# Get logs from specific container
+curl "http://kubefwd.internal/api/v1/kubernetes/pods/default/api-gateway-7d4f5b6c8-abc12/logs?container=sidecar"
+```
+
+### GET /api/v1/kubernetes/events/:namespace
+
+Get Kubernetes events for debugging. Shows scheduling, pulling, starting, and killing events.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| context | string | Kubernetes context (uses current if omitted) |
+| resourceKind | string | Filter by kind (Pod, Service, Deployment) |
+| resourceName | string | Filter by resource name |
+| limit | integer | Max events to return (default: 50) |
+
+```bash
+# Get all events in namespace
+curl http://kubefwd.internal/api/v1/kubernetes/events/default
+
+# Filter to pod events
+curl "http://kubefwd.internal/api/v1/kubernetes/events/default?resourceKind=Pod"
+
+# Get events for specific pod
+curl "http://kubefwd.internal/api/v1/kubernetes/events/default?resourceKind=Pod&resourceName=api-gateway-7d4f5b6c8-abc12"
+```
+
+### GET /api/v1/kubernetes/endpoints/:namespace/:serviceName
+
+Get endpoints for a service. Shows which pods are backing the service and their ready state.
+
+```bash
+curl http://kubefwd.internal/api/v1/kubernetes/endpoints/default/api-gateway
+```
+
 ---
 
 ## Metrics
