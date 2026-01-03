@@ -89,11 +89,11 @@ jobs:
 
       - name: Run fuzz tests
         run: |
-          # Run each fuzz test for 30 seconds
+          # Run each fuzz test for 30 seconds with 60s total timeout for setup/teardown
           echo "Running FuzzIpFromString..."
-          go test -fuzz=FuzzIpFromString -fuzztime=30s ./pkg/fwdip/...
+          go test -fuzz=FuzzIpFromString -fuzztime=30s -timeout=60s ./pkg/fwdip/...
           echo "Running FuzzServiceConfigurationFromReservation..."
-          go test -fuzz=FuzzServiceConfigurationFromReservation -fuzztime=30s ./pkg/fwdip/...
+          go test -fuzz=FuzzServiceConfigurationFromReservation -fuzztime=30s -timeout=60s ./pkg/fwdip/...
 
   build:
     name: Build
