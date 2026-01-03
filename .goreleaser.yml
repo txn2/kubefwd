@@ -56,7 +56,8 @@ checksum:
 
 # Sign release artifacts with Cosign (keyless - uses OIDC identity)
 signs:
-  - cmd: cosign
+  - id: archives
+    cmd: cosign
     artifacts: archive
     signature: "${artifact}.sigstore.json"
     args:
@@ -64,7 +65,8 @@ signs:
       - "--yes"
       - "--bundle=${signature}"
       - "${artifact}"
-  - cmd: cosign
+  - id: checksums
+    cmd: cosign
     artifacts: checksum
     signature: "${artifact}.sigstore.json"
     args:
