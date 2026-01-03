@@ -347,8 +347,16 @@ Try:
 		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
 			// First try the local clientSets map (populated during namespace watcher startup)
 			clientSetsMu.RLock()
-			var clientSet kubernetes.Interface = clientSets[k8sContext]
+			cs, ok := clientSets[k8sContext]
 			clientSetsMu.RUnlock()
+
+			// Use kubernetes.Interface to support both *Clientset and Interface types
+			// Note: Must check ok && cs != nil because assigning nil pointer to interface
+			// creates non-nil interface with nil concrete value (Go nil interface gotcha)
+			var clientSet kubernetes.Interface
+			if ok && cs != nil {
+				clientSet = cs
+			}
 
 			if clientSet == nil {
 				// Fall back to NamespaceManager's cache for individually-added services
