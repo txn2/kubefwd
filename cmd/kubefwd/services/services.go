@@ -336,17 +336,28 @@ Try:
 	clientSets := make(map[string]*kubernetes.Clientset)
 	var clientSetsMu sync.RWMutex
 
+	// Declare nsManager here so it can be captured by closures below
+	// It will be assigned later after config validation
+	var nsManager *fwdns.NamespaceManager
+
 	if fwdtui.IsEnabled() {
 		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
 
 		// Set up pod logs streamer
 		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+			// First try the local clientSets map (populated during namespace watcher startup)
 			clientSetsMu.RLock()
-			clientSet, ok := clientSets[k8sContext]
+			var clientSet kubernetes.Interface = clientSets[k8sContext]
 			clientSetsMu.RUnlock()
 
-			if !ok {
-				return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+			if clientSet == nil {
+				// Fall back to NamespaceManager's cache for individually-added services
+				if nsManager != nil {
+					clientSet = nsManager.GetClientSet(k8sContext)
+				}
+				if clientSet == nil {
+					return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+				}
 			}
 
 			opts := &v1.PodLogOptions{
@@ -470,7 +481,7 @@ Try:
 	}
 
 	// Create the namespace manager for dynamic watcher management
-	nsManager := fwdns.NewManager(fwdns.ManagerConfig{
+	nsManager = fwdns.NewManager(fwdns.ManagerConfig{
 		HostFile:        hostFileWithLock,
 		ConfigPath:      cfgFilePath,
 		Domain:          domain,
