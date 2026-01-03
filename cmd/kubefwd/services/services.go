@@ -336,17 +336,36 @@ Try:
 	clientSets := make(map[string]*kubernetes.Clientset)
 	var clientSetsMu sync.RWMutex
 
+	// Declare nsManager here so it can be captured by closures below
+	// It will be assigned later after config validation
+	var nsManager *fwdns.NamespaceManager
+
 	if fwdtui.IsEnabled() {
 		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
 
 		// Set up pod logs streamer
 		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+			// First try the local clientSets map (populated during namespace watcher startup)
 			clientSetsMu.RLock()
-			clientSet, ok := clientSets[k8sContext]
+			cs, ok := clientSets[k8sContext]
 			clientSetsMu.RUnlock()
 
-			if !ok {
-				return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+			// Use kubernetes.Interface to support both *Clientset and Interface types
+			// Note: Must check ok && cs != nil because assigning nil pointer to interface
+			// creates non-nil interface with nil concrete value (Go nil interface gotcha)
+			var clientSet kubernetes.Interface
+			if ok && cs != nil {
+				clientSet = cs
+			}
+
+			if clientSet == nil {
+				// Fall back to NamespaceManager's cache for individually-added services
+				if nsManager != nil {
+					clientSet = nsManager.GetClientSet(k8sContext)
+				}
+				if clientSet == nil {
+					return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+				}
 			}
 
 			opts := &v1.PodLogOptions{
@@ -470,7 +489,7 @@ Try:
 	}
 
 	// Create the namespace manager for dynamic watcher management
-	nsManager := fwdns.NewManager(fwdns.ManagerConfig{
+	nsManager = fwdns.NewManager(fwdns.ManagerConfig{
 		HostFile:        hostFileWithLock,
 		ConfigPath:      cfgFilePath,
 		Domain:          domain,
@@ -486,24 +505,34 @@ Try:
 		GlobalStopCh:    stopListenCh,
 	})
 
+	// Set up adapters for Kubernetes discovery and service CRUD
+	// These are used by both API and TUI for browse/forward operations
+	getNsManager := func() *fwdns.NamespaceManager { return nsManager }
+	k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(getNsManager, cfgFilePath)
+	serviceCRUD := fwdapi.NewServiceCRUDAdapter(fwdtui.GetStore, getNsManager, cfgFilePath)
+	nsController := fwdapi.NewNamespaceManagerAdapter(getNsManager)
+
 	// Register namespace manager with API if enabled
 	if apiManager != nil {
 		apiManager.SetNamespaceManager(nsManager)
-
-		// Set up Kubernetes discovery adapter
-		k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(
-			apiManager.GetNamespaceManager,
-			cfgFilePath,
-		)
 		apiManager.SetKubernetesDiscovery(k8sDiscovery)
-
-		// Set up ServiceCRUD adapter for add/remove operations
-		serviceCRUD := fwdapi.NewServiceCRUDAdapter(
-			fwdtui.GetStore,
-			apiManager.GetNamespaceManager,
-			cfgFilePath,
-		)
 		apiManager.SetServiceCRUD(serviceCRUD)
+	}
+
+	// Wire up TUI browse modal adapters
+	if tuiManager != nil {
+		tuiManager.SetBrowseDiscovery(k8sDiscovery)
+		tuiManager.SetBrowseServiceCRUD(serviceCRUD)
+		tuiManager.SetBrowseNamespaceController(nsController)
+		tuiManager.SetRemoveForwardCallback(func(key string) error {
+			fwdsvcregistry.RemoveByName(key)
+			return nil
+		})
+
+		// Set initial context in header
+		if len(contexts) > 0 {
+			tuiManager.SetHeaderContext(contexts[0])
+		}
 	}
 
 	// Start watchers for each context/namespace combination (skip in idle mode)

@@ -15,20 +15,26 @@ type OpenDetailMsg struct {
 	Key string
 }
 
+// RemoveForwardMsg is sent when a forward should be removed
+type RemoveForwardMsg struct {
+	RegistryKey string // service.namespace.context key for registry lookup
+}
+
 // Column keys
 const (
-	colKeyKey       = "_key" // Hidden key column for row identification
-	colKeyHostname  = "hostname"
-	colKeyLocalAddr = "localaddr"
-	colKeyPod       = "pod"
-	colKeyPort      = "port"
-	colKeyNamespace = "namespace"
-	colKeyContext   = "context"
-	colKeyStatus    = "status"
-	colKeyBytesIn   = "bytesin"
-	colKeyBytesOut  = "bytesout"
-	colKeyRateIn    = "ratein"
-	colKeyRateOut   = "rateout"
+	colKeyKey         = "_key"         // Hidden key column for row identification
+	colKeyRegistryKey = "_registrykey" // Hidden registry key for service removal
+	colKeyHostname    = "hostname"
+	colKeyLocalAddr   = "localaddr"
+	colKeyPod         = "pod"
+	colKeyPort        = "port"
+	colKeyNamespace   = "namespace"
+	colKeyContext     = "context"
+	colKeyStatus      = "status"
+	colKeyBytesIn     = "bytesin"
+	colKeyBytesOut    = "bytesout"
+	colKeyRateIn      = "ratein"
+	colKeyRateOut     = "rateout"
 )
 
 // ServicesModel displays the services table
@@ -178,6 +184,15 @@ func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 			m.compactView = !m.compactView
 			m.rebuildColumns()
 			return *m, nil
+		case "d":
+			// Remove the selected forward
+			registryKey := m.GetSelectedRegistryKey()
+			if registryKey != "" {
+				return *m, func() tea.Msg {
+					return RemoveForwardMsg{RegistryKey: registryKey}
+				}
+			}
+			return *m, nil
 		case "g", "home":
 			m.table = m.table.PageFirst()
 		case "G", "end":
@@ -229,16 +244,17 @@ func (m *ServicesModel) Refresh() {
 	rows := make([]table.Row, 0, len(forwards))
 	for _, fwd := range forwards {
 		rowData := table.RowData{
-			colKeyKey:       fwd.Key, // Store the forward key for detail view
-			colKeyHostname:  fwd.PrimaryHostname(),
-			colKeyLocalAddr: fwd.LocalAddress(),
-			colKeyPod:       fwd.PodName,
-			colKeyPort:      formatPort(fwd.LocalPort, fwd.PodPort),
-			colKeyStatus:    table.NewStyledCell(fwd.Status.String(), statusStyle(fwd.Status)),
-			colKeyBytesIn:   humanBytes(fwd.BytesIn),
-			colKeyBytesOut:  humanBytes(fwd.BytesOut),
-			colKeyRateIn:    humanRate(fwd.RateIn),
-			colKeyRateOut:   humanRate(fwd.RateOut),
+			colKeyKey:         fwd.Key,         // Store the forward key for detail view
+			colKeyRegistryKey: fwd.RegistryKey, // Store the registry key for removal
+			colKeyHostname:    fwd.PrimaryHostname(),
+			colKeyLocalAddr:   fwd.LocalAddress(),
+			colKeyPod:         fwd.PodName,
+			colKeyPort:        formatPort(fwd.LocalPort, fwd.PodPort),
+			colKeyStatus:      table.NewStyledCell(fwd.Status.String(), statusStyle(fwd.Status)),
+			colKeyBytesIn:     humanBytes(fwd.BytesIn),
+			colKeyBytesOut:    humanBytes(fwd.BytesOut),
+			colKeyRateIn:      humanRate(fwd.RateIn),
+			colKeyRateOut:     humanRate(fwd.RateOut),
 		}
 
 		if m.showNS {
@@ -374,6 +390,20 @@ func (m *ServicesModel) GetSelectedKey() string {
 		return ""
 	}
 	if key, ok := row.Data[colKeyKey]; ok {
+		if keyStr, ok := key.(string); ok {
+			return keyStr
+		}
+	}
+	return ""
+}
+
+// GetSelectedRegistryKey returns the registry key (service.namespace.context) of the currently highlighted row
+func (m *ServicesModel) GetSelectedRegistryKey() string {
+	row := m.table.HighlightedRow()
+	if row.Data == nil {
+		return ""
+	}
+	if key, ok := row.Data[colKeyRegistryKey]; ok {
 		if keyStr, ok := key.(string); ok {
 			return keyStr
 		}

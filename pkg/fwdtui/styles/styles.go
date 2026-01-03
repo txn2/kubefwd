@@ -221,3 +221,41 @@ var (
 				Foreground(ColorGray).
 				Padding(0, 1)
 )
+
+// Browse modal styles
+var (
+	BrowseModalStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorFocused).
+				Padding(1, 2)
+
+	BrowseTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ColorYellow)
+
+	BrowseSubtitleStyle = lipgloss.NewStyle().
+				Foreground(ColorCyan)
+
+	BrowseHintStyle = lipgloss.NewStyle().
+			Foreground(ColorGray)
+
+	BrowseItemStyle = lipgloss.NewStyle().
+			Foreground(ColorWhite)
+
+	BrowseSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(ColorWhite)
+
+	BrowseForwardedStyle = lipgloss.NewStyle().
+				Foreground(ColorGreen)
+
+	BrowseForwardAllStyle = lipgloss.NewStyle().
+				Foreground(ColorBlue).
+				Bold(true)
+
+	HeaderContextStyle = lipgloss.NewStyle().
+				Foreground(ColorCyan)
+
+	HeaderHintStyle = lipgloss.NewStyle().
+			Foreground(ColorGray)
+)

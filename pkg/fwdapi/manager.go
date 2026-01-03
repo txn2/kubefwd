@@ -181,6 +181,18 @@ type namespaceManagerAdapter struct {
 	mgr *fwdns.NamespaceManager
 }
 
+// NewNamespaceManagerAdapter creates a NamespaceController adapter from a NamespaceManager getter.
+// This allows the TUI and API to interact with the namespace manager through the NamespaceController interface.
+func NewNamespaceManagerAdapter(getMgr func() *fwdns.NamespaceManager) types.NamespaceController {
+	return &lazyNamespaceManagerAdapter{getMgr: getMgr}
+}
+
+// lazyNamespaceManagerAdapter is a lazy-loading adapter that fetches the manager on each call.
+// This is useful when the manager may not be available at adapter creation time.
+type lazyNamespaceManagerAdapter struct {
+	getMgr func() *fwdns.NamespaceManager
+}
+
 func (a *namespaceManagerAdapter) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	info, err := a.mgr.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
 		LabelSelector: opts.LabelSelector,
@@ -224,6 +236,84 @@ func (a *namespaceManagerAdapter) ListNamespaces() []types.NamespaceInfoResponse
 
 func (a *namespaceManagerAdapter) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
 	w := a.mgr.GetWatcher(ctx, namespace)
+	if w == nil {
+		return nil, fmt.Errorf("namespace %s.%s not found", namespace, ctx)
+	}
+	info := w.Info()
+	return &types.NamespaceInfoResponse{
+		Key:           info.Key,
+		Namespace:     info.Namespace,
+		Context:       info.Context,
+		ServiceCount:  info.ServiceCount,
+		ActiveCount:   info.ActiveCount,
+		ErrorCount:    info.ErrorCount,
+		Running:       info.Running,
+		LabelSelector: info.LabelSelector,
+		FieldSelector: info.FieldSelector,
+	}, nil
+}
+
+// lazyNamespaceManagerAdapter methods - these delegate to the manager obtained from getMgr()
+
+func (a *lazyNamespaceManagerAdapter) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+	mgr := a.getMgr()
+	if mgr == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+	info, err := mgr.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
+		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &types.NamespaceInfoResponse{
+		Key:          info.Key,
+		Namespace:    info.Namespace,
+		Context:      info.Context,
+		ServiceCount: info.ServiceCount,
+		ActiveCount:  info.ActiveCount,
+		ErrorCount:   info.ErrorCount,
+	}, nil
+}
+
+func (a *lazyNamespaceManagerAdapter) RemoveNamespace(ctx, namespace string) error {
+	mgr := a.getMgr()
+	if mgr == nil {
+		return fmt.Errorf("namespace manager not available")
+	}
+	return mgr.StopWatcher(ctx, namespace)
+}
+
+func (a *lazyNamespaceManagerAdapter) ListNamespaces() []types.NamespaceInfoResponse {
+	mgr := a.getMgr()
+	if mgr == nil {
+		return nil
+	}
+	watchers := mgr.ListWatchers()
+	result := make([]types.NamespaceInfoResponse, len(watchers))
+	for i, w := range watchers {
+		result[i] = types.NamespaceInfoResponse{
+			Key:           w.Key,
+			Namespace:     w.Namespace,
+			Context:       w.Context,
+			ServiceCount:  w.ServiceCount,
+			ActiveCount:   w.ActiveCount,
+			ErrorCount:    w.ErrorCount,
+			Running:       w.Running,
+			LabelSelector: w.LabelSelector,
+			FieldSelector: w.FieldSelector,
+		}
+	}
+	return result
+}
+
+func (a *lazyNamespaceManagerAdapter) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+	mgr := a.getMgr()
+	if mgr == nil {
+		return nil, fmt.Errorf("namespace manager not available")
+	}
+	w := mgr.GetWatcher(ctx, namespace)
 	if w == nil {
 		return nil, fmt.Errorf("namespace %s.%s not found", namespace, ctx)
 	}

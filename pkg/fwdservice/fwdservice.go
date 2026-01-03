@@ -102,6 +102,10 @@ type ServiceFWD struct {
 
 	// reconnecting prevents multiple simultaneous reconnect attempts
 	reconnecting bool
+
+	// noPodsLogged tracks if we've already logged "no pods" warning for this service
+	// to avoid spamming logs with repeated warnings
+	noPodsLogged bool
 }
 
 type PortMap struct {
@@ -320,13 +324,22 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	doSync := func() {
-		log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
+		// Only log sync details if we haven't already logged "no pods" (avoid log spam)
+		if !svcFwd.noPodsLogged {
+			log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
+		}
 		k8sPods := svcFwd.GetPodsForService()
-		log.Infof("SyncPodForwards: Found %d eligible pods for service %s", len(k8sPods), svcFwd)
+		if !svcFwd.noPodsLogged || len(k8sPods) > 0 {
+			log.Infof("SyncPodForwards: Found %d eligible pods for service %s", len(k8sPods), svcFwd)
+		}
 
 		// If no pods are found currently, schedule a retry if configured.
 		if len(k8sPods) == 0 {
-			log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
+			// Only log warning once to avoid spamming logs
+			if !svcFwd.noPodsLogged {
+				log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
+				svcFwd.noPodsLogged = true
+			}
 			// Schedule retry - don't update LastSyncedAt so we retry sooner
 			if svcFwd.RetryInterval > 0 {
 				go func() {
@@ -339,6 +352,12 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 				}()
 			}
 			return
+		}
+
+		// Pods found - reset the no-pods log flag so we log again if they disappear
+		if svcFwd.noPodsLogged {
+			log.Infof("Pods now available for service %s", svcFwd)
+			svcFwd.noPodsLogged = false
 		}
 
 		// Only update LastSyncedAt after successful pod discovery
