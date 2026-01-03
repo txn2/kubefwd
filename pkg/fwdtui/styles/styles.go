@@ -255,4 +255,7 @@ var (
 
 	HeaderContextStyle = lipgloss.NewStyle().
 				Foreground(ColorCyan)
+
+	HeaderHintStyle = lipgloss.NewStyle().
+			Foreground(ColorGray)
 )

@@ -45,10 +45,11 @@ func (m *HeaderModel) View() string {
 
 	leftPart := fmt.Sprintf(" %s%s | %s", title, version, link)
 
-	// Add context on right side if set
-	rightPart := ""
+	// Add browse hint and context on right side
+	browseHint := styles.HeaderHintStyle.Render("[f: browse]")
+	rightPart := browseHint
 	if m.currentContext != "" {
-		rightPart = styles.HeaderContextStyle.Render("ctx: " + m.currentContext)
+		rightPart = browseHint + " " + styles.HeaderContextStyle.Render("ctx: "+m.currentContext)
 	}
 
 	// Calculate spacing to push context to right

@@ -307,7 +307,7 @@ func (m *BrowseModel) handleContextsViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cm
 		m.Hide()
 		return *m, nil
 
-	case "esc":
+	case "esc", "left":
 		// Go back to namespaces view
 		m.currentView = NamespacesView
 		m.selectedIndex = 0
@@ -351,7 +351,7 @@ func (m *BrowseModel) handleServicesViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cm
 		m.Hide()
 		return *m, nil
 
-	case "esc":
+	case "esc", "left":
 		// Go back to namespaces view
 		m.currentView = NamespacesView
 		m.selectedIndex = 0
