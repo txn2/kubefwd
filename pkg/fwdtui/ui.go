@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/components"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -69,6 +70,7 @@ type RootModel struct {
 	statusBar components.StatusBarModel
 	help      components.HelpModel
 	detail    components.DetailModel
+	browse    components.BrowseModel
 
 	// State
 	store       *state.Store
@@ -94,7 +96,8 @@ type RootModel struct {
 	// Callbacks
 	triggerShutdown  func()
 	streamPodLogs    PodLogsStreamer
-	reconnectErrored func() int // Returns number of services reconnected
+	reconnectErrored func() int             // Returns number of services reconnected
+	removeForward    func(key string) error // Removes a forward by registry key
 
 	// Pod log streaming state
 	logStreamCancel context.CancelFunc
@@ -282,6 +285,7 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func()) *Manager {
 			statusBar:       components.NewStatusBarModel(),
 			help:            components.NewHelpModel(),
 			detail:          components.NewDetailModel(store, rateHistory),
+			browse:          components.NewBrowseModel(),
 			store:           store,
 			eventBus:        eventBus,
 			rateHistory:     rateHistory,
@@ -316,6 +320,41 @@ func (m *Manager) SetPodLogsStreamer(streamer PodLogsStreamer) {
 func (m *Manager) SetErroredServicesReconnector(reconnector func() int) {
 	if m.model != nil {
 		m.model.reconnectErrored = reconnector
+	}
+}
+
+// SetBrowseDiscovery sets the Kubernetes discovery adapter for the browse modal
+func (m *Manager) SetBrowseDiscovery(discovery types.KubernetesDiscovery) {
+	if m.model != nil {
+		m.model.browse.SetDiscovery(discovery)
+	}
+}
+
+// SetBrowseNamespaceController sets the namespace controller for the browse modal
+func (m *Manager) SetBrowseNamespaceController(nc types.NamespaceController) {
+	if m.model != nil {
+		m.model.browse.SetNamespaceController(nc)
+	}
+}
+
+// SetBrowseServiceCRUD sets the service CRUD adapter for the browse modal
+func (m *Manager) SetBrowseServiceCRUD(sc types.ServiceCRUD) {
+	if m.model != nil {
+		m.model.browse.SetServiceCRUD(sc)
+	}
+}
+
+// SetHeaderContext sets the current context displayed in the header
+func (m *Manager) SetHeaderContext(ctx string) {
+	if m.model != nil {
+		m.model.header.SetContext(ctx)
+	}
+}
+
+// SetRemoveForwardCallback sets the function used to remove forwards
+func (m *Manager) SetRemoveForwardCallback(remover func(key string) error) {
+	if m.model != nil {
+		m.model.removeForward = remover
 	}
 }
 
@@ -444,6 +483,17 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			return m, cmd
 		}
 
+		// Browse modal captures all input when visible
+		if m.browse.IsVisible() {
+			var cmd tea.Cmd
+			m.browse, cmd = m.browse.Update(msg)
+			// Update header with current context from browse
+			if ctx := m.browse.GetCurrentContext(); ctx != "" {
+				m.header.SetContext(ctx)
+			}
+			return m, cmd
+		}
+
 		// Global keys
 		switch msg.String() {
 		case "ctrl+c":
@@ -470,6 +520,11 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					}
 					return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
 				}
+			}
+		case "f":
+			if !m.services.IsFiltering() {
+				m.browse.SetSize(m.width, m.height)
+				return m, m.browse.Show()
 			}
 		}
 
@@ -675,6 +730,51 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			}
 			return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
 		}
+
+	// Browse modal messages - IMPORTANT: must return the cmd from browse.Update!
+	case components.BrowseContextsLoadedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		// Update header with current context
+		if msg.CurrentContext != "" {
+			m.header.SetContext(msg.CurrentContext)
+		}
+		return m, cmd
+
+	case components.BrowseNamespacesLoadedMsg, components.BrowseServicesLoadedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		return m, cmd
+
+	case components.ServiceForwardedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if msg.Error == nil {
+			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
+				fmt.Sprintf("Forwarded service %s (%s)", msg.ServiceName, msg.LocalIP)))
+		}
+		return m, cmd
+
+	case components.NamespaceForwardedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if msg.Error == nil {
+			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
+				fmt.Sprintf("Forwarded %d services from namespace %s", msg.ServiceCount, msg.Namespace)))
+		}
+		return m, cmd
+
+	case components.RemoveForwardMsg:
+		// Remove the forward via the callback
+		if msg.RegistryKey != "" && m.removeForward != nil {
+			if err := m.removeForward(msg.RegistryKey); err != nil {
+				return m, SendLog(log.ErrorLevel,
+					fmt.Sprintf("Failed to remove forward %s: %v", msg.RegistryKey, err))
+			}
+			return m, SendLog(log.InfoLevel,
+				fmt.Sprintf("Removed forward: %s", msg.RegistryKey))
+		}
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -710,6 +810,11 @@ func (m *RootModel) View() string {
 	// Overlay detail view if visible
 	if m.detail.IsVisible() {
 		return m.detail.View()
+	}
+
+	// Overlay browse modal if visible
+	if m.browse.IsVisible() {
+		return m.browse.View()
 	}
 
 	// Render header
@@ -804,6 +909,7 @@ func (m *RootModel) updateSizes() {
 	m.logs.SetSize(contentWidth, logsHeight)
 	m.statusBar.SetWidth(m.width)
 	m.detail.SetSize(m.width, m.height)
+	m.browse.SetSize(m.width, m.height)
 }
 
 // cycleFocus switches focus between components

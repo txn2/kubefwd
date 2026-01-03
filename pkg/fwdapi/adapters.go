@@ -633,8 +633,10 @@ func (a *KubernetesDiscoveryAdapter) ListNamespaces(ctx string) ([]types.K8sName
 		}
 	}
 
-	// List namespaces from the cluster
-	nsList, err := clientSet.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	// List namespaces from the cluster with timeout
+	ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	nsList, err := clientSet.CoreV1().Namespaces().List(ctx2, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
@@ -688,8 +690,10 @@ func (a *KubernetesDiscoveryAdapter) ListServices(ctx, namespace string) ([]type
 		}
 	}
 
-	// List services from the cluster
-	svcList, err := clientSet.CoreV1().Services(namespace).List(context.Background(), metav1.ListOptions{})
+	// List services from the cluster with timeout
+	ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	svcList, err := clientSet.CoreV1().Services(namespace).List(ctx2, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
@@ -750,7 +754,9 @@ func (a *KubernetesDiscoveryAdapter) GetService(ctx, namespace, name string) (*t
 		}
 	}
 
-	svc, err := clientSet.CoreV1().Services(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	svc, err := clientSet.CoreV1().Services(namespace).Get(ctx2, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
 	}

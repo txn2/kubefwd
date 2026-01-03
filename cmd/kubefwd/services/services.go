@@ -486,24 +486,34 @@ Try:
 		GlobalStopCh:    stopListenCh,
 	})
 
+	// Set up adapters for Kubernetes discovery and service CRUD
+	// These are used by both API and TUI for browse/forward operations
+	getNsManager := func() *fwdns.NamespaceManager { return nsManager }
+	k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(getNsManager, cfgFilePath)
+	serviceCRUD := fwdapi.NewServiceCRUDAdapter(fwdtui.GetStore, getNsManager, cfgFilePath)
+	nsController := fwdapi.NewNamespaceManagerAdapter(getNsManager)
+
 	// Register namespace manager with API if enabled
 	if apiManager != nil {
 		apiManager.SetNamespaceManager(nsManager)
-
-		// Set up Kubernetes discovery adapter
-		k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(
-			apiManager.GetNamespaceManager,
-			cfgFilePath,
-		)
 		apiManager.SetKubernetesDiscovery(k8sDiscovery)
-
-		// Set up ServiceCRUD adapter for add/remove operations
-		serviceCRUD := fwdapi.NewServiceCRUDAdapter(
-			fwdtui.GetStore,
-			apiManager.GetNamespaceManager,
-			cfgFilePath,
-		)
 		apiManager.SetServiceCRUD(serviceCRUD)
+	}
+
+	// Wire up TUI browse modal adapters
+	if tuiManager != nil {
+		tuiManager.SetBrowseDiscovery(k8sDiscovery)
+		tuiManager.SetBrowseServiceCRUD(serviceCRUD)
+		tuiManager.SetBrowseNamespaceController(nsController)
+		tuiManager.SetRemoveForwardCallback(func(key string) error {
+			fwdsvcregistry.RemoveByName(key)
+			return nil
+		})
+
+		// Set initial context in header
+		if len(contexts) > 0 {
+			tuiManager.SetHeaderContext(contexts[0])
+		}
 	}
 
 	// Start watchers for each context/namespace combination (skip in idle mode)
