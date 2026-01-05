@@ -12,7 +12,7 @@ hide:
 </div>
 
 <div class="home-intro">
-  <p><strong>kubefwd</strong> enables developers to work locally while accessing services running in Kubernetes. Connect to <code>db:5432</code>, <code>auth:443</code>, <code>redis:6379</code>, all by service name, exactly as in-cluster. No environment config, no Docker Compose. Just run kubefwd.</p>
+  <p><strong>kubefwd</strong> enables developers to work locally while accessing services running in Kubernetes. Connect to <code>db:5432</code>, <code>auth:443</code>, <code>redis:6379</code>—all by service name, exactly as in-cluster. No environment config, no Docker Compose. Just run kubefwd.</p>
 </div>
 
 <div class="home-buttons">
@@ -28,34 +28,34 @@ hide:
 
 ## Four Ways to Use kubefwd
 
-=== "TUI"
+=== "Idle Mode"
 
-    Interactive terminal interface with real-time monitoring.
+    Start without pre-specified services. Browse and forward interactively.
+
+    ```bash
+    sudo -E kubefwd --tui
+    ```
+
+    - Browse namespaces and services visually
+    - Forward exactly what you need
+    - API and auto-reconnect enabled by default
+    - [Getting Started →](getting-started.md)
+
+=== "Classic Mode"
+
+    Forward all services in a namespace immediately.
 
     ```bash
     sudo -E kubefwd svc -n my-namespace --tui
     ```
 
-    - Real-time service status and traffic metrics
-    - Pod log streaming
-    - Keyboard-driven navigation
-    - [TUI Guide →](tui-guide.md)
-
-=== "Classic"
-
-    Simple log output for scripts and automation.
-
-    ```bash
-    sudo -E kubefwd svc -n my-namespace
-    ```
-
-    - Minimal output, logs to stdout
-    - Perfect for CI/CD and scripts
+    - Backwards-compatible with all previous versions
+    - Perfect for known workflows
     - [Getting Started →](getting-started.md)
 
 === "REST API"
 
-    Programmatic control via HTTP endpoints.
+    Programmatic control via 40+ HTTP endpoints.
 
     ```bash
     sudo -E kubefwd  # Idle mode, API enabled
@@ -102,7 +102,7 @@ hide:
     <span class="feature-icon">📊</span>
     <div>
       <strong>Interactive TUI</strong>
-      <span>Real-time status, traffic metrics, and pod logs in your terminal.</span>
+      <span>Browse namespaces, select services, monitor traffic, and stream logs.</span>
     </div>
   </div>
   <div class="feature">
@@ -120,8 +120,11 @@ hide:
 # macOS
 brew install txn2/tap/kubefwd
 
-# Then forward services
-sudo -E kubefwd svc -n my-namespace --tui
+# Windows
+scoop install kubefwd
+
+# Then start exploring
+sudo -E kubefwd --tui
 ```
 
 </div>

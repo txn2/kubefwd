@@ -4,21 +4,29 @@
 
 The **Model Context Protocol (MCP)** is an open standard that lets AI assistants connect to external tools and services. Instead of just answering questions, your AI can actually *do things*: forward ports, query databases, run commands, and interact with APIs.
 
-kubefwd's MCP integration gives your AI assistant full access to Kubernetes port forwarding capabilities. Your AI can discover services, establish connections, monitor traffic, stream logs, and troubleshoot issues, all through natural conversation.
+kubefwd's MCP integration gives your AI assistant full access to Kubernetes port forwarding capabilities. Your AI can discover services, establish connections, monitor traffic, stream logs, and troubleshoot issues—all through natural conversation.
 
-**Supported AI Platforms:**
+---
 
-| Platform | Support |
-|----------|---------|
-| **Claude** (Desktop & Code) | Full support |
-| **ChatGPT** | Full support |
-| **Cursor** | Full support |
-| **Windsurf** | Full support |
-| **VS Code Copilot** | Full support |
-| **Gemini** | Full support |
-| **Zed** | Preview |
-| **Cline** | Full support |
-| **JetBrains IDEs** | Planned |
+## Platform Support
+
+kubefwd MCP uses **stdio transport**, which means it runs locally on your machine and communicates with AI clients through standard input/output. This works seamlessly with desktop applications but has implications for cloud-based AI services.
+
+| Platform | Transport | kubefwd Support | Notes |
+|----------|-----------|-----------------|-------|
+| **Claude Code** | stdio | :white_check_mark: Full | Native support, recommended |
+| **Claude Desktop** | stdio | :white_check_mark: Full | One-click `.mcpb` install |
+| **Cursor** | stdio | :white_check_mark: Full | Native support |
+| **Windsurf** | stdio | :white_check_mark: Full | Native support |
+| **VS Code Copilot** | stdio | :white_check_mark: Full | GA in VS Code 1.102+ |
+| **Zed** | stdio | :white_check_mark: Full | Via settings or extensions |
+| **Cline** | stdio | :white_check_mark: Full | VS Code extension |
+| **JetBrains IDEs** | stdio | :white_check_mark: Full | IntelliJ 2025.1+, PyCharm, WebStorm, etc. |
+| **Gemini CLI** | stdio | :white_check_mark: Full | Google's CLI supports MCP |
+| **ChatGPT** | HTTP/SSE only | :material-tunnel: Tunnel required | See [ChatGPT Setup](#chatgpt-setup) |
+
+!!! info "About ChatGPT"
+    ChatGPT supports MCP but **only via remote servers** using HTTP/SSE transport. It cannot connect to localhost. To use kubefwd with ChatGPT, you must expose the kubefwd API through a tunnel service like [ngrok](https://ngrok.com). See [ChatGPT Setup](#chatgpt-setup) for details.
 
 ---
 
@@ -27,6 +35,75 @@ kubefwd's MCP integration gives your AI assistant full access to Kubernetes port
 Don't ask about kubefwd. Ask about your work.
 
 Need a database connection? Say "I need to connect to PostgreSQL in staging." Your AI handles the infrastructure. Want to test a deployment? Say "Test my new API and show me the logs." kubefwd becomes invisible.
+
+Traditional workflow:
+```
+You: How do I forward postgres from kft1?
+AI: Run sudo -E kubefwd svc -n kft1 -l app=postgres
+You: *runs command*
+You: What's the connection string?
+AI: psql -h postgres -U user -d dbname
+```
+
+With MCP:
+```
+You: I need the staging database
+AI: Connected. Your connection: psql -h postgres -U admin -d mydb
+```
+
+The AI understands context, remembers what you're working on, and handles the mechanics.
+
+---
+
+## Architecture
+
+kubefwd MCP uses a two-process architecture that separates privilege levels for security:
+
+```mermaid
+flowchart TB
+    subgraph client["AI Client"]
+        cc["Claude Code<br/>Cursor, Windsurf, etc."]
+    end
+
+    subgraph mcp["kubefwd mcp<br/><small>(no sudo required)</small>"]
+        bridge["MCP Bridge"]
+    end
+
+    subgraph kubefwd["kubefwd<br/><small>(with sudo)</small>"]
+        fwd["Port Forwarding Engine"]
+    end
+
+    subgraph system["System Resources"]
+        hosts["/etc/hosts"]
+        loopback["Loopback IPs<br/>127.x.x.x"]
+        k8s["Kubernetes API"]
+    end
+
+    cc <-->|"stdio<br/>MCP Protocol"| bridge
+    bridge <-->|"REST API<br/>localhost:8080"| fwd
+    fwd --> hosts
+    fwd --> loopback
+    fwd <--> k8s
+```
+
+### Process Separation
+
+1. **kubefwd** (elevated privileges)
+    - Manages actual port forwarding via Kubernetes API
+    - Creates loopback IP aliases (127.x.x.x) on the network interface
+    - Modifies `/etc/hosts` with service hostnames
+    - Exposes REST API on `http://localhost:8080` (configurable)
+    - Requires `sudo` for network and hosts file access
+
+2. **kubefwd mcp** (standard user)
+    - Runs as MCP server via stdio transport
+    - Communicates with kubefwd via REST API
+    - Spawned automatically by AI clients
+    - No elevated privileges required
+
+This separation means your AI client never needs root access—it communicates through the unprivileged MCP bridge, which in turn talks to the privileged kubefwd process.
+
+---
 
 ## What It Looks Like
 
@@ -54,6 +131,36 @@ Behind the scenes, the AI discovered the service, forwarded it, and got your con
 > CART_URL=http://cart-service:8080
 > PAYMENT_URL=https://payment-service:443
 > ```"
+
+### Real Workflow: Building a Notification Service
+
+Here's a realistic development scenario showing MCP capabilities:
+
+> **You:** "I'm building a notification service that needs to send emails and store records in the database. What services are available in the dev namespace?"
+>
+> **AI:** *queries cluster* "I found these services in dev:
+>
+> - postgres:5432 (database)
+> - smtp:2525 (mail server)
+> - redis:6379 (cache)
+> - api-gateway:8080
+>
+> Want me to forward postgres and smtp for your notification service?"
+>
+> **You:** "Yes, forward those"
+>
+> **AI:** *forwards services* "Done. Here's your configuration:
+>
+> ```python
+> # config.py
+> DATABASE_URL = 'postgresql://dev:dev123@postgres:5432/notifications'
+> SMTP_HOST = 'smtp'
+> SMTP_PORT = 2525
+> ```
+>
+> These hostnames work exactly like they would in-cluster."
+
+The AI understands the development context, discovers available infrastructure, and provides ready-to-use configuration.
 
 ### Testing Your Deployment
 
@@ -101,23 +208,27 @@ Or:
 
 ### 1. Start kubefwd
 
+kubefwd must be running with API enabled for MCP to communicate with it:
+
 ```bash
-sudo -E kubefwd  # Idle mode, API enabled
+# Start in idle mode with API (waits for MCP commands)
+sudo -E kubefwd
+
+# Or start with TUI to monitor AI-driven activity
+sudo -E kubefwd --tui
+
+# Or pre-forward a namespace and enable API
+sudo -E kubefwd svc -n default --api
 ```
 
-### 2. Configure Your AI
+The `--tui` flag is recommended as it lets you visually monitor what your AI is doing with your forwards.
 
-=== "Claude Desktop (One-Click)"
+!!! tip "The `-E` flag"
+    Always use `sudo -E` to preserve your `KUBECONFIG` environment variable. Without it, kubefwd won't find your cluster configuration.
 
-    Download the `.mcpb` bundle for your platform from [GitHub Releases](https://github.com/txn2/kubefwd/releases):
+### 2. Configure Your AI Client
 
-    - **macOS (Apple Silicon):** `kubefwd-VERSION-darwin-arm64.mcpb`
-    - **macOS (Intel):** `kubefwd-VERSION-darwin-amd64.mcpb`
-    - **Windows:** `kubefwd-VERSION-windows-amd64.mcpb`
-
-    Double-click the downloaded file to install kubefwd as a Claude Desktop extension.
-
-=== "Claude Code (Easy)"
+=== "Claude Code (Recommended)"
 
     One command to add kubefwd:
 
@@ -131,20 +242,17 @@ sudo -E kubefwd  # Idle mode, API enabled
     claude mcp list
     ```
 
-=== "Claude Code (Manual)"
+    That's it. Claude Code will automatically spawn `kubefwd mcp` when needed.
 
-    Add to `~/.claude.json`:
+=== "Claude Desktop (One-Click)"
 
-    ```json
-    {
-      "mcpServers": {
-        "kubefwd": {
-          "command": "kubefwd",
-          "args": ["mcp"]
-        }
-      }
-    }
-    ```
+    Download the `.mcpb` bundle for your platform from [GitHub Releases](https://github.com/txn2/kubefwd/releases):
+
+    - **macOS (Apple Silicon):** `kubefwd-VERSION-darwin-arm64.mcpb`
+    - **macOS (Intel):** `kubefwd-VERSION-darwin-amd64.mcpb`
+    - **Windows:** `kubefwd-VERSION-windows-amd64.mcpb`
+
+    Double-click the downloaded file to install kubefwd as a Claude Desktop extension.
 
 === "Cursor"
 
@@ -176,11 +284,6 @@ sudo -E kubefwd  # Idle mode, API enabled
     }
     ```
 
-=== "ChatGPT"
-
-    In ChatGPT settings, add a custom MCP connector pointing to kubefwd.
-    See [OpenAI MCP docs](https://platform.openai.com/docs/guides/tools-connectors-mcp) for details.
-
 === "VS Code Copilot"
 
     Add to your VS Code settings or `.vscode/mcp.json`:
@@ -195,6 +298,36 @@ sudo -E kubefwd  # Idle mode, API enabled
       }
     }
     ```
+
+    Requires VS Code 1.102+ with AI Assistant enabled.
+
+=== "Zed"
+
+    Add to your Zed `settings.json`:
+
+    ```json
+    {
+      "context_servers": {
+        "kubefwd": {
+          "source": "custom",
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+=== "JetBrains IDEs"
+
+    IntelliJ IDEA 2025.1+, PyCharm, WebStorm, and other JetBrains IDEs support MCP:
+
+    1. Go to **Settings > Tools > AI Assistant > Model Context Protocol (MCP)**
+    2. Add a new server configuration:
+        - **Name:** kubefwd
+        - **Command:** kubefwd
+        - **Arguments:** mcp
+
+    See [JetBrains MCP documentation](https://www.jetbrains.com/help/idea/mcp-server.html) for details.
 
 === "Cline"
 
@@ -211,7 +344,44 @@ sudo -E kubefwd  # Idle mode, API enabled
     }
     ```
 
-That's it. Start talking to your AI about your work.
+=== "Gemini CLI"
+
+    Add to your Gemini CLI MCP configuration:
+
+    ```json
+    {
+      "mcpServers": {
+        "kubefwd": {
+          "command": "kubefwd",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+
+    See [Gemini CLI documentation](https://github.com/google-gemini/gemini-cli) for setup details.
+
+### ChatGPT Setup
+
+ChatGPT only supports remote MCP servers via HTTP/SSE transport. To use kubefwd with ChatGPT, you need to expose the kubefwd REST API through a tunnel:
+
+1. **Start kubefwd with API enabled:**
+   ```bash
+   sudo -E kubefwd --api
+   ```
+
+2. **Create a tunnel using ngrok:**
+   ```bash
+   ngrok http 8080
+   ```
+
+3. **In ChatGPT settings:**
+    - Go to Settings > Connectors > Advanced > Developer Mode
+    - Add a custom MCP connector with your ngrok URL
+    - Configure authentication if needed
+
+!!! warning "Security Consideration"
+    Exposing kubefwd via a public tunnel gives external access to your Kubernetes port forwards. Only do this in development environments and consider using ngrok's authentication features.
 
 ---
 
@@ -222,6 +392,7 @@ That's it. Start talking to your AI about your work.
 - **Forward entire namespaces** - Forward all services in a namespace to localhost with automatic `/etc/hosts` entries
 - **Forward individual services** - Forward specific services with custom port mappings
 - **Remove forwards** - Stop forwarding namespaces or individual services
+- **Multi-context support** - Forward services from multiple clusters simultaneously
 
 ### Discovery & Connection
 
@@ -239,7 +410,7 @@ That's it. Start talking to your AI about your work.
 - **Get Kubernetes events** - View scheduling, pulling, starting events for diagnosing failures
 - **Get service endpoints** - See which pods back a service and their ready state
 
-### Monitoring & Debugging
+### Monitoring & Metrics
 
 - **Quick status** - Fast health check of kubefwd (healthy/degraded/unhealthy)
 - **View logs** - Filter by level (debug, info, warn, error) or search terms
@@ -256,67 +427,146 @@ That's it. Start talking to your AI about your work.
 
 ---
 
-## Architecture
+## Technical Reference
 
-```mermaid
-flowchart LR
-    A[AI Client<br/>Claude, Cursor, etc] <-->|stdio<br/>MCP protocol| B[kubefwd mcp<br/>bridge]
-    B <-->|HTTP<br/>REST API| C[kubefwd<br/>with sudo]
-```
+For custom integrations and advanced usage, kubefwd MCP provides a comprehensive set of tools, resources, and prompts.
 
-The MCP bridge runs without sudo and communicates with kubefwd via REST API. Your AI spawns it automatically.
+### Tools (28 total)
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Discovery** | `list_k8s_namespaces`, `list_k8s_services`, `list_contexts` | Query available Kubernetes resources |
+| **Namespace Ops** | `add_namespace`, `remove_namespace` | Forward/stop entire namespaces |
+| **Service Ops** | `add_service`, `remove_service`, `list_services`, `get_service`, `find_services` | Individual service management |
+| **Connection** | `get_connection_info`, `list_hostnames` | Get connection details and host mappings |
+| **Pods** | `list_pods`, `get_pod`, `get_pod_logs` | Pod inspection and log streaming |
+| **Kubernetes** | `get_events`, `get_endpoints` | Cluster events and endpoint details |
+| **Health** | `get_health`, `get_quick_status`, `get_metrics`, `get_analysis`, `diagnose_errors` | System health and diagnostics |
+| **Traffic** | `get_http_traffic`, `get_history`, `get_logs` | Traffic monitoring and history |
+| **Control** | `reconnect_service`, `reconnect_all_errors`, `sync_service` | Forward management |
+
+### Resources (8 total)
+
+Resources provide read-only access to kubefwd state:
+
+| URI | Description |
+|-----|-------------|
+| `kubefwd://status` | Quick health check (ok/degraded/error) |
+| `kubefwd://services` | List of all forwarded services |
+| `kubefwd://forwards` | Detailed port forward information |
+| `kubefwd://metrics` | Traffic metrics and bandwidth stats |
+| `kubefwd://summary` | Overall system summary |
+| `kubefwd://errors` | Current error conditions |
+| `kubefwd://http-traffic` | Recent HTTP requests through forwards |
+| `kubefwd://contexts` | Available Kubernetes contexts |
+
+### Prompts (10 total)
+
+Prompts provide guided workflows for common tasks:
+
+| Prompt | Purpose |
+|--------|---------|
+| `setup_local_dev` | Complete environment setup guide |
+| `forward_namespace` | Forward all services in a namespace |
+| `quick_connect` | Fast connection to a single service |
+| `connection_guide` | Connection string examples for various tools |
+| `troubleshoot` | General debugging workflow |
+| `debug_service` | Deep dive into a specific service |
+| `fix_errors` | Resolve current error conditions |
+| `analyze_issues` | Comprehensive issue analysis |
+| `explain_status` | Explain current kubefwd state |
+| `monitor` | Set up monitoring for forwards |
 
 ---
 
-## Technical Reference
+## Best Practices
 
-For custom integrations, kubefwd MCP provides:
+### Running kubefwd for MCP
 
-??? note "28 Tools"
+**Recommended: TUI Mode**
+```bash
+sudo -E kubefwd --tui
+```
+The TUI provides visibility into what your AI is doing—you can see services being forwarded, traffic flowing, and any errors that occur.
 
-    | Category | Tools |
-    |----------|-------|
-    | Discovery | `list_k8s_namespaces`, `list_k8s_services`, `list_contexts` |
-    | Namespace | `add_namespace`, `remove_namespace` |
-    | Service | `add_service`, `remove_service`, `list_services`, `get_service`, `find_services` |
-    | Connection | `get_connection_info`, `list_hostnames` |
-    | Pods | `list_pods`, `get_pod`, `get_pod_logs` |
-    | Kubernetes | `get_events`, `get_endpoints` |
-    | Health | `get_health`, `get_quick_status`, `get_metrics`, `get_analysis`, `diagnose_errors` |
-    | Traffic | `get_http_traffic`, `get_history`, `get_logs` |
-    | Control | `reconnect_service`, `reconnect_all_errors`, `sync_service` |
+**Alternative: Background with Logging**
+```bash
+sudo -E kubefwd -v 2>&1 | tee kubefwd.log &
+```
+Run in verbose mode with logs captured for debugging.
 
-??? note "8 Resources"
+### Security Considerations
 
-    | URI | Description |
-    |-----|-------------|
-    | `kubefwd://status` | Quick health check |
-    | `kubefwd://services` | Forwarded services |
-    | `kubefwd://forwards` | Port forward details |
-    | `kubefwd://metrics` | Traffic metrics |
-    | `kubefwd://summary` | Overall summary |
-    | `kubefwd://errors` | Current errors |
-    | `kubefwd://http-traffic` | HTTP requests |
-    | `kubefwd://contexts` | Kubernetes contexts |
+1. **Local only by default** - kubefwd API binds to localhost. Your forwards are only accessible on your machine.
 
-??? note "10 Prompts"
+2. **Privilege separation** - The MCP bridge runs without sudo. Only kubefwd itself needs elevated privileges.
 
-    | Prompt | Purpose |
-    |--------|---------|
-    | `setup_local_dev` | Environment setup guide |
-    | `forward_namespace` | Forward all services |
-    | `quick_connect` | Fast service connection |
-    | `connection_guide` | Connection examples |
-    | `troubleshoot` | Debugging workflow |
-    | `debug_service` | Service-specific debug |
-    | `fix_errors` | Error resolution |
-    | `analyze_issues` | Issue analysis |
-    | `explain_status` | Status explanation |
-    | `monitor` | Monitoring guide |
+3. **No credential exposure** - kubefwd uses your existing kubeconfig. No cluster credentials are passed through MCP.
+
+4. **Network isolation** - Each forwarded service gets its own loopback IP (127.x.x.x), preventing port conflicts and providing isolation.
+
+### Multi-Cluster Workflows
+
+kubefwd supports forwarding from multiple clusters simultaneously:
+
+> **You:** "Forward the payment service from both dev and staging so I can compare behavior"
+>
+> **AI:** "Done. Both are accessible:
+>
+> - dev: payment-service.dev-context (127.1.27.1:8080)
+> - staging: payment-service.staging-context (127.1.27.2:8080)
+>
+> The hostnames include the context to differentiate them."
+
+---
+
+## Troubleshooting
+
+### MCP Not Connecting
+
+1. **Is kubefwd running?**
+   ```bash
+   curl http://localhost:8080/api/health
+   ```
+   Should return `{"status":"ok"}` or similar.
+
+2. **Is kubefwd mcp in your PATH?**
+   ```bash
+   which kubefwd
+   ```
+
+3. **Check AI client logs** - Most clients have MCP debugging options.
+
+### "Permission denied" Errors
+
+kubefwd requires sudo for network operations:
+```bash
+# Wrong
+kubefwd svc -n default
+
+# Right
+sudo -E kubefwd svc -n default
+```
+
+### Forwards Not Working
+
+1. **Check kubefwd status:**
+   Ask your AI: "What's the kubefwd status?"
+
+2. **Verify hosts file:**
+   ```bash
+   grep 127.1 /etc/hosts
+   ```
+
+3. **Test connectivity:**
+   ```bash
+   curl http://service-name:port/health
+   ```
 
 ---
 
 ## See Also
 
-- [REST API](api-reference.md) - Direct API access for custom tooling
+- [REST API Reference](api-reference.md) - Direct API access for custom tooling
 - [Getting Started](getting-started.md) - Installation and basic usage
+- [User Guide](user-guide.md) - Interactive terminal interface

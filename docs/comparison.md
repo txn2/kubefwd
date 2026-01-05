@@ -249,4 +249,4 @@ For developers who primarily need to connect their local code to cluster depende
 
 ---
 
-*See also: [Getting Started](getting-started.md) | [TUI Guide](tui-guide.md) | [Architecture](architecture.md)*
+*See also: [Getting Started](getting-started.md) | [User Guide](user-guide.md) | [Architecture](architecture.md)*

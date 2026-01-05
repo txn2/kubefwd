@@ -11,7 +11,7 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11659/badge)](https://www.bestpractices.dev/projects/11659)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
-**[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[TUI Guide](https://kubefwd.com/tui-guide/)** | **[API Reference](https://kubefwd.com/api-reference/)** | **[MCP (AI Integration)](https://kubefwd.com/mcp-integration/)**
+**[Documentation](https://kubefwd.com)** | **[Getting Started](https://kubefwd.com/getting-started/)** | **[User Guide](https://kubefwd.com/user-guide/)** | **[API Reference](https://kubefwd.com/api-reference/)** | **[MCP (AI Integration)](https://kubefwd.com/mcp-integration/)**
 
 ## Develop Locally, Connect to Kubernetes
 
@@ -116,7 +116,7 @@ See [Comparison](https://kubefwd.com/comparison/) for detailed comparisons with 
 Full documentation at **[kubefwd.com](https://kubefwd.com)**:
 
 - [Getting Started](https://kubefwd.com/getting-started/) - Installation and setup
-- [TUI Guide](https://kubefwd.com/tui-guide/) - Interface and shortcuts
+- [User Guide](https://kubefwd.com/user-guide/) - Interface and shortcuts
 - [Configuration](https://kubefwd.com/configuration/) - CLI options
 - [Advanced Usage](https://kubefwd.com/advanced-usage/) - Multi-cluster, selectors
 - [REST API](https://kubefwd.com/api-reference/) - API reference
