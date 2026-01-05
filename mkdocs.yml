@@ -52,9 +52,9 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - User Guide:
-    - TUI Interface: tui-guide.md
-    - Configuration: configuration.md
+  - User Guide: user-guide.md
+  - Configuration:
+    - Options: configuration.md
     - Advanced Usage: advanced-usage.md
     - Troubleshooting: troubleshooting.md
   - REST API: api-reference.md
