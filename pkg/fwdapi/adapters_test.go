@@ -127,9 +127,45 @@ func TestServiceControllerAdapter_ReconnectAllNilStore(t *testing.T) {
 	}
 }
 
-// Note: Reconnect, Sync, and ReconnectAll (with data) tests are skipped because
-// they require the global fwdsvcregistry to be initialized with real services,
-// which is not practical in unit tests. These are tested through integration tests instead.
+// Note: Reconnect and Sync with actual services require fwdsvcregistry to be
+// initialized with real services. However, we can test the error paths.
+
+func TestServiceControllerAdapter_Reconnect_NotFound(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	err := adapter.Reconnect("nonexistent.service.key")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent.service.key" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceControllerAdapter_Sync_NotFound(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	err := adapter.Sync("nonexistent.service.key", false)
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent.service.key" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceControllerAdapter_Sync_NotFound_WithForce(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	// Even with force=true, should return error for nonexistent service
+	err := adapter.Sync("nonexistent.service.key", true)
+	if err == nil {
+		t.Error("Expected error for nonexistent service with force=true")
+	}
+}
 
 // EventStreamerAdapter tests
 
@@ -1537,6 +1573,169 @@ func TestKubernetesDiscoveryAdapter_ListPods_TerminatingPod(t *testing.T) {
 	}
 }
 
+func TestKubernetesDiscoveryAdapter_ListPods_WithServiceName(t *testing.T) {
+	initTestRegistry()
+
+	// Create service with selector
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "myapp"},
+		},
+	}
+
+	// Create pods - one matching, one not
+	now := metav1.Now()
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myapp-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "myapp"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "other"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(svc, pod1, pod2)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		ServiceName: "my-service",
+	})
+	if err != nil {
+		t.Fatalf("ListPods failed: %v", err)
+	}
+
+	// Should only return the pod matching service selector
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+	if len(pods) > 0 && pods[0].Name != "myapp-pod" {
+		t.Errorf("Expected pod 'myapp-pod', got '%s'", pods[0].Name)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithFieldSelector(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Use field selector to filter by node
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		FieldSelector: "spec.nodeName=node-1",
+	})
+	if err != nil {
+		t.Fatalf("ListPods with FieldSelector failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithLabelAndService(t *testing.T) {
+	initTestRegistry()
+
+	// Create service with selector
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "myapp"},
+		},
+	}
+
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myapp-v1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "myapp", "version": "v1"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(svc, pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test combining label selector with service name
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		ServiceName:   "my-service",
+		LabelSelector: "version=v1",
+	})
+	if err != nil {
+		t.Fatalf("ListPods with combined filters failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+}
+
 func TestKubernetesDiscoveryAdapter_GetPod_WithFakeClient(t *testing.T) {
 	initTestRegistry()
 
@@ -1842,5 +2041,231 @@ func TestKubernetesDiscoveryAdapter_GetEndpoints_NotFound(t *testing.T) {
 	_, err := adapter.GetEndpoints("test-context", "default", "nonexistent-service")
 	if err == nil {
 		t.Error("Expected error for nonexistent endpoints")
+	}
+}
+
+// Test GetServiceDiagnostic with various status scenarios
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Active(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with only active forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "active" {
+		t.Errorf("Expected status 'active', got '%s'", diag.Status)
+	}
+	if diag.ServiceName != "svc" {
+		t.Errorf("Expected service name 'svc', got '%s'", diag.ServiceName)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Error(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with only error forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "error" {
+		t.Errorf("Expected status 'error', got '%s'", diag.Status)
+	}
+	if len(diag.ErrorHistory) != 1 {
+		t.Errorf("Expected 1 error in history, got %d", len(diag.ErrorHistory))
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Partial(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with both active and error forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod2.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "partial" {
+		t.Errorf("Expected status 'partial', got '%s'", diag.Status)
+	}
+	if diag.ActiveCount != 1 {
+		t.Errorf("Expected ActiveCount 1, got %d", diag.ActiveCount)
+	}
+	if diag.ErrorCount != 1 {
+		t.Errorf("Expected ErrorCount 1, got %d", diag.ErrorCount)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_NotFound(t *testing.T) {
+	store := state.NewStore(100)
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	_, err := adapter.GetServiceDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetForwardDiagnostic_WithStore(t *testing.T) {
+	store := state.NewStore(100)
+
+	// Add forward
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		LocalIP:     "127.1.1.1",
+		Status:      state.StatusActive,
+		StartedAt:   time.Now().Add(-time.Hour),
+		LastActive:  time.Now(),
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetForwardDiagnostic("svc.ns.ctx.pod1.8080")
+	if err != nil {
+		t.Fatalf("GetForwardDiagnostic failed: %v", err)
+	}
+
+	if diag.Key != "svc.ns.ctx.pod1.8080" {
+		t.Errorf("Expected key 'svc.ns.ctx.pod1.8080', got '%s'", diag.Key)
+	}
+	if diag.Connection.State != "connected" {
+		t.Errorf("Expected connection state 'connected', got '%s'", diag.Connection.State)
+	}
+	if diag.PodName != "pod1" {
+		t.Errorf("Expected pod name 'pod1', got '%s'", diag.PodName)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetForwardDiagnostic_NotFound(t *testing.T) {
+	store := state.NewStore(100)
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	_, err := adapter.GetForwardDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent forward")
+	}
+	if err.Error() != "forward not found: nonexistent" {
+		t.Errorf("Expected 'forward not found' error, got: %s", err.Error())
+	}
+}
+
+// Test ReconnectAll with error forwards
+func TestServiceControllerAdapter_ReconnectAll_WithErroredForwards(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add forwards with different statuses
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc1.ns.ctx.pod1.8080",
+		ServiceKey:  "svc1.ns.ctx",
+		RegistryKey: "svc1.ns.ctx",
+		ServiceName: "svc1",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc2.ns.ctx.pod2.8080",
+		ServiceKey:  "svc2.ns.ctx",
+		RegistryKey: "svc2.ns.ctx",
+		ServiceName: "svc2",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewServiceControllerAdapter(func() *state.Store { return store })
+
+	// ReconnectAll should try to reconnect error services
+	// Since the services aren't registered in fwdsvcregistry, count will be 0
+	count := adapter.ReconnectAll()
+
+	// We can't easily test the actual reconnect without integration,
+	// but we can verify it doesn't panic and returns a count
+	if count < 0 {
+		t.Error("ReconnectAll should return non-negative count")
 	}
 }
