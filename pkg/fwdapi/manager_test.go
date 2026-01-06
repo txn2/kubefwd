@@ -833,3 +833,73 @@ func TestGetKubernetesDiscoveryPodMethods(t *testing.T) {
 		t.Errorf("Expected endpoints name 'test-svc', got '%s'", endpoints.Name)
 	}
 }
+
+// TestLazyNamespaceManagerAdapter_WithRealManager tests the adapter with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_ListNamespaces(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// ListNamespaces should return empty list initially
+	result := adapter.ListNamespaces()
+	if result == nil {
+		t.Error("Expected non-nil result")
+	}
+	if len(result) != 0 {
+		t.Errorf("Expected 0 namespaces initially, got %d", len(result))
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_WithRealManager_GetNamespace tests GetNamespace with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_GetNamespace(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// GetNamespace should return error for non-existent namespace
+	_, err := adapter.GetNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_WithRealManager_RemoveNamespace tests RemoveNamespace with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_RemoveNamespace(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// RemoveNamespace should return error for non-existent namespace
+	err := adapter.RemoveNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestManager_RunWithMissingStateReader tests Run() without stateReader set
+func TestManager_RunWithMissingStateReader(t *testing.T) {
+	manager := &Manager{
+		stopChan:  make(chan struct{}),
+		doneChan:  make(chan struct{}),
+		startTime: time.Now(),
+		version:   "1.0.0",
+		// stateReader is nil
+	}
+
+	err := manager.Run()
+	if err == nil {
+		t.Error("Expected error when stateReader is nil")
+	}
+	if err.Error() != "state reader not configured" {
+		t.Errorf("Expected 'state reader not configured', got '%s'", err.Error())
+	}
+}
