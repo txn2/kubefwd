@@ -316,3 +316,78 @@ kind: Config
 		t.Errorf("Expected empty context, got %s", ctx)
 	}
 }
+
+func TestGetRESTClient_NoCluster(t *testing.T) {
+	// Set up a kubeconfig with invalid cluster
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	kubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://nonexistent-cluster:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+		t.Fatalf("Failed to write kubeconfig: %v", err)
+	}
+
+	// Set environment variable to use our test config
+	originalKubeconfig := os.Getenv("KUBECONFIG")
+	defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
+	if err := os.Setenv("KUBECONFIG", configPath); err != nil {
+		t.Fatalf("Failed to set KUBECONFIG: %v", err)
+	}
+
+	cg := NewConfigGetter()
+	_, err := cg.GetRESTClient()
+	// This will fail because the cluster is not reachable
+	// but the function should execute without panicking
+	if err != nil {
+		// Expected - cluster is unreachable
+		t.Logf("GetRESTClient returned expected error: %v", err)
+	} else {
+		// If somehow it succeeded, that's fine too
+		t.Log("GetRESTClient succeeded (cluster may be reachable)")
+	}
+}
+
+func TestGetRESTClient_NoConfig(t *testing.T) {
+	// Set up a kubeconfig with no context
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	kubeconfig := `apiVersion: v1
+kind: Config
+`
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+		t.Fatalf("Failed to write kubeconfig: %v", err)
+	}
+
+	originalKubeconfig := os.Getenv("KUBECONFIG")
+	defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
+	if err := os.Setenv("KUBECONFIG", configPath); err != nil {
+		t.Fatalf("Failed to set KUBECONFIG: %v", err)
+	}
+
+	cg := NewConfigGetter()
+	_, err := cg.GetRESTClient()
+	// The function may succeed or fail depending on in-cluster config availability
+	// What's important is that it doesn't panic and returns either a valid client or an error
+	if err != nil {
+		t.Logf("GetRESTClient returned expected error: %v", err)
+	} else {
+		t.Log("GetRESTClient succeeded (in-cluster config may be available)")
+	}
+}
