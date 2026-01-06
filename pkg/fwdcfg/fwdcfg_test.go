@@ -250,3 +250,69 @@ users:
 		t.Errorf("Expected host 'https://localhost:6443', got %s", restConfig.Host)
 	}
 }
+
+func TestGetCurrentContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	kubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: my-current-context
+current-context: my-current-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+		t.Fatalf("Failed to write kubeconfig: %v", err)
+	}
+
+	cg := NewConfigGetter()
+	ctx, err := cg.GetCurrentContext(configPath)
+	if err != nil {
+		t.Fatalf("GetCurrentContext failed: %v", err)
+	}
+
+	if ctx != "my-current-context" {
+		t.Errorf("Expected 'my-current-context', got %s", ctx)
+	}
+}
+
+func TestGetCurrentContext_InvalidPath(t *testing.T) {
+	cg := NewConfigGetter()
+	_, err := cg.GetCurrentContext("/nonexistent/path/config")
+	if err == nil {
+		t.Error("Expected error for nonexistent config path")
+	}
+}
+
+func TestGetCurrentContext_EmptyConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	kubeconfig := `apiVersion: v1
+kind: Config
+`
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+		t.Fatalf("Failed to write kubeconfig: %v", err)
+	}
+
+	cg := NewConfigGetter()
+	ctx, err := cg.GetCurrentContext(configPath)
+	if err != nil {
+		t.Fatalf("GetCurrentContext failed: %v", err)
+	}
+
+	if ctx != "" {
+		t.Errorf("Expected empty context, got %s", ctx)
+	}
+}
