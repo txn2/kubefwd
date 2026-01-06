@@ -2629,3 +2629,157 @@ func TestRootModel_Update_KeyMsg_InLogsPanel(t *testing.T) {
 		t.Error("Expected non-nil model")
 	}
 }
+
+func TestRootModel_Update_ReconnectErroredMsg_WithCount(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up reconnect function that returns count > 0
+	m.reconnectErrored = func() int { return 3 }
+
+	msg := components.ReconnectErroredMsg{}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command
+	if cmd == nil {
+		t.Error("Expected non-nil command for reconnect with count > 0")
+	}
+}
+
+func TestRootModel_Update_ReconnectErroredMsg_NoErrors(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up reconnect function that returns 0
+	m.reconnectErrored = func() int { return 0 }
+
+	msg := components.ReconnectErroredMsg{}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating no errors
+	if cmd == nil {
+		t.Error("Expected non-nil command for reconnect with 0 count")
+	}
+}
+
+func TestRootModel_Update_OpenDetailMsg_ValidKey(t *testing.T) {
+	m := createTestRootModel()
+
+	// Add a forward so the key is valid
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	msg := components.OpenDetailMsg{Key: "svc.ns.ctx.pod.8080"}
+	m.Update(msg)
+
+	if !m.detail.IsVisible() {
+		t.Error("Expected detail to be visible after OpenDetailMsg")
+	}
+	if m.focus != FocusDetail {
+		t.Errorf("Expected focus to be FocusDetail, got %v", m.focus)
+	}
+}
+
+func TestRootModel_Update_OpenDetailMsg_EmptyKey(t *testing.T) {
+	m := createTestRootModel()
+
+	// Empty key should not open detail
+	msg := components.OpenDetailMsg{Key: ""}
+	m.Update(msg)
+
+	if m.detail.IsVisible() {
+		t.Error("Detail should not be visible for empty key")
+	}
+}
+
+func TestRootModel_Update_RemoveForwardMsg_NoCallback(t *testing.T) {
+	m := createTestRootModel()
+	m.removeForward = nil
+
+	msg := components.RemoveForwardMsg{RegistryKey: "svc.ns.ctx"}
+	_, cmd := m.Update(msg)
+
+	// Should return nil cmd when no callback
+	if cmd != nil {
+		t.Error("Expected nil command when removeForward not set")
+	}
+}
+
+func TestRootModel_Update_RemoveForwardMsg_EmptyKey(t *testing.T) {
+	m := createTestRootModel()
+
+	removeCalled := false
+	m.removeForward = func(key string) error {
+		removeCalled = true
+		return nil
+	}
+
+	// Empty key should not call callback
+	msg := components.RemoveForwardMsg{RegistryKey: ""}
+	_, _ = m.Update(msg)
+
+	if removeCalled {
+		t.Error("removeForward should not be called for empty key")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_R_WithReconnector_CountZero(t *testing.T) {
+	m := createTestRootModel()
+	m.reconnectErrored = func() int { return 0 }
+
+	// Press 'r' when no services have errors
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating no errors
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' with no errors")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_R_WithReconnector_CountPositive(t *testing.T) {
+	m := createTestRootModel()
+	m.reconnectErrored = func() int { return 5 }
+
+	// Press 'r' when services have errors
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating reconnection
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' with errors")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_Q_WhileFiltering(t *testing.T) {
+	m := createTestRootModel()
+	m.services.SetSize(100, 20)
+
+	// Enter filter mode by simulating '/'
+	filterMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
+	m.Update(filterMsg)
+
+	// Now press 'q' - should NOT quit because we're filtering
+	qMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}
+	_, cmd := m.Update(qMsg)
+
+	// Should not be quitting
+	if m.quitting {
+		t.Error("Should not quit while filtering")
+	}
+
+	// cmd should not be tea.Quit
+	if cmd != nil {
+		// Execute the cmd to see if it's tea.Quit
+		result := cmd()
+		if _, ok := result.(tea.QuitMsg); ok {
+			t.Error("Should not return tea.Quit while filtering")
+		}
+	}
+}
