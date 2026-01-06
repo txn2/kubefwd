@@ -853,3 +853,255 @@ func TestNamespaceWatcher_Done(t *testing.T) {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+func TestManager_StopWatcher_RunningWatcher(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Create a fake running watcher
+	watcherStopCh := make(chan struct{})
+	watcherDoneCh := make(chan struct{})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		key:       "default.test",
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+		stopCh:    watcherStopCh,
+		doneCh:    watcherDoneCh,
+		running:   true,
+	}
+
+	mgr.mu.Lock()
+	mgr.watchers["default.test"] = watcher
+	mgr.mu.Unlock()
+
+	// Simulate watcher closing its done channel when stopped
+	go func() {
+		<-watcherStopCh
+		close(watcherDoneCh)
+	}()
+
+	// Stop the watcher
+	err := mgr.StopWatcher("test", "default")
+	if err != nil {
+		t.Fatalf("StopWatcher failed: %v", err)
+	}
+
+	// Verify watcher is removed
+	mgr.mu.RLock()
+	_, exists := mgr.watchers["default.test"]
+	mgr.mu.RUnlock()
+
+	if exists {
+		t.Error("Watcher should be removed after stopping")
+	}
+}
+
+func TestManager_StopAll_WithRunningWatchers(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Track stopped watchers
+	stoppedCount := 0
+	var stoppedMu sync.Mutex
+
+	// Create multiple fake watchers
+	for i := 0; i < 3; i++ {
+		key := WatcherKey("ns"+string(rune('0'+i)), "ctx")
+		watcherStopCh := make(chan struct{})
+		watcherDoneCh := make(chan struct{})
+		watcher := &NamespaceWatcher{
+			manager:   mgr,
+			key:       key,
+			namespace: "ns" + string(rune('0'+i)),
+			context:   "ctx",
+			clientSet: fake.NewClientset(),
+			stopCh:    watcherStopCh,
+			doneCh:    watcherDoneCh,
+			running:   true,
+		}
+
+		// Simulate watcher closing done channel on stop
+		go func(stopCh, doneCh chan struct{}) {
+			<-stopCh
+			stoppedMu.Lock()
+			stoppedCount++
+			stoppedMu.Unlock()
+			close(doneCh)
+		}(watcherStopCh, watcherDoneCh)
+
+		mgr.mu.Lock()
+		mgr.watchers[key] = watcher
+		mgr.mu.Unlock()
+	}
+
+	// Verify we have 3 watchers
+	mgr.mu.RLock()
+	count := len(mgr.watchers)
+	mgr.mu.RUnlock()
+
+	if count != 3 {
+		t.Errorf("Expected 3 watchers, got %d", count)
+	}
+
+	// Stop all
+	mgr.StopAll()
+
+	// Verify all watchers were stopped (StopAll doesn't remove them from map)
+	stoppedMu.Lock()
+	finalCount := stoppedCount
+	stoppedMu.Unlock()
+
+	if finalCount != 3 {
+		t.Errorf("Expected 3 watchers stopped, got %d", finalCount)
+	}
+
+	// Verify manager's done channel is closed
+	select {
+	case <-mgr.Done():
+		// Expected
+	default:
+		t.Error("Manager's done channel should be closed after StopAll")
+	}
+}
+
+func TestNamespaceWatcher_Info_AllFields(t *testing.T) {
+	now := time.Now()
+	watcher := &NamespaceWatcher{
+		key:           "default.minikube",
+		namespace:     "default",
+		context:       "minikube",
+		clusterN:      1,
+		namespaceN:    2,
+		labelSelector: "app=web",
+		fieldSelector: "metadata.name=svc1",
+		startedAt:     now,
+		running:       true,
+	}
+
+	info := watcher.Info()
+
+	if info.Key != "default.minikube" {
+		t.Errorf("Expected key 'default.minikube', got %q", info.Key)
+	}
+	if info.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got %q", info.Namespace)
+	}
+	if info.Context != "minikube" {
+		t.Errorf("Expected context 'minikube', got %q", info.Context)
+	}
+	if info.LabelSelector != "app=web" {
+		t.Errorf("Expected LabelSelector 'app=web', got %q", info.LabelSelector)
+	}
+	if info.FieldSelector != "metadata.name=svc1" {
+		t.Errorf("Expected FieldSelector 'metadata.name=svc1', got %q", info.FieldSelector)
+	}
+	if !info.Running {
+		t.Error("Expected Running to be true")
+	}
+	if info.StartedAt != now {
+		t.Error("Expected StartedAt to match")
+	}
+}
+
+func TestManager_removeNamespaceServices(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Call removeNamespaceServices - should not panic even with no services
+	mgr.removeNamespaceServices("default", "test")
+
+	// The function clears services from the registry and updates store
+	// Since we don't have actual services, this tests the path doesn't panic
+}
+
+func TestManager_GetCurrentContext(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		ConfigPath:   "/nonexistent/kubeconfig", // Will fail
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	_, err := mgr.GetCurrentContext()
+	// Should fail because config path doesn't exist
+	if err == nil {
+		t.Log("GetCurrentContext didn't fail - kubeconfig may be available in default location")
+	}
+}
+
+func TestManager_SetClientSet(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+
+	// Initially no clientset
+	if cs := mgr.GetClientSet("test-context"); cs != nil {
+		t.Error("Expected nil clientset initially")
+	}
+
+	// Set a fake clientset
+	fakeClient := fake.NewClientset()
+	mgr.SetClientSet("test-context", fakeClient)
+
+	// Verify it's set
+	if cs := mgr.GetClientSet("test-context"); cs == nil {
+		t.Error("Expected non-nil clientset after setting")
+	} else if cs != fakeClient {
+		t.Error("Expected same clientset that was set")
+	}
+
+	// Test with different contexts
+	fakeClient2 := fake.NewClientset()
+	mgr.SetClientSet("other-context", fakeClient2)
+
+	if cs := mgr.GetClientSet("test-context"); cs != fakeClient {
+		t.Error("test-context should still have original clientset")
+	}
+	if cs := mgr.GetClientSet("other-context"); cs != fakeClient2 {
+		t.Error("other-context should have second clientset")
+	}
+}
+
+func TestManager_GetClientSet_NonexistentContext(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+
+	// Non-existent context should return nil
+	if cs := mgr.GetClientSet("nonexistent"); cs != nil {
+		t.Error("Expected nil for nonexistent context")
+	}
+}
