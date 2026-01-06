@@ -137,7 +137,7 @@ func TestServiceControllerAdapter_Reconnect_NotFound(t *testing.T) {
 
 	err := adapter.Reconnect("nonexistent.service.key")
 	if err == nil {
-		t.Error("Expected error for nonexistent service")
+		t.Fatal("Expected error for nonexistent service")
 	}
 	if err.Error() != "service not found: nonexistent.service.key" {
 		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
@@ -150,7 +150,7 @@ func TestServiceControllerAdapter_Sync_NotFound(t *testing.T) {
 
 	err := adapter.Sync("nonexistent.service.key", false)
 	if err == nil {
-		t.Error("Expected error for nonexistent service")
+		t.Fatal("Expected error for nonexistent service")
 	}
 	if err.Error() != "service not found: nonexistent.service.key" {
 		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
@@ -782,7 +782,7 @@ func TestServiceCRUDAdapter_AddService_NilNamespaceManager(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -802,7 +802,7 @@ func TestServiceCRUDAdapter_RemoveService_NotFound(t *testing.T) {
 	err := adapter.RemoveService("nonexistent.service.key")
 
 	if err == nil {
-		t.Error("Expected error for nonexistent service")
+		t.Fatal("Expected error for nonexistent service")
 	}
 	if err.Error() != "service not found: nonexistent.service.key" {
 		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
@@ -822,7 +822,7 @@ func TestServiceCRUDAdapter_RemoveService_EmptyKey(t *testing.T) {
 	err := adapter.RemoveService("")
 
 	if err == nil {
-		t.Error("Expected error for empty service key")
+		t.Fatal("Expected error for empty service key")
 	}
 	// fwdsvcregistry.Get("") returns nil, so error should be service not found
 	if err.Error() != "service not found: " {
@@ -866,7 +866,7 @@ func TestKubernetesDiscoveryAdapter_ListNamespaces_NilManager(t *testing.T) {
 	_, err := adapter.ListNamespaces("test-context")
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -882,7 +882,7 @@ func TestKubernetesDiscoveryAdapter_ListServices_NilManager(t *testing.T) {
 	_, err := adapter.ListServices("test-context", "default")
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -898,7 +898,7 @@ func TestKubernetesDiscoveryAdapter_GetService_NilManager(t *testing.T) {
 	_, err := adapter.GetService("test-context", "default", "my-service")
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1150,7 +1150,7 @@ func TestKubernetesDiscoveryAdapter_GetPodLogs_NilManager(t *testing.T) {
 	_, err := adapter.GetPodLogs("test-context", "default", "test-pod", types.PodLogsOptions{})
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1166,7 +1166,7 @@ func TestKubernetesDiscoveryAdapter_ListPods_NilManager(t *testing.T) {
 	_, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{})
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1182,7 +1182,7 @@ func TestKubernetesDiscoveryAdapter_GetPod_NilManager(t *testing.T) {
 	_, err := adapter.GetPod("test-context", "default", "test-pod")
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1198,7 +1198,7 @@ func TestKubernetesDiscoveryAdapter_GetEvents_NilManager(t *testing.T) {
 	_, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{})
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1214,7 +1214,7 @@ func TestKubernetesDiscoveryAdapter_GetEndpoints_NilManager(t *testing.T) {
 	_, err := adapter.GetEndpoints("test-context", "default", "my-service")
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
@@ -1298,7 +1298,7 @@ func TestKubernetesDiscoveryAdapter_ListServices_WithFakeClient(t *testing.T) {
 			ClusterIP: "10.0.0.1",
 			Selector:  map[string]string{"app": "api"},
 			Ports: []corev1.ServicePort{
-				{Name: "http", Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
+				{Name: "http", Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -1312,7 +1312,7 @@ func TestKubernetesDiscoveryAdapter_ListServices_WithFakeClient(t *testing.T) {
 			ClusterIP: "10.0.0.2",
 			Selector:  map[string]string{"app": "db"},
 			Ports: []corev1.ServicePort{
-				{Name: "mysql", Port: 3306, TargetPort: intstr.FromInt(3306), Protocol: corev1.ProtocolTCP},
+				{Name: "mysql", Port: 3306, TargetPort: intstr.FromInt32(3306), Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -1370,8 +1370,8 @@ func TestKubernetesDiscoveryAdapter_GetService_WithFakeClient(t *testing.T) {
 			ClusterIP: "10.0.0.100",
 			Selector:  map[string]string{"app": "myapp", "version": "v1"},
 			Ports: []corev1.ServicePort{
-				{Name: "http", Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
-				{Name: "https", Port: 443, TargetPort: intstr.FromInt(8443), Protocol: corev1.ProtocolTCP},
+				{Name: "http", Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: corev1.ProtocolTCP},
+				{Name: "https", Port: 443, TargetPort: intstr.FromInt32(8443), Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -2434,7 +2434,7 @@ func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_NotFound(t *testing.T) 
 
 	_, err := adapter.GetServiceDiagnostic("nonexistent")
 	if err == nil {
-		t.Error("Expected error for nonexistent service")
+		t.Fatal("Expected error for nonexistent service")
 	}
 	if err.Error() != "service not found: nonexistent" {
 		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
@@ -2490,7 +2490,7 @@ func TestDiagnosticsProviderAdapter_GetForwardDiagnostic_NotFound(t *testing.T) 
 
 	_, err := adapter.GetForwardDiagnostic("nonexistent")
 	if err == nil {
-		t.Error("Expected error for nonexistent forward")
+		t.Fatal("Expected error for nonexistent forward")
 	}
 	if err.Error() != "forward not found: nonexistent" {
 		t.Errorf("Expected 'forward not found' error, got: %s", err.Error())
@@ -2618,7 +2618,7 @@ func TestKubernetesDiscoveryAdapter_GetPodLogs_InvalidSinceTime(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("Expected error for invalid sinceTime format")
+		t.Fatal("Expected error for invalid sinceTime format")
 	}
 	if !strings.Contains(err.Error(), "invalid sinceTime format") {
 		t.Errorf("Expected 'invalid sinceTime format' error, got: %s", err.Error())
@@ -2644,7 +2644,7 @@ func TestKubernetesDiscoveryAdapter_GetPodLogs_PodNotFound(t *testing.T) {
 	_, err := adapter.GetPodLogs("test-context", "default", "nonexistent-pod", types.PodLogsOptions{})
 
 	if err == nil {
-		t.Error("Expected error for nonexistent pod")
+		t.Fatal("Expected error for nonexistent pod")
 	}
 	if !strings.Contains(err.Error(), "failed to get pod") {
 		t.Errorf("Expected 'failed to get pod' error, got: %s", err.Error())
@@ -2748,7 +2748,7 @@ func TestServiceCRUDAdapter_AddService_NilManager(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Error("Expected error for nil namespace manager")
+		t.Fatal("Expected error for nil namespace manager")
 	}
 	if !strings.Contains(err.Error(), "namespace manager not available") {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())

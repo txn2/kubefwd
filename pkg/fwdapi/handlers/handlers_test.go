@@ -88,7 +88,7 @@ func (m *mockServiceController) ReconnectAll() int {
 	return len(m.reconnected)
 }
 
-func (m *mockServiceController) Sync(key string, force bool) error {
+func (m *mockServiceController) Sync(_ string, _ bool) error {
 	return m.syncErr
 }
 
@@ -657,14 +657,14 @@ func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return m.summary
 }
 
-func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetServiceDiagnostic(_ string) (*types.ServiceDiagnostic, error) {
 	if m.serviceErr != nil {
 		return nil, m.serviceErr
 	}
 	return m.serviceDiagnostic, nil
 }
 
-func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetForwardDiagnostic(_ string) (*types.ForwardDiagnostic, error) {
 	if m.forwardErr != nil {
 		return nil, m.forwardErr
 	}
@@ -2562,7 +2562,7 @@ type mockNamespaceController struct {
 	getErr     error
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	if m.addErr != nil {
 		return nil, m.addErr
 	}
@@ -2573,7 +2573,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	}, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return m.removeErr
 }
 
@@ -2598,7 +2598,7 @@ type mockServiceCRUD struct {
 	removeErr error
 }
 
-func (m *mockServiceCRUD) Reconnect(key string) error {
+func (m *mockServiceCRUD) Reconnect(_ string) error {
 	return nil
 }
 
@@ -2606,7 +2606,7 @@ func (m *mockServiceCRUD) ReconnectAll() int {
 	return 0
 }
 
-func (m *mockServiceCRUD) Sync(key string, force bool) error {
+func (m *mockServiceCRUD) Sync(_ string, _ bool) error {
 	return nil
 }
 
@@ -2623,7 +2623,7 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return m.removeErr
 }
 
@@ -2637,21 +2637,21 @@ type mockKubernetesDiscovery struct {
 	listCtxErr error
 }
 
-func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockKubernetesDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	if m.listNsErr != nil {
 		return nil, m.listNsErr
 	}
 	return m.namespaces, nil
 }
 
-func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockKubernetesDiscovery) ListServices(_, _ string) ([]types.K8sService, error) {
 	if m.listSvcErr != nil {
 		return nil, m.listSvcErr
 	}
 	return m.services, nil
 }
 
-func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockKubernetesDiscovery) GetService(_, namespace, name string) (*types.K8sService, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
@@ -2682,19 +2682,19 @@ func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opt
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockKubernetesDiscovery) ListPods(_, namespace string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+func (m *mockKubernetesDiscovery) GetPod(_, namespace, podName string) (*types.K8sPodDetail, error) {
 	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockKubernetesDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+func (m *mockKubernetesDiscovery) GetEndpoints(_, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
 }
 
@@ -3046,6 +3046,20 @@ func TestServicesCRUDHandler_RemoveError(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_RemoveEmptyKey(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{}
+	h := NewServicesCRUDHandler(mock)
+	// Note: gin requires at least one character for :key param, so we use a route without the param
+	r.DELETE("/v1/services/", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/services/")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
 }
 
