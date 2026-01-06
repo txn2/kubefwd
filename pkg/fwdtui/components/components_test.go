@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1481,5 +1482,263 @@ func TestDetailModel_RenderStatusCode(t *testing.T) {
 		if codeStr == "" {
 			t.Errorf("renderStatusCode(%d) returned empty string", code)
 		}
+	}
+}
+
+// =============================================================================
+// Detail Model Update Tests - Additional Message Types
+// =============================================================================
+
+func TestDetailModel_UpdateWithClearCopiedMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.copiedVisible = true
+	m.copiedIndex = 0
+
+	updated, _ := m.Update(ClearCopiedMsg{})
+	m = updated
+
+	if m.copiedVisible {
+		t.Error("Expected copiedVisible to be false after ClearCopiedMsg")
+	}
+	if m.copiedIndex != -1 {
+		t.Errorf("Expected copiedIndex to be -1, got %d", m.copiedIndex)
+	}
+}
+
+func TestDetailModel_UpdateWithPodLogLineMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, _ := m.Update(PodLogLineMsg{Line: "test log line"})
+	m = updated
+
+	// Verify log line was appended
+	if len(m.podLogs) != 1 || m.podLogs[0] != "test log line" {
+		t.Errorf("Expected log line to be appended, got: %v", m.podLogs)
+	}
+}
+
+func TestDetailModel_UpdateWithPodLogsErrorMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, _ := m.Update(PodLogsErrorMsg{Error: fmt.Errorf("connection failed")})
+	m = updated
+
+	if m.logsError != "connection failed" {
+		t.Errorf("Expected logsError 'connection failed', got '%s'", m.logsError)
+	}
+	if m.logsLoading {
+		t.Error("Expected logsLoading to be false")
+	}
+	if m.logsStreaming {
+		t.Error("Expected logsStreaming to be false")
+	}
+}
+
+func TestDetailModel_UpdateWithReconnectKey(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = updated
+
+	// Should return a command that produces ReconnectErroredMsg
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' key")
+	}
+}
+
+func TestDetailModel_UpdateWithVimKeysOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+
+	// Add some HTTP logs
+	for i := 0; i < 50; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	// Test 'j' key (scroll down)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated
+	if m.httpScrollOffset != 1 {
+		t.Errorf("Expected httpScrollOffset 1 after 'j', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'k' key (scroll up)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'k', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'G' key (go to bottom)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated
+	if m.httpScrollOffset == 0 {
+		t.Error("Expected httpScrollOffset to be > 0 after 'G'")
+	}
+
+	// Test 'g' key (go to top)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'g', got %d", m.httpScrollOffset)
+	}
+}
+
+func TestDetailModel_UpdateWithArrowKeysOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+
+	// Add some HTTP logs
+	for i := 0; i < 50; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	// Test 'down' key
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated
+	if m.httpScrollOffset != 1 {
+		t.Errorf("Expected httpScrollOffset 1 after 'down', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'up' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'up', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'pgdown' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated
+	if m.httpScrollOffset == 0 {
+		t.Error("Expected httpScrollOffset > 0 after 'pgdown'")
+	}
+
+	// Test 'pgup' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated
+	// Should scroll up from current position
+}
+
+func TestDetailModel_RequestPodLogs_NilSnapshot(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = nil
+
+	cmd := m.requestPodLogs()
+	if cmd != nil {
+		t.Error("Expected nil command when snapshot is nil")
+	}
+}
+
+func TestDetailModel_RequestPodLogs_WithSnapshot(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.UpdateSnapshot()
+
+	cmd := m.requestPodLogs()
+	if cmd == nil {
+		t.Error("Expected non-nil command when snapshot is set")
+	}
+
+	// Execute the command to get the message
+	msg := cmd()
+	if _, ok := msg.(PodLogsRequestMsg); !ok {
+		t.Errorf("Expected PodLogsRequestMsg, got %T", msg)
+	}
+}
+
+func TestDetailModel_GetConnectStrings_NilSnapshot(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = nil
+
+	result := m.getConnectStrings()
+	if result != nil {
+		t.Errorf("Expected nil, got %v", result)
+	}
+}
+
+func TestDetailModel_GetConnectStrings_WithHostnames(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.UpdateSnapshot()
+
+	result := m.getConnectStrings()
+	if len(result) == 0 {
+		t.Error("Expected non-empty connect strings")
+	}
+
+	// Check that all strings contain port
+	for _, s := range result {
+		if !strings.Contains(s, ":") {
+			t.Errorf("Expected port in connect string, got: %s", s)
+		}
+	}
+}
+
+func TestDetailModel_GetConnectStrings_NoHostnames(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = &state.ForwardSnapshot{
+		ServiceName: "my-service",
+		LocalPort:   "8080",
+		Hostnames:   []string{}, // Empty hostnames
+	}
+
+	result := m.getConnectStrings()
+	if len(result) != 1 {
+		t.Errorf("Expected 1 connect string, got %d", len(result))
+	}
+	if result[0] != "my-service:8080" {
+		t.Errorf("Expected 'my-service:8080', got '%s'", result[0])
+	}
+}
+
+func TestDetailModel_GetViewportHeight(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.height = 40
+
+	height := m.getViewportHeight()
+	if height < 5 {
+		t.Errorf("Expected viewport height >= 5, got %d", height)
+	}
+}
+
+func TestDetailModel_GetHTTPMaxScroll(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.height = 40
+
+	// With no HTTP logs
+	maxScroll := m.getHTTPMaxScroll()
+	if maxScroll != 0 {
+		t.Errorf("Expected maxScroll 0 with no logs, got %d", maxScroll)
+	}
+
+	// With many HTTP logs
+	for i := 0; i < 100; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	maxScroll = m.getHTTPMaxScroll()
+	if maxScroll <= 0 {
+		t.Errorf("Expected maxScroll > 0 with many logs, got %d", maxScroll)
 	}
 }
