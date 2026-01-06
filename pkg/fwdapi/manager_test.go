@@ -903,3 +903,65 @@ func TestManager_RunWithMissingStateReader(t *testing.T) {
 		t.Errorf("Expected 'state reader not configured', got '%s'", err.Error())
 	}
 }
+
+// TestNamespaceManagerAdapter_ListNamespaces tests listing namespaces
+func TestNamespaceManagerAdapter_ListNamespaces(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// Should return empty list when no watchers
+	namespaces := adapter.ListNamespaces()
+	if len(namespaces) != 0 {
+		t.Errorf("Expected 0 namespaces, got %d", len(namespaces))
+	}
+}
+
+// TestNamespaceManagerAdapter_GetNamespace_NotFound tests getting non-existent namespace
+func TestNamespaceManagerAdapter_GetNamespace_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// Should return error for non-existent namespace
+	_, err := adapter.GetNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_NilManager tests lazy adapter with nil manager
+func TestLazyNamespaceManagerAdapter_NilManager(t *testing.T) {
+	// NewNamespaceManagerAdapter with nil-returning function creates lazy adapter
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	// AddNamespace should return error
+	_, err := adapter.AddNamespace("test-ctx", "default", types.AddNamespaceOpts{})
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// RemoveNamespace should return error
+	err = adapter.RemoveNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// GetNamespace should return error
+	_, err = adapter.GetNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// ListNamespaces should return nil
+	namespaces := adapter.ListNamespaces()
+	if namespaces != nil {
+		t.Error("Expected nil for nil manager")
+	}
+}
