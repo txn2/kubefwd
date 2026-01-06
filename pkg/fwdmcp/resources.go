@@ -90,13 +90,16 @@ func (s *Server) handleServicesResource(ctx context.Context, req *mcp.ReadResour
 
 	result := make([]map[string]interface{}, len(services))
 	for i, svc := range services {
-		status := "pending"
-		if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+		var status string
+		switch {
+		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 			status = "active"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 			status = "error"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 			status = "partial"
+		default:
+			status = "pending"
 		}
 
 		result[i] = map[string]interface{}{

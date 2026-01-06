@@ -939,7 +939,7 @@ func (m *DetailModel) renderHTTPTab() string {
 			scrollInfo = "↑ " + scrollInfo
 		}
 		if m.httpScrollOffset < maxScroll {
-			scrollInfo = scrollInfo + " ↓"
+			scrollInfo += " ↓"
 		}
 		b.WriteString(styles.DetailLabelStyle.Render(scrollInfo))
 	}
@@ -1068,14 +1068,16 @@ func (m *DetailModel) renderFooter() string {
 
 // formatDuration formats a duration in a human-readable way
 func formatDuration(d time.Duration) string {
-	if d < time.Minute {
+	switch {
+	case d < time.Minute:
 		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	} else if d < time.Hour {
+	case d < time.Hour:
 		return fmt.Sprintf("%dm %ds ago", int(d.Minutes()), int(d.Seconds())%60)
-	} else if d < 24*time.Hour {
+	case d < 24*time.Hour:
 		return fmt.Sprintf("%dh %dm ago", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd %dh ago", int(d.Hours()/24), int(d.Hours())%24)
 	}
-	return fmt.Sprintf("%dd %dh ago", int(d.Hours()/24), int(d.Hours())%24)
 }
 
 // wrapLogText wraps text to fit within the given width

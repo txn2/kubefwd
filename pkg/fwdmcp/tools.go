@@ -333,13 +333,16 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 	var filtered []map[string]interface{}
 	for _, svc := range services {
 		// Calculate status
-		status := "pending"
-		if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+		var status string
+		switch {
+		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 			status = "active"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 			status = "error"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 			status = "partial"
+		default:
+			status = "pending"
 		}
 
 		// Apply namespace filter
@@ -412,13 +415,16 @@ func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest,
 	}
 
 	// Calculate status
-	status := "pending"
-	if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+	var status string
+	switch {
+	case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 		status = "active"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 		status = "error"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 		status = "partial"
+	default:
+		status = "pending"
 	}
 
 	forwards := make([]map[string]interface{}, len(svc.PortForwards))
@@ -485,13 +491,14 @@ func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequ
 			suggestion := "Check pod status and logs"
 
 			errLower := strings.ToLower(fwd.Error)
-			if strings.Contains(errLower, "connection refused") {
+			switch {
+			case strings.Contains(errLower, "connection refused"):
 				errorType = "connection_refused"
 				suggestion = "Pod may not be ready or listening on the expected port. Check pod logs and readiness probes."
-			} else if strings.Contains(errLower, "timeout") {
+			case strings.Contains(errLower, "timeout"):
 				errorType = "timeout"
 				suggestion = "Connection timed out. Check network policies and pod availability."
-			} else if strings.Contains(errLower, "not found") {
+			case strings.Contains(errLower, "not found"):
 				errorType = "pod_not_found"
 				suggestion = "Pod no longer exists. Trigger a sync to discover new pods."
 			}

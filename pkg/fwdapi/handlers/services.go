@@ -95,13 +95,16 @@ func filterServices(services []state.ServiceSnapshot, params types.ListParams) [
 	result := make([]state.ServiceSnapshot, 0, len(services))
 	for _, svc := range services {
 		// Calculate status for filtering
-		status := "pending"
-		if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+		var status string
+		switch {
+		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 			status = "active"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 			status = "error"
-		} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 			status = "partial"
+		default:
+			status = "pending"
 		}
 
 		// Apply status filter
@@ -275,13 +278,16 @@ func (h *ServicesHandler) Sync(c *gin.Context) {
 
 // mapServiceSnapshot converts a state.ServiceSnapshot to an API response
 func mapServiceSnapshot(svc state.ServiceSnapshot) types.ServiceResponse {
-	status := "pending"
-	if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+	var status string
+	switch {
+	case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 		status = "active"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 		status = "error"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 		status = "partial"
+	default:
+		status = "pending"
 	}
 
 	forwards := make([]types.ForwardResponse, len(svc.PortForwards))

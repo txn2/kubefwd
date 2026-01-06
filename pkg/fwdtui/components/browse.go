@@ -706,11 +706,12 @@ func (m *BrowseModel) renderServiceList() string {
 		displayName := fmt.Sprintf("%s (%s) %s", svc.Name, svc.Type, portStr)
 
 		var line string
-		if isSelected {
+		switch {
+		case isSelected:
 			line = styles.BrowseSelectedStyle.Render("> " + displayName)
-		} else if svc.Forwarded {
+		case svc.Forwarded:
 			line = styles.BrowseForwardedStyle.Render("  " + displayName + " [forwarded]")
-		} else {
+		default:
 			line = styles.BrowseItemStyle.Render("  " + displayName)
 		}
 		sb.WriteString(line)

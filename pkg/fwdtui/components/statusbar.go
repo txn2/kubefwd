@@ -27,9 +27,8 @@ func (m *StatusBarModel) Init() tea.Cmd {
 
 // Update handles messages for the status bar
 func (m *StatusBarModel) Update(msg tea.Msg) (StatusBarModel, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
 	}
 	return *m, nil
 }

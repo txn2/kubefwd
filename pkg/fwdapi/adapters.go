@@ -302,13 +302,14 @@ func (a *DiagnosticsProviderAdapter) GetSummary() types.DiagnosticSummary {
 	// Calculate service counts by status
 	var active, errored, partial, pending int
 	for _, svc := range services {
-		if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+		switch {
+		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 			active++
-		} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 			errored++
-		} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 			partial++
-		} else {
+		default:
 			pending++
 		}
 	}
@@ -371,13 +372,16 @@ func (a *DiagnosticsProviderAdapter) GetServiceDiagnostic(key string) (*types.Se
 	}
 
 	// Calculate status
-	status := "pending"
-	if svc.ActiveCount > 0 && svc.ErrorCount == 0 {
+	var status string
+	switch {
+	case svc.ActiveCount > 0 && svc.ErrorCount == 0:
 		status = "active"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount == 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount == 0:
 		status = "error"
-	} else if svc.ErrorCount > 0 && svc.ActiveCount > 0 {
+	case svc.ErrorCount > 0 && svc.ActiveCount > 0:
 		status = "partial"
+	default:
+		status = "pending"
 	}
 
 	// Get reconnect state from registry
@@ -1203,13 +1207,14 @@ func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, c
 			ci.Started = cs.Started != nil && *cs.Started
 			ci.RestartCount = cs.RestartCount
 
-			if cs.State.Running != nil {
+			switch {
+			case cs.State.Running != nil:
 				ci.State = "Running"
-			} else if cs.State.Waiting != nil {
+			case cs.State.Waiting != nil:
 				ci.State = "Waiting"
 				ci.StateReason = cs.State.Waiting.Reason
 				ci.StateMessage = cs.State.Waiting.Message
-			} else if cs.State.Terminated != nil {
+			case cs.State.Terminated != nil:
 				ci.State = "Terminated"
 				ci.StateReason = cs.State.Terminated.Reason
 				ci.StateMessage = cs.State.Terminated.Message

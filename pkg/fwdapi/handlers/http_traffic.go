@@ -245,13 +245,14 @@ func buildHTTPActivitySummary(logs []fwdmetrics.HTTPLogEntry) types.HTTPActivity
 		}
 
 		// Count status codes by category
-		if log.StatusCode >= 200 && log.StatusCode < 300 {
+		switch {
+		case log.StatusCode >= 200 && log.StatusCode < 300:
 			summary.StatusCodes["2xx"]++
-		} else if log.StatusCode >= 300 && log.StatusCode < 400 {
+		case log.StatusCode >= 300 && log.StatusCode < 400:
 			summary.StatusCodes["3xx"]++
-		} else if log.StatusCode >= 400 && log.StatusCode < 500 {
+		case log.StatusCode >= 400 && log.StatusCode < 500:
 			summary.StatusCodes["4xx"]++
-		} else if log.StatusCode >= 500 {
+		case log.StatusCode >= 500:
 			summary.StatusCodes["5xx"]++
 		}
 

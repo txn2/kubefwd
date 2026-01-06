@@ -53,18 +53,19 @@ func (h *AnalyzeHandler) Status(c *gin.Context) {
 	status := "ok"
 	var message string
 
-	if summary.ErrorCount == 0 && summary.ActiveServices > 0 {
+	switch {
+	case summary.ErrorCount == 0 && summary.ActiveServices > 0:
 		message = fmt.Sprintf("All %d services healthy, %d active forwards",
 			summary.ActiveServices, summary.ActiveForwards)
-	} else if summary.ErrorCount > 0 && summary.ActiveServices > summary.ErrorCount {
+	case summary.ErrorCount > 0 && summary.ActiveServices > summary.ErrorCount:
 		status = "issues"
 		message = fmt.Sprintf("%d of %d services have issues, %d errors",
 			summary.ErrorCount, summary.TotalServices, summary.ErrorCount)
-	} else if summary.ErrorCount > 0 {
+	case summary.ErrorCount > 0:
 		status = "error"
 		message = fmt.Sprintf("%d services with errors, only %d active",
 			summary.ErrorCount, summary.ActiveServices)
-	} else {
+	default:
 		message = "No services currently forwarded"
 	}
 
@@ -197,14 +198,15 @@ func (h *AnalyzeHandler) Analyze(c *gin.Context) {
 				errorType := "unknown"
 				errLower := strings.ToLower(fwd.Error)
 
-				if strings.Contains(errLower, "connection refused") {
+				switch {
+				case strings.Contains(errLower, "connection refused"):
 					errorType = "connection_refused"
-				} else if strings.Contains(errLower, "timeout") {
+				case strings.Contains(errLower, "timeout"):
 					errorType = "timeout"
-				} else if strings.Contains(errLower, "not found") {
+				case strings.Contains(errLower, "not found"):
 					errorType = "pod_not_found"
 					severity = "critical"
-				} else if strings.Contains(errLower, "broken pipe") {
+				case strings.Contains(errLower, "broken pipe"):
 					errorType = "broken_pipe"
 				}
 
