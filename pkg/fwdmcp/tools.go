@@ -663,7 +663,7 @@ func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, in
 	var filtered []map[string]interface{}
 	for _, log := range logs {
 		// Apply level filter
-		if input.Level != "" && input.Level != "all" && strings.ToLower(log.Level) != input.Level {
+		if input.Level != "" && input.Level != "all" && !strings.EqualFold(log.Level, input.Level) {
 			continue
 		}
 
@@ -910,10 +910,10 @@ func (s *Server) handleRemoveService(ctx context.Context, req *mcp.CallToolReque
 	return nil, result, nil
 }
 
-func buildConnectionKey(serviceName, namespace, context string) string {
+func buildConnectionKey(serviceName, namespace, k8sContext string) string {
 	key := serviceName + "." + namespace
-	if context != "" {
-		key = key + "." + context
+	if k8sContext != "" {
+		key = key + "." + k8sContext
 	}
 	return key
 }
@@ -1009,11 +1009,11 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 
 	// Build key from input: service.namespace.context
 	// Add context if specified, or use current context
-	context := input.Context
-	if context == "" {
-		context = s.getCurrentContext()
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
 	}
-	key := buildConnectionKey(input.ServiceName, input.Namespace, context)
+	key := buildConnectionKey(input.ServiceName, input.Namespace, k8sContext)
 
 	info, err := connInfo.GetConnectionInfo(key)
 	if err != nil {
@@ -1030,15 +1030,15 @@ func (s *Server) handleListK8sNamespaces(ctx context.Context, req *mcp.CallToolR
 		return nil, nil, NewProviderUnavailableError("Kubernetes discovery", "start kubefwd with: sudo -E kubefwd")
 	}
 
-	context := input.Context
-	if context == "" {
-		context = s.getCurrentContext()
-		if context == "" {
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
 			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
 		}
 	}
 
-	namespaces, err := k8s.ListNamespaces(context)
+	namespaces, err := k8s.ListNamespaces(k8sContext)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
@@ -1070,17 +1070,17 @@ func (s *Server) handleListK8sServices(ctx context.Context, req *mcp.CallToolReq
 		return nil, nil, NewInvalidInputError("namespace", "", "namespace name is required")
 	}
 
-	context := input.Context
-	if context == "" {
-		context = s.getCurrentContext()
-		if context == "" {
+	k8sContext := input.Context
+	if k8sContext == "" {
+		k8sContext = s.getCurrentContext()
+		if k8sContext == "" {
 			return nil, nil, NewInvalidInputError("context", "", "could not determine current context; please specify context explicitly")
 		}
 	}
 
-	services, err := k8s.ListServices(context, input.Namespace)
+	services, err := k8s.ListServices(k8sContext, input.Namespace)
 	if err != nil {
-		return nil, nil, ClassifyError(err, map[string]interface{}{"namespace": input.Namespace, "context": context})
+		return nil, nil, ClassifyError(err, map[string]interface{}{"namespace": input.Namespace, "context": k8sContext})
 	}
 
 	result := map[string]interface{}{

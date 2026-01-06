@@ -17,9 +17,9 @@ type ServicesHandler struct {
 }
 
 // NewServicesHandler creates a new services handler
-func NewServicesHandler(state types.StateReader, controller types.ServiceController) *ServicesHandler {
+func NewServicesHandler(stateReader types.StateReader, controller types.ServiceController) *ServicesHandler {
 	return &ServicesHandler{
-		state:      state,
+		state:      stateReader,
 		controller: controller,
 	}
 }
