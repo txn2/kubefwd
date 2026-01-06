@@ -465,6 +465,18 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	}
 }
 
+// buildServiceHostname constructs the service hostname based on cluster/namespace indices
+func buildServiceHostname(baseName, namespace, context string, namespaceN, clusterN int) string {
+	hostname := baseName
+	if namespaceN > 0 {
+		hostname = hostname + "." + namespace
+	}
+	if clusterN > 0 {
+		hostname = hostname + "." + context
+	}
+	return hostname
+}
+
 // LoopPodsToForward starts the port-forwarding for each
 // pod in the given list
 func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost bool) {
@@ -481,11 +493,8 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 	for _, pod := range pods {
 		podPort := ""
 
-		serviceHostName := svcFwd.Svc.Name
 		svcName := svcFwd.Svc.Name
-
 		if includePodNameInHost {
-			serviceHostName = pod.Name + "." + svcFwd.Svc.Name
 			svcName = pod.Name + "." + svcFwd.Svc.Name
 		}
 
@@ -505,17 +514,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			log.Warnf("WARNING: error readying interface: %s\n", err)
 		}
 
-		// if this is not the first namespace on the
-		// first cluster then append the namespace
-		if svcFwd.NamespaceN > 0 {
-			serviceHostName = serviceHostName + "." + pod.Namespace
-		}
-
-		// if this is not the first cluster append the full
-		// host name
-		if svcFwd.ClusterN > 0 {
-			serviceHostName = serviceHostName + "." + svcFwd.Context
-		}
+		serviceHostName := buildServiceHostname(svcName, pod.Namespace, svcFwd.Context, svcFwd.NamespaceN, svcFwd.ClusterN)
 
 		for _, port := range svcFwd.Svc.Spec.Ports {
 
