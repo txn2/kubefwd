@@ -1022,6 +1022,22 @@ func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.
 	return result, nil
 }
 
+// determinePodStatusString determines the display status string for a pod
+func determinePodStatusString(pod *corev1.Pod) string {
+	if pod.DeletionTimestamp != nil {
+		return "Terminating"
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			return cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+	return string(pod.Status.Phase)
+}
+
 // convertPodToK8sPod converts a k8s Pod to our K8sPod type
 func (a *KubernetesDiscoveryAdapter) convertPodToK8sPod(pod *corev1.Pod, serviceName string) types.K8sPod {
 	// Calculate ready count
@@ -1047,22 +1063,7 @@ func (a *KubernetesDiscoveryAdapter) convertPodToK8sPod(pod *corev1.Pod, service
 		age = formatDuration(time.Since(pod.Status.StartTime.Time))
 	}
 
-	// Determine status string
-	status := string(pod.Status.Phase)
-	if pod.DeletionTimestamp != nil {
-		status = "Terminating"
-	} else if len(pod.Status.ContainerStatuses) > 0 {
-		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
-				status = cs.State.Waiting.Reason
-				break
-			}
-			if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
-				status = cs.State.Terminated.Reason
-				break
-			}
-		}
-	}
+	status := determinePodStatusString(pod)
 
 	// Check if forwarded
 	isForwarded := false
@@ -1343,27 +1344,35 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 		return nil, fmt.Errorf("failed to list events: %w", err)
 	}
 
-	// Sort by last timestamp (most recent first)
-	eventItems := eventList.Items
-	for i := 0; i < len(eventItems)-1; i++ {
-		for j := i + 1; j < len(eventItems); j++ {
-			if eventItems[j].LastTimestamp.After(eventItems[i].LastTimestamp.Time) {
-				eventItems[i], eventItems[j] = eventItems[j], eventItems[i]
+	eventItems := sortAndLimitEvents(eventList.Items, opts.Limit)
+	return convertEventsToK8sEvents(eventItems), nil
+}
+
+// sortAndLimitEvents sorts events by last timestamp (most recent first) and applies limit
+func sortAndLimitEvents(events []corev1.Event, limit int) []corev1.Event {
+	// Sort by last timestamp (most recent first) using bubble sort
+	for i := 0; i < len(events)-1; i++ {
+		for j := i + 1; j < len(events); j++ {
+			if events[j].LastTimestamp.After(events[i].LastTimestamp.Time) {
+				events[i], events[j] = events[j], events[i]
 			}
 		}
 	}
 
 	// Apply limit
-	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
 	}
-	if len(eventItems) > limit {
-		eventItems = eventItems[:limit]
+	if len(events) > limit {
+		events = events[:limit]
 	}
+	return events
+}
 
-	result := make([]types.K8sEvent, len(eventItems))
-	for i, e := range eventItems {
+// convertEventsToK8sEvents converts corev1.Event slice to types.K8sEvent slice
+func convertEventsToK8sEvents(events []corev1.Event) []types.K8sEvent {
+	result := make([]types.K8sEvent, len(events))
+	for i, e := range events {
 		result[i] = types.K8sEvent{
 			Type:           e.Type,
 			Reason:         e.Reason,
@@ -1376,8 +1385,7 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 			ObjectName:     e.InvolvedObject.Name,
 		}
 	}
-
-	return result, nil
+	return result
 }
 
 // convertEndpointAddress converts a k8s EndpointAddress to our type
