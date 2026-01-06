@@ -6,6 +6,7 @@ import (
 
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdns"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
@@ -632,3 +633,203 @@ var (
 	_ types.ServiceCRUD         = (*mockServiceCRUD)(nil)
 	_ types.KubernetesDiscovery = (*mockKubernetesDiscovery)(nil)
 )
+
+// TestNewNamespaceManagerAdapter tests the lazy namespace manager adapter creation
+func TestNewNamespaceManagerAdapter(t *testing.T) {
+	// Test with nil getter
+	adapter := NewNamespaceManagerAdapter(nil)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter even with nil getter")
+	}
+
+	// Test with getter that returns nil
+	adapter = NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_AddNamespace tests AddNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_AddNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	_, err := adapter.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_RemoveNamespace tests RemoveNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_RemoveNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	err := adapter.RemoveNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_ListNamespaces tests ListNamespaces with nil manager
+func TestLazyNamespaceManagerAdapter_ListNamespaces(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	result := adapter.ListNamespaces()
+	if result != nil {
+		t.Error("Expected nil when namespace manager is nil")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_GetNamespace tests GetNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_GetNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	_, err := adapter.GetNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestManager_SetNamespaceManager tests setting the namespace manager
+func TestManager_SetNamespaceManager(t *testing.T) {
+	manager := &Manager{}
+
+	// Setting nil manager should work (initial state)
+	manager.SetNamespaceManager(nil)
+	if manager.nsManager != nil {
+		t.Error("Expected nsManager to be nil")
+	}
+	if manager.namespaceController == nil {
+		t.Error("Expected namespaceController to be set even with nil manager")
+	}
+}
+
+// TestInit_ShutdownHandling tests the shutdown signal handling
+func TestInit_ShutdownHandling(t *testing.T) {
+	resetGlobalState()
+
+	shutdownChan := make(chan struct{})
+	triggerShutdown := func() {}
+
+	manager := Init(shutdownChan, triggerShutdown, "1.0.0")
+	if manager == nil {
+		t.Fatal("Expected non-nil manager")
+	}
+
+	// Close shutdown channel to trigger the goroutine
+	close(shutdownChan)
+
+	// Give the goroutine time to run
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify stop channel is closed
+	select {
+	case <-manager.stopChan:
+		// Expected
+	default:
+		t.Error("Expected stopChan to be closed after shutdown signal")
+	}
+}
+
+// TestManager_RunWithDependencies tests Run() with all dependencies set
+func TestManager_RunWithDependencies(t *testing.T) {
+	manager := &Manager{
+		stopChan:            make(chan struct{}),
+		doneChan:            make(chan struct{}),
+		startTime:           time.Now(),
+		version:             "1.0.0",
+		stateReader:         &mockStateReader{},
+		metricsProvider:     &mockMetricsProvider{},
+		serviceController:   &mockServiceController{},
+		eventStreamer:       &mockEventStreamer{},
+		diagnosticsProvider: &mockDiagnosticsProvider{},
+		namespaceController: &mockNamespaceController{},
+		serviceCRUD:         &mockServiceCRUD{},
+		k8sDiscovery:        &mockKubernetesDiscovery{},
+	}
+
+	// Start Run in goroutine and stop it immediately
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- manager.Run()
+	}()
+
+	// Give the server time to start, then stop it
+	time.Sleep(50 * time.Millisecond)
+	manager.Stop()
+
+	// Wait for Run to complete
+	select {
+	case err := <-errCh:
+		// Run should return nil on graceful shutdown
+		if err != nil {
+			t.Logf("Run returned error (may be expected if port in use): %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Run did not complete in time")
+	}
+}
+
+// TestGetKubernetesDiscoveryPodMethods tests the pod-related discovery methods
+func TestGetKubernetesDiscoveryPodMethods(t *testing.T) {
+	mock := &mockKubernetesDiscovery{}
+
+	// GetPodLogs
+	logs, err := mock.GetPodLogs("minikube", "default", "test-pod", types.PodLogsOptions{
+		Container: "main",
+		TailLines: 100,
+	})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if logs.PodName != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", logs.PodName)
+	}
+	if logs.ContainerName != "main" {
+		t.Errorf("Expected container 'main', got '%s'", logs.ContainerName)
+	}
+
+	// ListPods
+	pods, err := mock.ListPods("minikube", "default", types.ListPodsOptions{})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+
+	// GetPod
+	pod, err := mock.GetPod("minikube", "default", "test-pod")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if pod.Name != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", pod.Name)
+	}
+
+	// GetEvents
+	events, err := mock.GetEvents("minikube", "default", types.GetEventsOptions{})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event, got %d", len(events))
+	}
+
+	// GetEndpoints
+	endpoints, err := mock.GetEndpoints("minikube", "default", "test-svc")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if endpoints.Name != "test-svc" {
+		t.Errorf("Expected endpoints name 'test-svc', got '%s'", endpoints.Name)
+	}
+}
