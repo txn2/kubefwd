@@ -2149,6 +2149,94 @@ func TestKubernetesDiscoveryAdapter_GetEvents_WithFilters(t *testing.T) {
 	}
 }
 
+func TestKubernetesDiscoveryAdapter_GetEvents_WithLimit(t *testing.T) {
+	now := metav1.Now()
+	earlier := metav1.NewTime(now.Add(-time.Hour))
+	evenEarlier := metav1.NewTime(now.Add(-2 * time.Hour))
+
+	// Create 3 events with different timestamps
+	event1 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-1", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event1", Message: "First event", Type: "Normal",
+		FirstTimestamp: evenEarlier, LastTimestamp: evenEarlier,
+	}
+	event2 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-2", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event2", Message: "Second event", Type: "Normal",
+		FirstTimestamp: earlier, LastTimestamp: earlier,
+	}
+	event3 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-3", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event3", Message: "Third event (most recent)", Type: "Normal",
+		FirstTimestamp: now, LastTimestamp: now,
+	}
+
+	clientset := fake.NewClientset(event1, event2, event3)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test with limit
+	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+		Limit: 2,
+	})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Errorf("Expected 2 events with limit, got %d", len(events))
+	}
+
+	// Events should be sorted by LastTimestamp (most recent first)
+	if len(events) >= 2 && events[0].Reason != "Event3" {
+		t.Errorf("Expected most recent event first, got %s", events[0].Reason)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_DefaultLimit(t *testing.T) {
+	clientset := fake.NewClientset()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test with zero/default limit
+	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+		Limit: 0, // should use default of 50
+	})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	// Should return empty slice when no events
+	if events == nil {
+		t.Error("Expected non-nil events slice")
+	}
+}
+
 func TestKubernetesDiscoveryAdapter_GetEndpoints_WithFakeClient(t *testing.T) {
 	endpoints := &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
