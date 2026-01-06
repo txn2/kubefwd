@@ -1674,8 +1674,8 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		// Check URL path to determine response - must use /v1/ path prefix
-		switch {
-		case r.URL.Path == "/v1/history/events":
+		switch r.URL.Path {
+		case "/v1/history/events":
 			response := map[string]interface{}{
 				"success": true,
 				"data": []map[string]interface{}{
@@ -1685,7 +1685,7 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(response)
 
-		case r.URL.Path == "/v1/history/errors":
+		case "/v1/history/errors":
 			response := map[string]interface{}{
 				"success": true,
 				"data": []map[string]interface{}{
@@ -1694,7 +1694,7 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(response)
 
-		case r.URL.Path == "/v1/history/reconnections":
+		case "/v1/history/reconnections":
 			response := map[string]interface{}{
 				"success": true,
 				"data": []map[string]interface{}{

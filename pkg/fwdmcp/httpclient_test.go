@@ -2125,8 +2125,3 @@ func TestHistoryProviderHTTP_GetStats(t *testing.T) {
 		t.Errorf("Expected 100 total events, got %d", stats.TotalEvents)
 	}
 }
-
-// Helper function for path checking
-func containsPath(fullPath, expectedPath string) bool {
-	return len(fullPath) >= len(expectedPath) && fullPath[:len(expectedPath)] == expectedPath
-}

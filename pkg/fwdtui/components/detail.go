@@ -681,7 +681,7 @@ func copyToClipboard(text string) bool {
 
 // clearCopiedAfterDelay returns a command that clears the copied feedback
 func clearCopiedAfterDelay() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(2*time.Second, func(_ time.Time) tea.Msg {
 		return ClearCopiedMsg{}
 	})
 }
@@ -1051,10 +1051,10 @@ func (m *DetailModel) renderStatusCode(code int) string {
 
 // renderFooter renders the footer with keybindings based on current tab
 func (m *DetailModel) renderFooter() string {
-	var parts []string
-
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Esc]")+" Back")
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Tab]")+" Switch")
+	parts := []string{
+		styles.DetailFooterKeyStyle.Render("[Esc]") + " Back",
+		styles.DetailFooterKeyStyle.Render("[Tab]") + " Switch",
+	}
 
 	switch m.currentTab {
 	case TabInfo:

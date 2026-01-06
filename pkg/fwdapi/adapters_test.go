@@ -1220,13 +1220,6 @@ func TestKubernetesDiscoveryAdapter_GetEndpoints_NilManager(t *testing.T) {
 	}
 }
 
-// createTestNamespaceManager creates a NamespaceManager with a fake clientset for testing
-func createTestNamespaceManager(contextName string) *fwdns.NamespaceManager {
-	stopCh := make(chan struct{})
-	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
-	return mgr
-}
-
 // Tests with fake kubernetes clientset
 
 func TestKubernetesDiscoveryAdapter_ListNamespaces_WithFakeClient(t *testing.T) {
