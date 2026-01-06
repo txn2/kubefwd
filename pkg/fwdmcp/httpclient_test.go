@@ -1595,3 +1595,538 @@ func TestGenerateEnvVars(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// KubernetesDiscovery HTTP - Pod Methods
+// =============================================================================
+
+func TestKubernetesDiscoveryHTTP_GetPodLogs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                  `json:"success"`
+			Data    types.PodLogsResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.PodLogsResponse{
+				PodName:       "test-pod",
+				Namespace:     "default",
+				ContainerName: "main",
+				Logs:          []string{"line1", "line2", "line3"},
+				LineCount:     3,
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	logs, err := discovery.GetPodLogs("", "default", "test-pod", types.PodLogsOptions{
+		TailLines:  100,
+		Timestamps: true,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if logs.PodName != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", logs.PodName)
+	}
+	if len(logs.Logs) != 3 {
+		t.Errorf("Expected 3 log lines, got %d", len(logs.Logs))
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetPodLogs_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Error   *types.ErrorInfo `json:"error"`
+		}{
+			Success: false,
+			Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "Pod not found"},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	_, err := discovery.GetPodLogs("", "default", "nonexistent-pod", types.PodLogsOptions{})
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_ListPods(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("Expected GET method, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool           `json:"success"`
+			Data    []types.K8sPod `json:"data"`
+		}{
+			Success: true,
+			Data: []types.K8sPod{
+				{Name: "pod-1", Namespace: "default", Status: "Running", Ready: "1/1"},
+				{Name: "pod-2", Namespace: "default", Status: "Running", Ready: "1/1"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	pods, err := discovery.ListPods("", "default", types.ListPodsOptions{
+		LabelSelector: "app=test",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(pods) != 2 {
+		t.Errorf("Expected 2 pods, got %d", len(pods))
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_ListPods_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Error   *types.ErrorInfo `json:"error"`
+		}{
+			Success: false,
+			Error:   &types.ErrorInfo{Code: "FORBIDDEN", Message: "Access denied"},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	_, err := discovery.ListPods("", "default", types.ListPodsOptions{})
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetPod(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool               `json:"success"`
+			Data    types.K8sPodDetail `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sPodDetail{
+				Name:      "test-pod",
+				Namespace: "default",
+				Status:    "Running",
+				Containers: []types.K8sContainerInfo{
+					{Name: "main", Image: "nginx:latest"},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	pod, err := discovery.GetPod("ctx", "default", "test-pod")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if pod.Name != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", pod.Name)
+	}
+	if len(pod.Containers) != 1 {
+		t.Errorf("Expected 1 container, got %d", len(pod.Containers))
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetPod_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Error   *types.ErrorInfo `json:"error"`
+		}{
+			Success: false,
+			Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "Pod not found"},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	_, err := discovery.GetPod("", "default", "nonexistent")
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Data    []types.K8sEvent `json:"data"`
+		}{
+			Success: true,
+			Data: []types.K8sEvent{
+				{
+					Type:    "Normal",
+					Reason:  "Scheduled",
+					Message: "Pod scheduled to node",
+				},
+				{
+					Type:    "Normal",
+					Reason:  "Pulled",
+					Message: "Container image pulled",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	events, err := discovery.GetEvents("ctx", "default", types.GetEventsOptions{
+		ResourceKind: "Pod",
+		ResourceName: "test-pod",
+		Limit:        50,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(events))
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetEvents_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Error   *types.ErrorInfo `json:"error"`
+		}{
+			Success: false,
+			Error:   &types.ErrorInfo{Code: "ERROR", Message: "Failed to get events"},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	_, err := discovery.GetEvents("", "default", types.GetEventsOptions{})
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetEndpoints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool               `json:"success"`
+			Data    types.K8sEndpoints `json:"data"`
+		}{
+			Success: true,
+			Data: types.K8sEndpoints{
+				Name:      "api",
+				Namespace: "default",
+				Subsets: []types.K8sEndpointSubset{
+					{
+						Addresses: []types.K8sEndpointAddress{{IP: "10.0.0.1", PodName: "pod-1"}},
+						Ports:     []types.K8sEndpointPort{{Port: 8080, Protocol: "TCP"}},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	endpoints, err := discovery.GetEndpoints("ctx", "default", "api")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if endpoints.Name != "api" {
+		t.Errorf("Expected service name 'api', got '%s'", endpoints.Name)
+	}
+}
+
+func TestKubernetesDiscoveryHTTP_GetEndpoints_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool             `json:"success"`
+			Error   *types.ErrorInfo `json:"error"`
+		}{
+			Success: false,
+			Error:   &types.ErrorInfo{Code: "NOT_FOUND", Message: "Endpoints not found"},
+		})
+	}))
+	defer server.Close()
+
+	discovery := NewKubernetesDiscoveryHTTP(server.URL)
+	_, err := discovery.GetEndpoints("", "default", "nonexistent")
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
+
+// =============================================================================
+// Analysis Provider HTTP
+// =============================================================================
+
+func TestNewAnalysisProviderHTTP(t *testing.T) {
+	provider := NewAnalysisProviderHTTP("http://localhost:8080")
+	if provider == nil {
+		t.Error("Expected non-nil provider")
+	}
+}
+
+func TestAnalysisProviderHTTP_GetQuickStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                `json:"success"`
+			Data    QuickStatusResponse `json:"data"`
+		}{
+			Success: true,
+			Data: QuickStatusResponse{
+				Status:  "ok",
+				Message: "All services healthy",
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewAnalysisProviderHTTP(server.URL)
+	status, err := provider.GetQuickStatus()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if status.Status != "ok" {
+		t.Errorf("Expected status 'ok', got '%s'", status.Status)
+	}
+}
+
+func TestAnalysisProviderHTTP_GetAnalysis(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                 `json:"success"`
+			Data    FullAnalysisResponse `json:"data"`
+		}{
+			Success: true,
+			Data: FullAnalysisResponse{
+				Status: "healthy",
+				Issues: []AnalysisIssue{},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewAnalysisProviderHTTP(server.URL)
+	analysis, err := provider.GetAnalysis()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if analysis.Status != "healthy" {
+		t.Errorf("Expected status 'healthy', got '%s'", analysis.Status)
+	}
+}
+
+// =============================================================================
+// HTTP Traffic Provider HTTP
+// =============================================================================
+
+func TestNewHTTPTrafficProviderHTTP(t *testing.T) {
+	provider := NewHTTPTrafficProviderHTTP("http://localhost:8080")
+	if provider == nil {
+		t.Error("Expected non-nil provider")
+	}
+}
+
+func TestHTTPTrafficProviderHTTP_GetForwardHTTP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                      `json:"success"`
+			Data    types.HTTPTrafficResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.HTTPTrafficResponse{
+				ForwardKey: "svc1.default.ctx",
+				PodName:    "pod-1",
+				LocalIP:    "127.1.0.1",
+				LocalPort:  "8080",
+				Logs: []types.HTTPLogResponse{
+					{Method: "GET", Path: "/api/users", StatusCode: 200},
+					{Method: "POST", Path: "/api/data", StatusCode: 201},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHTTPTrafficProviderHTTP(server.URL)
+	resp, err := provider.GetForwardHTTP("svc1.default.ctx", 10)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(resp.Logs) != 2 {
+		t.Errorf("Expected 2 logs, got %d", len(resp.Logs))
+	}
+}
+
+func TestHTTPTrafficProviderHTTP_GetServiceHTTP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                             `json:"success"`
+			Data    types.ServiceHTTPTrafficResponse `json:"data"`
+		}{
+			Success: true,
+			Data: types.ServiceHTTPTrafficResponse{
+				ServiceKey: "svc1.default.ctx",
+				Forwards: []types.HTTPTrafficResponse{
+					{
+						ForwardKey: "svc1.default.ctx:0",
+						PodName:    "pod-1",
+						Logs: []types.HTTPLogResponse{
+							{Method: "GET", Path: "/health", StatusCode: 200},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHTTPTrafficProviderHTTP(server.URL)
+	resp, err := provider.GetServiceHTTP("svc1.default.ctx", 10)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(resp.Forwards) != 1 {
+		t.Errorf("Expected 1 forward, got %d", len(resp.Forwards))
+	}
+}
+
+// =============================================================================
+// History Provider HTTP
+// =============================================================================
+
+func TestNewHistoryProviderHTTP(t *testing.T) {
+	provider := NewHistoryProviderHTTP("http://localhost:8080")
+	if provider == nil {
+		t.Error("Expected non-nil provider")
+	}
+}
+
+func TestHistoryProviderHTTP_GetEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool           `json:"success"`
+			Data    []HistoryEvent `json:"data"`
+		}{
+			Success: true,
+			Data: []HistoryEvent{
+				{Type: "ForwardAdded", ServiceKey: "svc1.default.ctx"},
+				{Type: "PodSync", ServiceKey: "svc1.default.ctx"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHistoryProviderHTTP(server.URL)
+	events, err := provider.GetEvents(10, "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(events))
+	}
+}
+
+func TestHistoryProviderHTTP_GetErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                 `json:"success"`
+			Data    []types.HistoryError `json:"data"`
+		}{
+			Success: true,
+			Data: []types.HistoryError{
+				{ServiceKey: "svc1.default.ctx", Error: "connection refused"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
+	errors, err := provider.GetErrors("", 10)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(errors) != 1 {
+		t.Errorf("Expected 1 error, got %d", len(errors))
+	}
+}
+
+func TestHistoryProviderHTTP_GetReconnects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool                     `json:"success"`
+			Data    []types.HistoryReconnect `json:"data"`
+		}{
+			Success: true,
+			Data: []types.HistoryReconnect{
+				{ServiceKey: "svc1.default.ctx", Success: true},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
+	reconnects, err := provider.GetReconnects("", 10)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(reconnects) != 1 {
+		t.Errorf("Expected 1 reconnect, got %d", len(reconnects))
+	}
+}
+
+func TestHistoryProviderHTTP_GetStats(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Success bool               `json:"success"`
+			Data    types.HistoryStats `json:"data"`
+		}{
+			Success: true,
+			Data: types.HistoryStats{
+				TotalEvents:     100,
+				TotalErrors:     5,
+				TotalReconnects: 10,
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
+	stats, err := provider.GetStats()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if stats.TotalEvents != 100 {
+		t.Errorf("Expected 100 total events, got %d", stats.TotalEvents)
+	}
+}
+
+// Helper function for path checking
+func containsPath(fullPath, expectedPath string) bool {
+	return len(fullPath) >= len(expectedPath) && fullPath[:len(expectedPath)] == expectedPath
+}
