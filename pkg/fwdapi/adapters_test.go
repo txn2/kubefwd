@@ -2079,17 +2079,17 @@ func TestKubernetesDiscoveryAdapter_GetEvents_WithFakeClient(t *testing.T) {
 		"",
 	)
 
-	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{})
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{})
 	if err != nil {
 		t.Fatalf("GetEvents failed: %v", err)
 	}
 
-	if len(events) != 2 {
-		t.Errorf("Expected 2 events, got %d", len(events))
+	if len(eventList) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(eventList))
 	}
 
 	// Check event properties
-	for _, event := range events {
+	for _, event := range eventList {
 		if event.Reason == "Scheduled" {
 			if event.ObjectKind != "Pod" {
 				t.Errorf("Expected ObjectKind 'Pod', got %s", event.ObjectKind)
@@ -2134,7 +2134,7 @@ func TestKubernetesDiscoveryAdapter_GetEvents_WithFilters(t *testing.T) {
 
 	// Pass filter options (fake clientset may not implement field selectors)
 	// This test verifies the code path with filtering options is exercised
-	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
 		ResourceKind: "Pod",
 		ResourceName: "my-pod",
 	})
@@ -2144,8 +2144,8 @@ func TestKubernetesDiscoveryAdapter_GetEvents_WithFilters(t *testing.T) {
 
 	// Fake clientset doesn't implement field selectors, so all events are returned
 	// We just verify the API call succeeded
-	if len(events) < 1 {
-		t.Errorf("Expected at least 1 event, got %d", len(events))
+	if len(eventList) < 1 {
+		t.Errorf("Expected at least 1 event, got %d", len(eventList))
 	}
 }
 
@@ -2193,20 +2193,20 @@ func TestKubernetesDiscoveryAdapter_GetEvents_WithLimit(t *testing.T) {
 	)
 
 	// Test with limit
-	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
 		Limit: 2,
 	})
 	if err != nil {
 		t.Fatalf("GetEvents failed: %v", err)
 	}
 
-	if len(events) != 2 {
-		t.Errorf("Expected 2 events with limit, got %d", len(events))
+	if len(eventList) != 2 {
+		t.Errorf("Expected 2 events with limit, got %d", len(eventList))
 	}
 
 	// Events should be sorted by LastTimestamp (most recent first)
-	if len(events) >= 2 && events[0].Reason != "Event3" {
-		t.Errorf("Expected most recent event first, got %s", events[0].Reason)
+	if len(eventList) >= 2 && eventList[0].Reason != "Event3" {
+		t.Errorf("Expected most recent event first, got %s", eventList[0].Reason)
 	}
 }
 
@@ -2224,7 +2224,7 @@ func TestKubernetesDiscoveryAdapter_GetEvents_DefaultLimit(t *testing.T) {
 	)
 
 	// Test with zero/default limit
-	events, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
 		Limit: 0, // should use default of 50
 	})
 	if err != nil {
@@ -2232,7 +2232,7 @@ func TestKubernetesDiscoveryAdapter_GetEvents_DefaultLimit(t *testing.T) {
 	}
 
 	// Should return empty slice when no events
-	if events == nil {
+	if eventList == nil {
 		t.Error("Expected non-nil events slice")
 	}
 }

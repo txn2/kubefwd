@@ -29,8 +29,8 @@ import (
 )
 
 // WatcherKey creates a unique key for a namespace/context combination
-func WatcherKey(namespace, context string) string {
-	return namespace + "." + context
+func WatcherKey(namespace, k8sContext string) string {
+	return namespace + "." + k8sContext
 }
 
 // NamespaceManager manages the lifecycle of namespace watchers.

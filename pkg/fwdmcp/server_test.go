@@ -206,7 +206,7 @@ func TestServer_SetAnalysisProvider(t *testing.T) {
 	}
 
 	// Set it (using nil pointer since we can't create a real one without HTTP)
-	var provider *AnalysisProviderHTTP = nil
+	var provider *AnalysisProviderHTTP
 	server.SetAnalysisProvider(provider)
 
 	// Should still be nil since we set nil
@@ -226,7 +226,7 @@ func TestServer_SetHTTPTrafficProvider(t *testing.T) {
 	}
 
 	// Set it (using nil pointer)
-	var provider *HTTPTrafficProviderHTTP = nil
+	var provider *HTTPTrafficProviderHTTP
 	server.SetHTTPTrafficProvider(provider)
 
 	// Should still be nil
@@ -246,7 +246,7 @@ func TestServer_SetHistoryProvider(t *testing.T) {
 	}
 
 	// Set it (using nil pointer)
-	var provider *HistoryProviderHTTP = nil
+	var provider *HistoryProviderHTTP
 	server.SetHistoryProvider(provider)
 
 	// Should still be nil

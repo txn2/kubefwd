@@ -97,7 +97,7 @@ func TestSubscribe_OnlyReceivesSubscribedType(t *testing.T) {
 func TestSubscribeAll(t *testing.T) {
 	bus := NewBus(100)
 
-	var count int32 = 0
+	var count int32
 	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})
@@ -168,7 +168,7 @@ func TestStop(t *testing.T) {
 func TestStop_DrainsEvents(t *testing.T) {
 	bus := NewBus(100)
 
-	var count int32 = 0
+	var count int32
 	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})
@@ -250,7 +250,7 @@ func TestConcurrentSubscribe(t *testing.T) {
 func TestConcurrentPublish(t *testing.T) {
 	bus := NewBus(1000)
 
-	var count int32 = 0
+	var count int32
 	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})

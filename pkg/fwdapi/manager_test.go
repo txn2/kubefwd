@@ -312,28 +312,28 @@ func TestManager_RunWithoutStateReader(t *testing.T) {
 
 type mockStateReader struct{}
 
-func (m *mockStateReader) GetServices() []state.ServiceSnapshot        { return nil }
-func (m *mockStateReader) GetService(_ string) *state.ServiceSnapshot  { return nil }
-func (m *mockStateReader) GetSummary() state.SummaryStats              { return state.SummaryStats{} }
-func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot        { return nil }
-func (m *mockStateReader) GetForward(_ string) *state.ForwardSnapshot  { return nil }
-func (m *mockStateReader) GetLogs(_ int) []state.LogEntry              { return nil }
-func (m *mockStateReader) Count() int                                  { return 0 }
-func (m *mockStateReader) ServiceCount() int                           { return 0 }
+func (m *mockStateReader) GetServices() []state.ServiceSnapshot       { return nil }
+func (m *mockStateReader) GetService(_ string) *state.ServiceSnapshot { return nil }
+func (m *mockStateReader) GetSummary() state.SummaryStats             { return state.SummaryStats{} }
+func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot       { return nil }
+func (m *mockStateReader) GetForward(_ string) *state.ForwardSnapshot { return nil }
+func (m *mockStateReader) GetLogs(_ int) []state.LogEntry             { return nil }
+func (m *mockStateReader) Count() int                                 { return 0 }
+func (m *mockStateReader) ServiceCount() int                          { return 0 }
 
 type mockMetricsProvider struct{}
 
-func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot            { return nil }
-func (m *mockMetricsProvider) GetServiceSnapshot(_ string) *fwdmetrics.ServiceSnapshot  { return nil }
-func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)            { return 0, 0, 0, 0 }
-func (m *mockMetricsProvider) ServiceCount() int                                        { return 0 }
-func (m *mockMetricsProvider) PortForwardCount() int                                    { return 0 }
+func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot           { return nil }
+func (m *mockMetricsProvider) GetServiceSnapshot(_ string) *fwdmetrics.ServiceSnapshot { return nil }
+func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)           { return 0, 0, 0, 0 }
+func (m *mockMetricsProvider) ServiceCount() int                                       { return 0 }
+func (m *mockMetricsProvider) PortForwardCount() int                                   { return 0 }
 
 type mockServiceController struct{}
 
-func (m *mockServiceController) Reconnect(_ string) error       { return nil }
-func (m *mockServiceController) ReconnectAll() int              { return 0 }
-func (m *mockServiceController) Sync(_ string, _ bool) error    { return nil }
+func (m *mockServiceController) Reconnect(_ string) error    { return nil }
+func (m *mockServiceController) ReconnectAll() int           { return 0 }
+func (m *mockServiceController) Sync(_ string, _ bool) error { return nil }
 
 type mockEventStreamer struct{}
 
@@ -816,12 +816,12 @@ func TestGetKubernetesDiscoveryPodMethods(t *testing.T) {
 	}
 
 	// GetEvents
-	events, err := mock.GetEvents("minikube", "default", types.GetEventsOptions{})
+	eventList, err := mock.GetEvents("minikube", "default", types.GetEventsOptions{})
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if len(events) != 1 {
-		t.Errorf("Expected 1 event, got %d", len(events))
+	if len(eventList) != 1 {
+		t.Errorf("Expected 1 event, got %d", len(eventList))
 	}
 
 	// GetEndpoints

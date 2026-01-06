@@ -288,7 +288,7 @@ serviceConfigurations:
   - name: "another-svc.default"
     ip: "127.20.20.20"
 `
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -364,7 +364,7 @@ serviceConfigurations:
   - name: "my-svc"
     ip: "127.100.100.100"
 `
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -454,7 +454,7 @@ serviceConfigurations:
   - name: "reserved-svc"
     ip: "127.10.10.10"
 `
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
@@ -562,22 +562,22 @@ func TestIpFromString(t *testing.T) {
 		{"127.0.0.1", "127.0.0.1", false},
 		{"127.1.27.1", "127.1.27.1", false},
 		{"192.168.1.1", "192.168.1.1", false},
-		{"0.0.0.0", "0.0.0.0", false},     // Minimum valid values
+		{"0.0.0.0", "0.0.0.0", false},                 // Minimum valid values
 		{"255.255.255.255", "255.255.255.255", false}, // Maximum valid values
-		{"abc.def.ghi.jkl", "", true},     // Returns error - invalid integer
-		{"invalid.ip.string", "", true},   // Returns error - invalid integer
-		{"127.0.0", "", true},             // Returns error - not enough octets
-		{"127.0.0.1.1", "", true},         // Returns error - too many octets
-		{"", "", true},                    // Returns error - empty string
-		{"256.0.0.1", "", true},           // Returns error - octet0 > 255
-		{"127.256.0.1", "", true},         // Returns error - octet1 > 255
-		{"127.0.256.1", "", true},         // Returns error - octet2 > 255
-		{"127.0.0.256", "", true},         // Returns error - octet3 > 255
-		{"-1.0.0.1", "", true},            // Returns error - negative octet0
-		{"127.-1.0.1", "", true},          // Returns error - negative octet1
-		{"127.0.-1.1", "", true},          // Returns error - negative octet2
-		{"127.0.0.-1", "", true},          // Returns error - negative octet3
-		{"999.999.999.999", "", true},     // Returns error - all octets out of range
+		{"abc.def.ghi.jkl", "", true},                 // Returns error - invalid integer
+		{"invalid.ip.string", "", true},               // Returns error - invalid integer
+		{"127.0.0", "", true},                         // Returns error - not enough octets
+		{"127.0.0.1.1", "", true},                     // Returns error - too many octets
+		{"", "", true},                                // Returns error - empty string
+		{"256.0.0.1", "", true},                       // Returns error - octet0 > 255
+		{"127.256.0.1", "", true},                     // Returns error - octet1 > 255
+		{"127.0.256.1", "", true},                     // Returns error - octet2 > 255
+		{"127.0.0.256", "", true},                     // Returns error - octet3 > 255
+		{"-1.0.0.1", "", true},                        // Returns error - negative octet0
+		{"127.-1.0.1", "", true},                      // Returns error - negative octet1
+		{"127.0.-1.1", "", true},                      // Returns error - negative octet2
+		{"127.0.0.-1", "", true},                      // Returns error - negative octet3
+		{"999.999.999.999", "", true},                 // Returns error - all octets out of range
 	}
 
 	for _, tt := range tests {
@@ -823,7 +823,7 @@ func TestGetIP_InvalidConfigFile(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "invalid.yaml")
 
 	// Write invalid YAML
-	if err := os.WriteFile(configPath, []byte("invalid: yaml: content: [[["), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte("invalid: yaml: content: [[["), 0o644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 

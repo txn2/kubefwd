@@ -157,7 +157,7 @@ func setupRouter() *gin.Engine {
 }
 
 func performRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequest(method, path, http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w

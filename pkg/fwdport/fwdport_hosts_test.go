@@ -25,7 +25,7 @@ func createTempHostsFile(t *testing.T) (*HostFileWithLock, string, func()) {
 	hostsPath := filepath.Join(tempDir, "hosts")
 
 	// Create initial hosts file
-	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0644); err != nil {
+	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
 		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
 			t.Logf("Warning: failed to cleanup temp dir: %v", removeErr)
 		}
@@ -512,7 +512,7 @@ func TestHostsFileSaveError(t *testing.T) {
 	}()
 
 	hostsPath := filepath.Join(tempDir, "hosts")
-	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0644); err != nil {
+	if err := os.WriteFile(hostsPath, []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -527,7 +527,7 @@ func TestHostsFileSaveError(t *testing.T) {
 	hostFile := &HostFileWithLock{Hosts: hosts}
 
 	// Make file read-only
-	if err := os.Chmod(hostsPath, 0444); err != nil {
+	if err := os.Chmod(hostsPath, 0o444); err != nil {
 		t.Fatalf("Failed to make file read-only: %v", err)
 	}
 

@@ -1,6 +1,7 @@
 package fwdhost
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string) {
 	hostsPath := filepath.Join(tempDir, "hosts")
 
 	// Create initial hosts file
-	if err := os.WriteFile(hostsPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(hostsPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -119,7 +120,7 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 
 	// Modify the original hosts file (to verify backup doesn't change)
 	newContent := "127.0.0.1 localhost\n192.168.1.1 newhost\n"
-	if err := os.WriteFile(hosts.WriteFilePath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(hosts.WriteFilePath, []byte(newContent), 0o644); err != nil {
 		t.Fatalf("Failed to modify hosts file: %v", err)
 	}
 
@@ -212,7 +213,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 	}()
 
 	// Make directory read-only
-	if err := os.Chmod(tempHome, 0555); err != nil {
+	if err := os.Chmod(tempHome, 0o555); err != nil {
 		t.Fatalf("Failed to make directory read-only: %v", err)
 	}
 
@@ -224,7 +225,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 			t.Errorf("Failed to restore HOME env var: %v", err)
 		}
 		// Restore permissions before cleanup
-		if err := os.Chmod(tempHome, 0755); err != nil {
+		if err := os.Chmod(tempHome, 0o755); err != nil {
 			t.Logf("Warning: failed to restore permissions: %v", err)
 		}
 	}()
@@ -513,7 +514,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 	// Modify the original file multiple times and attempt backups
 	for i := 0; i < 5; i++ {
 		modifiedContent := originalContent + "192.168.1." + string(rune(i+10)) + " modified\n"
-		if err := os.WriteFile(hostsPath1, []byte(modifiedContent), 0644); err != nil {
+		if err := os.WriteFile(hostsPath1, []byte(modifiedContent), 0o644); err != nil {
 			t.Fatalf("Failed to modify hosts file: %v", err)
 		}
 
@@ -529,7 +530,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 		t.Fatalf("Failed to read final backup: %v", err)
 	}
 
-	if string(finalBackupContent) != string(initialBackupContent) {
+	if !bytes.Equal(finalBackupContent, initialBackupContent) {
 		t.Error("Backup was modified, should be idempotent")
 	}
 

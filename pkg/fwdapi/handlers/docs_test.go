@@ -16,7 +16,7 @@ func TestDocsHandler_Docs(t *testing.T) {
 	handler := NewDocsHandler("1.22.0")
 	router.GET("/docs", handler.Docs)
 
-	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/docs", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -50,7 +50,7 @@ func TestDocsHandler_OpenAPISpec(t *testing.T) {
 	handler := NewDocsHandler("1.22.0")
 	router.GET("/openapi.yaml", handler.OpenAPISpec)
 
-	req := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/openapi.yaml", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -97,7 +97,7 @@ func TestDocsHandler_VersionInjection(t *testing.T) {
 	handler := NewDocsHandler(testVersion)
 	router.GET("/openapi.yaml", handler.OpenAPISpec)
 
-	req := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/openapi.yaml", http.NoBody)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

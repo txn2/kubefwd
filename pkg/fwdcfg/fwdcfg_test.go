@@ -37,7 +37,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -87,7 +87,7 @@ clusters:
     server: https://localhost:6443
   name: env-cluster
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 	if err := os.Setenv("KUBECONFIG", configPath); err != nil {
@@ -127,7 +127,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -163,7 +163,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestGetClientConfig_MalformedYAML(t *testing.T) {
 kind: Config
 clusters: [invalid yaml structure
 `
-	if err := os.WriteFile(configPath, []byte(malformedYAML), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(malformedYAML), 0o644); err != nil {
 		t.Fatalf("Failed to write malformed kubeconfig: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestGetClientConfig_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	if err := os.WriteFile(configPath, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("Failed to write empty kubeconfig: %v", err)
 	}
 
@@ -235,7 +235,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -272,7 +272,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -302,7 +302,7 @@ func TestGetCurrentContext_EmptyConfig(t *testing.T) {
 	kubeconfig := `apiVersion: v1
 kind: Config
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -339,7 +339,7 @@ users:
   user:
     token: test-token
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
@@ -371,7 +371,7 @@ func TestGetRESTClient_NoConfig(t *testing.T) {
 	kubeconfig := `apiVersion: v1
 kind: Config
 `
-	if err := os.WriteFile(configPath, []byte(kubeconfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(kubeconfig), 0o644); err != nil {
 		t.Fatalf("Failed to write kubeconfig: %v", err)
 	}
 
