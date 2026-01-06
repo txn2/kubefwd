@@ -1842,3 +1842,133 @@ func TestHandleGetHTTPTraffic_WithProvider(t *testing.T) {
 		t.Fatal("Expected non-nil data with zero count")
 	}
 }
+
+// Tests for extracted helper functions
+
+func TestBuildConnectionInfoFromService(t *testing.T) {
+	svc := &state.ServiceSnapshot{
+		ServiceName: "test-service",
+		Namespace:   "default",
+		Context:     "test-context",
+		PortForwards: []state.ForwardSnapshot{
+			{LocalIP: "127.1.1.1", LocalPort: "8080", PodPort: "80", Hostnames: []string{"test-host"}},
+		},
+	}
+
+	result := buildConnectionInfoFromService(svc)
+
+	if result["service"] != "test-service" {
+		t.Errorf("Expected service name 'test-service', got %v", result["service"])
+	}
+	if result["namespace"] != "default" {
+		t.Errorf("Expected namespace 'default', got %v", result["namespace"])
+	}
+	if result["localIP"] != "127.1.1.1" {
+		t.Errorf("Expected localIP '127.1.1.1', got %v", result["localIP"])
+	}
+}
+
+func TestFindServiceInState(t *testing.T) {
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx1", ServiceName: "svc1", Namespace: "default", Context: "ctx1"},
+			{Key: "svc2.kube-system.ctx1", ServiceName: "svc2", Namespace: "kube-system", Context: "ctx1"},
+		},
+	}
+
+	// Test finding existing service
+	svc, err := findServiceInState(mock, "svc1", "", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if svc.ServiceName != "svc1" {
+		t.Errorf("Expected svc1, got %s", svc.ServiceName)
+	}
+
+	// Test with namespace filter
+	svc, err = findServiceInState(mock, "svc1", "default", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if svc.ServiceName != "svc1" {
+		t.Errorf("Expected svc1, got %s", svc.ServiceName)
+	}
+
+	// Test service not found
+	_, err = findServiceInState(mock, "nonexistent", "", "")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+
+	// Test namespace mismatch
+	_, err = findServiceInState(mock, "svc1", "kube-system", "")
+	if err == nil {
+		t.Error("Expected error for namespace mismatch")
+	}
+}
+
+// mockSearchProvider implements ConnectionInfoProvider for searchServicesByName tests
+type mockSearchProvider struct {
+	findResult []types.ConnectionInfoResponse
+	findErr    error
+}
+
+func (m *mockSearchProvider) GetConnectionInfo(key string) (*types.ConnectionInfoResponse, error) {
+	return nil, nil
+}
+
+func (m *mockSearchProvider) FindServices(query string, port int, namespace string) ([]types.ConnectionInfoResponse, error) {
+	return m.findResult, m.findErr
+}
+
+func (m *mockSearchProvider) ListHostnames() (*types.HostnameListResponse, error) {
+	return &types.HostnameListResponse{}, nil
+}
+
+func TestSearchServicesByName(t *testing.T) {
+	// Test with exact match
+	mock := &mockSearchProvider{
+		findResult: []types.ConnectionInfoResponse{
+			{Service: "my-service", Namespace: "default"},
+			{Service: "my-service-extra", Namespace: "default"},
+		},
+	}
+
+	results, err := searchServicesByName(mock, "my-service", 0)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 exact match, got %d", len(results))
+	}
+
+	// Test with error
+	mock.findErr = errors.New("test error")
+	_, err = searchServicesByName(mock, "my-service", 0)
+	if err == nil {
+		t.Error("Expected error")
+	}
+}
+
+func TestCalculateMCPServiceStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		activeCount int
+		errorCount  int
+		want        string
+	}{
+		{"active only", 2, 0, "active"},
+		{"error only", 0, 2, "error"},
+		{"partial", 1, 1, "partial"},
+		{"pending", 0, 0, "pending"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculateMCPServiceStatus(tt.activeCount, tt.errorCount)
+			if got != tt.want {
+				t.Errorf("calculateMCPServiceStatus(%d, %d) = %q, want %q", tt.activeCount, tt.errorCount, got, tt.want)
+			}
+		})
+	}
+}
