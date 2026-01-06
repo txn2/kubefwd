@@ -4,6 +4,7 @@
 .vscode
 *.out
 coverage.html
+coverage.txt
 dist
 vendor
 dist/
