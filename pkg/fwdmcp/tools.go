@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
 
 // Tool input types
@@ -918,97 +919,101 @@ func buildConnectionKey(serviceName, namespace, k8sContext string) string {
 	return key
 }
 
+// buildConnectionInfoFromService creates a connection info map from service state
+func buildConnectionInfoFromService(svc *state.ServiceSnapshot) map[string]interface{} {
+	var ports []map[string]interface{}
+	var hostnames []string
+	var localIP string
+
+	for _, fwd := range svc.PortForwards {
+		if localIP == "" {
+			localIP = fwd.LocalIP
+		}
+		hostnames = append(hostnames, fwd.Hostnames...)
+		ports = append(ports, map[string]interface{}{
+			"localPort":  fwd.LocalPort,
+			"remotePort": fwd.PodPort,
+		})
+	}
+
+	return map[string]interface{}{
+		"service":   svc.ServiceName,
+		"namespace": svc.Namespace,
+		"context":   svc.Context,
+		"localIP":   localIP,
+		"hostnames": unique(hostnames),
+		"ports":     ports,
+		"status":    "active",
+	}
+}
+
+// findServiceInState searches for a service in the state store
+func findServiceInState(stateReader types.StateReader, serviceName, namespace, context string) (*state.ServiceSnapshot, error) {
+	services := stateReader.GetServices()
+	for i := range services {
+		svc := &services[i]
+		if svc.ServiceName != serviceName {
+			continue
+		}
+		if namespace != "" && svc.Namespace != namespace {
+			continue
+		}
+		if context != "" && svc.Context != context {
+			continue
+		}
+		return svc, nil
+	}
+	return nil, fmt.Errorf("service not found: %s", serviceName)
+}
+
+// searchServicesByName finds services matching the name and filters to exact matches
+func searchServicesByName(connInfo types.ConnectionInfoProvider, serviceName string, port int) ([]types.ConnectionInfoResponse, error) {
+	results, err := connInfo.FindServices(serviceName, port, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to search for service: %w", err)
+	}
+
+	var exactMatches []types.ConnectionInfoResponse
+	for _, r := range results {
+		if r.Service == serviceName {
+			exactMatches = append(exactMatches, r)
+		}
+	}
+	return exactMatches, nil
+}
+
 func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolRequest, input GetConnectionInfoInput) (*mcp.CallToolResult, any, error) {
 	connInfo := s.getConnectionInfo()
 	if connInfo == nil {
-		// Fallback to state reader if connection info provider not available
-		state := s.getState()
-		if state == nil {
+		stateReader := s.getState()
+		if stateReader == nil {
 			return nil, nil, fmt.Errorf("connection info not available")
 		}
-
-		// Search for the service
-		services := state.GetServices()
-		for _, svc := range services {
-			if svc.ServiceName == input.ServiceName {
-				if input.Namespace != "" && svc.Namespace != input.Namespace {
-					continue
-				}
-				if input.Context != "" && svc.Context != input.Context {
-					continue
-				}
-
-				// Build connection info from service state
-				var ports []map[string]interface{}
-				var hostnames []string
-				var localIP string
-
-				for _, fwd := range svc.PortForwards {
-					if localIP == "" {
-						localIP = fwd.LocalIP
-					}
-					hostnames = append(hostnames, fwd.Hostnames...)
-					ports = append(ports, map[string]interface{}{
-						"localPort":  fwd.LocalPort,
-						"remotePort": fwd.PodPort,
-					})
-				}
-
-				result := map[string]interface{}{
-					"service":   svc.ServiceName,
-					"namespace": svc.Namespace,
-					"context":   svc.Context,
-					"localIP":   localIP,
-					"hostnames": unique(hostnames),
-					"ports":     ports,
-					"status":    "active",
-				}
-
-				// Return nil to let SDK auto-populate Content with full JSON data
-				return nil, result, nil
-			}
+		svc, err := findServiceInState(stateReader, input.ServiceName, input.Namespace, input.Context)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
+		return nil, buildConnectionInfoFromService(svc), nil
 	}
 
-	// If namespace is not provided, search for the service
 	if input.Namespace == "" {
-		results, err := connInfo.FindServices(input.ServiceName, input.Port, "")
+		matches, err := searchServicesByName(connInfo, input.ServiceName, input.Port)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to search for service: %w", err)
+			return nil, nil, err
 		}
-
-		if len(results) == 0 {
+		if len(matches) == 0 {
 			return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
 		}
-
-		// Filter to exact matches
-		var exactMatches []types.ConnectionInfoResponse
-		for _, r := range results {
-			if r.Service == input.ServiceName {
-				exactMatches = append(exactMatches, r)
-			}
+		if len(matches) == 1 {
+			return nil, &matches[0], nil
 		}
-
-		if len(exactMatches) == 0 {
-			return nil, nil, fmt.Errorf("service not found: %s", input.ServiceName)
-		}
-
-		if len(exactMatches) == 1 {
-			return nil, &exactMatches[0], nil
-		}
-
-		// Multiple matches - need namespace to disambiguate
 		var namespaces []string
-		for _, r := range exactMatches {
+		for _, r := range matches {
 			namespaces = append(namespaces, r.Namespace)
 		}
 		return nil, nil, fmt.Errorf("multiple services found with name '%s' in namespaces: %v. Please specify namespace", input.ServiceName, namespaces)
 	}
 
-	// Build key from input: service.namespace.context
-	// Add context if specified, or use current context
 	k8sContext := input.Context
 	if k8sContext == "" {
 		k8sContext = s.getCurrentContext()
@@ -1019,8 +1024,6 @@ func (s *Server) handleGetConnectionInfo(ctx context.Context, req *mcp.CallToolR
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get connection info: %w", err)
 	}
-
-	// Return nil to let SDK auto-populate Content with full JSON data
 	return nil, info, nil
 }
 
