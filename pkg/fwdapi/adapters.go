@@ -815,46 +815,46 @@ func (a *KubernetesDiscoveryAdapter) ListContexts() (*types.K8sContextsResponse,
 	}, nil
 }
 
-// GetPodLogs returns logs from a pod
-func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
-	// If no context specified, use current context
+// resolveContextAndClient resolves context and gets kubernetes clientset
+func (a *KubernetesDiscoveryAdapter) resolveContextAndClient(ctx string) (string, kubernetes.Interface, error) {
 	if ctx == "" {
 		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current context: %w", err)
+			return "", nil, fmt.Errorf("failed to get current context: %w", err)
 		}
 		ctx = currentCtx
 	}
 
 	nsManager := a.getNsManager()
 	if nsManager == nil {
-		return nil, fmt.Errorf("namespace manager not available")
+		return "", nil, fmt.Errorf("namespace manager not available")
 	}
 
-	// Get or create clientSet for this context
 	clientSet := nsManager.GetClientSet(ctx)
 	if clientSet == nil {
 		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
+			return "", nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
 		}
-		clientSet, err = kubernetes.NewForConfig(restConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
+		var clientErr error
+		clientSet, clientErr = kubernetes.NewForConfig(restConfig)
+		if clientErr != nil {
+			return "", nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, clientErr)
 		}
 	}
+	return ctx, clientSet, nil
+}
 
-	// Set defaults
+// buildPodLogOptions creates PodLogOptions from request options
+func buildPodLogOptions(opts types.PodLogsOptions) (*corev1.PodLogOptions, error) {
 	tailLines := int64(opts.TailLines)
 	if tailLines <= 0 {
 		tailLines = 100
 	}
-	// Cap at 1000 lines to prevent huge responses
 	if tailLines > 1000 {
 		tailLines = 1000
 	}
 
-	// Build pod log options
 	podLogOpts := &corev1.PodLogOptions{
 		Container:  opts.Container,
 		TailLines:  &tailLines,
@@ -862,7 +862,6 @@ func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, 
 		Timestamps: opts.Timestamps,
 	}
 
-	// Parse sinceTime if provided
 	if opts.SinceTime != "" {
 		sinceTime, err := time.Parse(time.RFC3339, opts.SinceTime)
 		if err != nil {
@@ -871,8 +870,32 @@ func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, 
 		metaSinceTime := metav1.NewTime(sinceTime)
 		podLogOpts.SinceTime = &metaSinceTime
 	}
+	return podLogOpts, nil
+}
 
-	// Get the pod first to determine container name if not specified
+// readPodLogStream reads logs from a stream with size limit
+func readPodLogStream(logStream interface{ Read([]byte) (int, error) }) ([]string, bool, error) {
+	const maxLogSize = 1024 * 1024 // 1MB
+	buf := make([]byte, maxLogSize)
+	n, err := logStream.Read(buf)
+	if err != nil && err.Error() != "EOF" && n == 0 {
+		return nil, false, fmt.Errorf("failed to read pod logs: %w", err)
+	}
+	return splitLogLines(string(buf[:n])), n >= maxLogSize, nil
+}
+
+// GetPodLogs returns logs from a pod
+func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	ctx, clientSet, err := a.resolveContextAndClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	podLogOpts, err := buildPodLogOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
 	containerName := opts.Container
 	if containerName == "" {
 		pod, err := clientSet.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
@@ -885,32 +908,17 @@ func (a *KubernetesDiscoveryAdapter) GetPodLogs(ctx, namespace, podName string, 
 		}
 	}
 
-	// Get the logs
 	req := clientSet.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts)
 	logStream, err := req.Stream(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pod logs: %w", err)
 	}
-	defer func() {
-		_ = logStream.Close()
-	}()
+	defer func() { _ = logStream.Close() }()
 
-	// Read logs with size limit (1MB max)
-	const maxLogSize = 1024 * 1024 // 1MB
-	buf := make([]byte, maxLogSize)
-	n, err := logStream.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		// Ignore EOF, it's expected when the stream ends
-		if n == 0 {
-			return nil, fmt.Errorf("failed to read pod logs: %w", err)
-		}
+	lines, truncated, err := readPodLogStream(logStream)
+	if err != nil {
+		return nil, err
 	}
-
-	truncated := n >= maxLogSize
-
-	// Split into lines
-	logContent := string(buf[:n])
-	lines := splitLogLines(logContent)
 
 	return &types.PodLogsResponse{
 		PodName:       podName,
@@ -957,33 +965,8 @@ func splitLogLines(content string) []string {
 	return lines
 }
 
-// ListPods returns pods in a namespace
-func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
-	if ctx == "" {
-		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current context: %w", err)
-		}
-		ctx = currentCtx
-	}
-
-	nsManager := a.getNsManager()
-	if nsManager == nil {
-		return nil, fmt.Errorf("namespace manager not available")
-	}
-
-	clientSet := nsManager.GetClientSet(ctx)
-	if clientSet == nil {
-		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
-		}
-		clientSet, err = kubernetes.NewForConfig(restConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
-		}
-	}
-
+// buildListOptions creates list options from request options
+func buildListOptions(opts types.ListPodsOptions) metav1.ListOptions {
 	listOpts := metav1.ListOptions{}
 	if opts.LabelSelector != "" {
 		listOpts.LabelSelector = opts.LabelSelector
@@ -991,23 +974,39 @@ func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.
 	if opts.FieldSelector != "" {
 		listOpts.FieldSelector = opts.FieldSelector
 	}
+	return listOpts
+}
 
-	// If filtering by service, get service selector
+// appendServiceSelector adds service selector to list options
+func appendServiceSelector(listOpts *metav1.ListOptions, selector map[string]string) {
+	if len(selector) == 0 {
+		return
+	}
+	var selectors []string
+	for k, v := range selector {
+		selectors = append(selectors, fmt.Sprintf("%s=%s", k, v))
+	}
+	if listOpts.LabelSelector != "" {
+		listOpts.LabelSelector += ","
+	}
+	listOpts.LabelSelector += strings.Join(selectors, ",")
+}
+
+// ListPods returns pods in a namespace
+func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	ctx, clientSet, err := a.resolveContextAndClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	listOpts := buildListOptions(opts)
+
 	if opts.ServiceName != "" {
 		svc, err := clientSet.CoreV1().Services(namespace).Get(context.Background(), opts.ServiceName, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get service: %w", err)
 		}
-		if len(svc.Spec.Selector) > 0 {
-			var selectors []string
-			for k, v := range svc.Spec.Selector {
-				selectors = append(selectors, fmt.Sprintf("%s=%s", k, v))
-			}
-			if listOpts.LabelSelector != "" {
-				listOpts.LabelSelector += ","
-			}
-			listOpts.LabelSelector += strings.Join(selectors, ",")
-		}
+		appendServiceSelector(&listOpts, svc.Spec.Selector)
 	}
 
 	podList, err := clientSet.CoreV1().Pods(namespace).List(context.Background(), listOpts)
@@ -1151,98 +1150,121 @@ func (a *KubernetesDiscoveryAdapter) GetPod(ctx, namespace, podName string) (*ty
 	return a.convertPodToK8sPodDetail(pod, ctx), nil
 }
 
-// convertPodToK8sPodDetail converts a k8s Pod to detailed K8sPodDetail
-func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, ctx string) *types.K8sPodDetail {
-	// Determine overall status
-	status := string(pod.Status.Phase)
-	message := pod.Status.Message
-	reason := pod.Status.Reason
+// buildContainerPorts extracts port info from a container spec
+func buildContainerPorts(containerPorts []corev1.ContainerPort) []types.K8sContainerPort {
+	ports := make([]types.K8sContainerPort, 0, len(containerPorts))
+	for _, p := range containerPorts {
+		ports = append(ports, types.K8sContainerPort{
+			Name:          p.Name,
+			ContainerPort: p.ContainerPort,
+			Protocol:      string(p.Protocol),
+		})
+	}
+	return ports
+}
 
-	if pod.DeletionTimestamp != nil {
-		status = "Terminating"
+// buildContainerResources extracts resource requirements from a container spec
+func buildContainerResources(resources corev1.ResourceRequirements) *types.K8sResourceRequire {
+	if resources.Requests == nil && resources.Limits == nil {
+		return nil
+	}
+	res := &types.K8sResourceRequire{}
+	if cpu := resources.Requests.Cpu(); cpu != nil {
+		res.CPURequest = cpu.String()
+	}
+	if mem := resources.Requests.Memory(); mem != nil {
+		res.MemoryRequest = mem.String()
+	}
+	if cpu := resources.Limits.Cpu(); cpu != nil {
+		res.CPULimit = cpu.String()
+	}
+	if mem := resources.Limits.Memory(); mem != nil {
+		res.MemoryLimit = mem.String()
+	}
+	return res
+}
+
+// applyContainerStatus applies status info to a container info struct
+func applyContainerStatus(ci *types.K8sContainerInfo, cs corev1.ContainerStatus) {
+	ci.Ready = cs.Ready
+	ci.Started = cs.Started != nil && *cs.Started
+	ci.RestartCount = cs.RestartCount
+
+	switch {
+	case cs.State.Running != nil:
+		ci.State = "Running"
+	case cs.State.Waiting != nil:
+		ci.State = "Waiting"
+		ci.StateReason = cs.State.Waiting.Reason
+		ci.StateMessage = cs.State.Waiting.Message
+	case cs.State.Terminated != nil:
+		ci.State = "Terminated"
+		ci.StateReason = cs.State.Terminated.Reason
+		ci.StateMessage = cs.State.Terminated.Message
 	}
 
-	// Build container info
-	containers := make([]types.K8sContainerInfo, 0, len(pod.Spec.Containers))
+	if cs.LastTerminationState.Terminated != nil {
+		ci.LastState = fmt.Sprintf("Terminated: %s", cs.LastTerminationState.Terminated.Reason)
+	}
+}
+
+// buildContainerInfos builds container info list from pod spec and status
+func buildContainerInfos(pod *corev1.Pod) []types.K8sContainerInfo {
 	containerStatusMap := make(map[string]corev1.ContainerStatus)
 	for _, cs := range pod.Status.ContainerStatuses {
 		containerStatusMap[cs.Name] = cs
 	}
 
+	containers := make([]types.K8sContainerInfo, 0, len(pod.Spec.Containers))
 	for _, c := range pod.Spec.Containers {
 		ci := types.K8sContainerInfo{
-			Name:  c.Name,
-			Image: c.Image,
+			Name:      c.Name,
+			Image:     c.Image,
+			Ports:     buildContainerPorts(c.Ports),
+			Resources: buildContainerResources(c.Resources),
 		}
-
-		// Add ports
-		for _, p := range c.Ports {
-			ci.Ports = append(ci.Ports, types.K8sContainerPort{
-				Name:          p.Name,
-				ContainerPort: p.ContainerPort,
-				Protocol:      string(p.Protocol),
-			})
-		}
-
-		// Add resource info
-		if c.Resources.Requests != nil || c.Resources.Limits != nil {
-			ci.Resources = &types.K8sResourceRequire{}
-			if cpu := c.Resources.Requests.Cpu(); cpu != nil {
-				ci.Resources.CPURequest = cpu.String()
-			}
-			if mem := c.Resources.Requests.Memory(); mem != nil {
-				ci.Resources.MemoryRequest = mem.String()
-			}
-			if cpu := c.Resources.Limits.Cpu(); cpu != nil {
-				ci.Resources.CPULimit = cpu.String()
-			}
-			if mem := c.Resources.Limits.Memory(); mem != nil {
-				ci.Resources.MemoryLimit = mem.String()
-			}
-		}
-
-		// Add status info
 		if cs, ok := containerStatusMap[c.Name]; ok {
-			ci.Ready = cs.Ready
-			ci.Started = cs.Started != nil && *cs.Started
-			ci.RestartCount = cs.RestartCount
-
-			switch {
-			case cs.State.Running != nil:
-				ci.State = "Running"
-			case cs.State.Waiting != nil:
-				ci.State = "Waiting"
-				ci.StateReason = cs.State.Waiting.Reason
-				ci.StateMessage = cs.State.Waiting.Message
-			case cs.State.Terminated != nil:
-				ci.State = "Terminated"
-				ci.StateReason = cs.State.Terminated.Reason
-				ci.StateMessage = cs.State.Terminated.Message
-			}
-
-			if cs.LastTerminationState.Terminated != nil {
-				ci.LastState = fmt.Sprintf("Terminated: %s", cs.LastTerminationState.Terminated.Reason)
-			}
+			applyContainerStatus(&ci, cs)
 		}
-
 		containers = append(containers, ci)
 	}
+	return containers
+}
 
-	// Build conditions
-	conditions := make([]types.K8sPodCondition, 0, len(pod.Status.Conditions))
-	for _, c := range pod.Status.Conditions {
-		conditions = append(conditions, types.K8sPodCondition{
+// buildPodConditions builds condition list from pod status
+func buildPodConditions(conditions []corev1.PodCondition) []types.K8sPodCondition {
+	result := make([]types.K8sPodCondition, 0, len(conditions))
+	for _, c := range conditions {
+		result = append(result, types.K8sPodCondition{
 			Type:    string(c.Type),
 			Status:  string(c.Status),
 			Reason:  c.Reason,
 			Message: c.Message,
 		})
 	}
+	return result
+}
 
-	// Build volume names
-	volumes := make([]string, 0, len(pod.Spec.Volumes))
-	for _, v := range pod.Spec.Volumes {
-		volumes = append(volumes, v.Name)
+// checkPodForwarded checks if a pod is being forwarded and returns the forward key
+func checkPodForwarded(podName, podNamespace string) (bool, string) {
+	allSvcs := fwdsvcregistry.GetAll()
+	for _, svc := range allSvcs {
+		if svc.Namespace == podNamespace {
+			for _, fwd := range svc.PortForwards {
+				if fwd.PodName == podName {
+					return true, svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
+				}
+			}
+		}
+	}
+	return false, ""
+}
+
+// convertPodToK8sPodDetail converts a k8s Pod to detailed K8sPodDetail
+func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, ctx string) *types.K8sPodDetail {
+	status := string(pod.Status.Phase)
+	if pod.DeletionTimestamp != nil {
+		status = "Terminating"
 	}
 
 	var startTime *time.Time
@@ -1251,24 +1273,12 @@ func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, c
 		startTime = &t
 	}
 
-	// Check if forwarded
-	isForwarded := false
-	forwardKey := ""
-	allSvcs := fwdsvcregistry.GetAll()
-	for _, svc := range allSvcs {
-		if svc.Namespace == pod.Namespace {
-			for _, fwd := range svc.PortForwards {
-				if fwd.PodName == pod.Name {
-					isForwarded = true
-					forwardKey = svc.Svc.Name + "." + svc.Namespace + "." + svc.Context
-					break
-				}
-			}
-		}
-		if isForwarded {
-			break
-		}
+	volumes := make([]string, 0, len(pod.Spec.Volumes))
+	for _, v := range pod.Spec.Volumes {
+		volumes = append(volumes, v.Name)
 	}
+
+	isForwarded, forwardKey := checkPodForwarded(pod.Name, pod.Namespace)
 
 	return &types.K8sPodDetail{
 		Name:        pod.Name,
@@ -1276,16 +1286,16 @@ func (a *KubernetesDiscoveryAdapter) convertPodToK8sPodDetail(pod *corev1.Pod, c
 		Context:     ctx,
 		Phase:       string(pod.Status.Phase),
 		Status:      status,
-		Message:     message,
-		Reason:      reason,
+		Message:     pod.Status.Message,
+		Reason:      pod.Status.Reason,
 		IP:          pod.Status.PodIP,
 		HostIP:      pod.Status.HostIP,
 		Node:        pod.Spec.NodeName,
 		StartTime:   startTime,
 		Labels:      pod.Labels,
 		Annotations: pod.Annotations,
-		Containers:  containers,
-		Conditions:  conditions,
+		Containers:  buildContainerInfos(pod),
+		Conditions:  buildPodConditions(pod.Status.Conditions),
 		Volumes:     volumes,
 		QoSClass:    string(pod.Status.QOSClass),
 		IsForwarded: isForwarded,
@@ -1370,31 +1380,49 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 	return result, nil
 }
 
+// convertEndpointAddress converts a k8s EndpointAddress to our type
+func convertEndpointAddress(addr corev1.EndpointAddress) types.K8sEndpointAddress {
+	result := types.K8sEndpointAddress{
+		IP:       addr.IP,
+		Hostname: addr.Hostname,
+	}
+	if addr.NodeName != nil {
+		result.NodeName = *addr.NodeName
+	}
+	if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
+		result.PodName = addr.TargetRef.Name
+	}
+	return result
+}
+
+// convertEndpointSubset converts a k8s EndpointSubset to our type
+func convertEndpointSubset(subset corev1.EndpointSubset) types.K8sEndpointSubset {
+	result := types.K8sEndpointSubset{
+		Addresses:         make([]types.K8sEndpointAddress, len(subset.Addresses)),
+		NotReadyAddresses: make([]types.K8sEndpointAddress, len(subset.NotReadyAddresses)),
+		Ports:             make([]types.K8sEndpointPort, len(subset.Ports)),
+	}
+	for j, addr := range subset.Addresses {
+		result.Addresses[j] = convertEndpointAddress(addr)
+	}
+	for j, addr := range subset.NotReadyAddresses {
+		result.NotReadyAddresses[j] = convertEndpointAddress(addr)
+	}
+	for j, port := range subset.Ports {
+		result.Ports[j] = types.K8sEndpointPort{
+			Name:     port.Name,
+			Port:     port.Port,
+			Protocol: string(port.Protocol),
+		}
+	}
+	return result
+}
+
 // GetEndpoints returns endpoints for a service
 func (a *KubernetesDiscoveryAdapter) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
-	if ctx == "" {
-		currentCtx, err := a.configGetter.GetCurrentContext(a.configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current context: %w", err)
-		}
-		ctx = currentCtx
-	}
-
-	nsManager := a.getNsManager()
-	if nsManager == nil {
-		return nil, fmt.Errorf("namespace manager not available")
-	}
-
-	clientSet := nsManager.GetClientSet(ctx)
-	if clientSet == nil {
-		restConfig, err := a.configGetter.GetRestConfig(a.configPath, ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get REST config for context %s: %w", ctx, err)
-		}
-		clientSet, err = kubernetes.NewForConfig(restConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create clientSet for context %s: %w", ctx, err)
-		}
+	ctx, clientSet, err := a.resolveContextAndClient(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	endpoints, err := clientSet.CoreV1().Endpoints(namespace).Get(context.Background(), serviceName, metav1.GetOptions{})
@@ -1407,47 +1435,8 @@ func (a *KubernetesDiscoveryAdapter) GetEndpoints(ctx, namespace, serviceName st
 		Namespace: endpoints.Namespace,
 		Subsets:   make([]types.K8sEndpointSubset, len(endpoints.Subsets)),
 	}
-
 	for i, subset := range endpoints.Subsets {
-		result.Subsets[i] = types.K8sEndpointSubset{
-			Addresses:         make([]types.K8sEndpointAddress, len(subset.Addresses)),
-			NotReadyAddresses: make([]types.K8sEndpointAddress, len(subset.NotReadyAddresses)),
-			Ports:             make([]types.K8sEndpointPort, len(subset.Ports)),
-		}
-
-		for j, addr := range subset.Addresses {
-			result.Subsets[i].Addresses[j] = types.K8sEndpointAddress{
-				IP:       addr.IP,
-				Hostname: addr.Hostname,
-			}
-			if addr.NodeName != nil {
-				result.Subsets[i].Addresses[j].NodeName = *addr.NodeName
-			}
-			if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
-				result.Subsets[i].Addresses[j].PodName = addr.TargetRef.Name
-			}
-		}
-
-		for j, addr := range subset.NotReadyAddresses {
-			result.Subsets[i].NotReadyAddresses[j] = types.K8sEndpointAddress{
-				IP:       addr.IP,
-				Hostname: addr.Hostname,
-			}
-			if addr.NodeName != nil {
-				result.Subsets[i].NotReadyAddresses[j].NodeName = *addr.NodeName
-			}
-			if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
-				result.Subsets[i].NotReadyAddresses[j].PodName = addr.TargetRef.Name
-			}
-		}
-
-		for j, port := range subset.Ports {
-			result.Subsets[i].Ports[j] = types.K8sEndpointPort{
-				Name:     port.Name,
-				Port:     port.Port,
-				Protocol: string(port.Protocol),
-			}
-		}
+		result.Subsets[i] = convertEndpointSubset(subset)
 	}
 
 	return result, nil
@@ -1475,6 +1464,65 @@ func NewServiceCRUDAdapter(
 	}
 }
 
+// setupPodAddedSubscription creates a subscription for PodAdded events for a service
+func setupPodAddedSubscription(key string) (chan events.Event, func()) {
+	podAddedCh := make(chan events.Event, 10)
+	bus := fwdtui.GetEventBus()
+	if bus == nil {
+		return podAddedCh, nil
+	}
+
+	busUnsubscribe := bus.Subscribe(events.PodAdded, func(e events.Event) {
+		if e.ServiceKey == key {
+			select {
+			case podAddedCh <- e:
+			default:
+			}
+		}
+	})
+	return podAddedCh, func() {
+		busUnsubscribe()
+		close(podAddedCh)
+	}
+}
+
+// buildPortMappings creates port mappings from service spec
+func buildPortMappings(svc *corev1.Service) []types.PortMapping {
+	ports := make([]types.PortMapping, 0, len(svc.Spec.Ports))
+	for _, port := range svc.Spec.Ports {
+		if port.Protocol == "UDP" {
+			continue
+		}
+		ports = append(ports, types.PortMapping{
+			LocalPort:  fmt.Sprintf("%d", port.Port),
+			RemotePort: port.TargetPort.String(),
+			Protocol:   string(port.Protocol),
+		})
+	}
+	return ports
+}
+
+// waitForPodAdded waits for a pod added event or times out, returning connection info
+func waitForPodAdded(podAddedCh <-chan events.Event, unsubscribe func(), key string) (string, []string) {
+	if unsubscribe == nil {
+		return "", nil
+	}
+	defer unsubscribe()
+
+	timeout := time.After(10 * time.Second)
+	select {
+	case e := <-podAddedCh:
+		return e.LocalIP, e.Hostnames
+	case <-timeout:
+		if store := fwdtui.GetStore(); store != nil {
+			if svcSnapshot := store.GetService(key); svcSnapshot != nil && len(svcSnapshot.PortForwards) > 0 {
+				return svcSnapshot.PortForwards[0].LocalIP, svcSnapshot.PortForwards[0].Hostnames
+			}
+		}
+		return "", nil
+	}
+}
+
 // AddService forwards a specific service
 func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.AddServiceResponse, error) {
 	nsManager := a.getNsManager()
@@ -1482,7 +1530,6 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 		return nil, fmt.Errorf("namespace manager not available")
 	}
 
-	// Resolve context if not specified
 	ctx := req.Context
 	if ctx == "" {
 		currentCtx, err := nsManager.GetCurrentContext()
@@ -1492,109 +1539,38 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 		ctx = currentCtx
 	}
 
-	// Unblock the namespace in case it was previously blocked via remove_namespace.
-	// This prevents a race condition where the namespace was blocked but we're now adding
-	// a service individually (not via namespace watcher).
 	if store := fwdtui.GetStore(); store != nil {
 		store.UnblockNamespace(req.Namespace, ctx)
 	}
 
-	// Check if service is already being forwarded
 	key := req.ServiceName + "." + req.Namespace + "." + ctx
 	if fwdsvcregistry.Get(key) != nil {
 		return nil, fmt.Errorf("service %s is already being forwarded", key)
 	}
 
-	// Get kubernetes client for this context
 	clientSet, _, _, err := nsManager.GetOrCreateClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubernetes client: %w", err)
 	}
 
-	// Fetch the service from kubernetes
-	svc, err := clientSet.CoreV1().Services(req.Namespace).Get(
-		context.Background(),
-		req.ServiceName,
-		metav1.GetOptions{},
-	)
+	svc, err := clientSet.CoreV1().Services(req.Namespace).Get(context.Background(), req.ServiceName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service: %w", err)
 	}
 
-	// Validate service has selector
 	if len(svc.Spec.Selector) == 0 {
 		return nil, fmt.Errorf("service %s has no pod selector - kubefwd cannot forward services without selectors", req.ServiceName)
 	}
 
-	// Create ServiceFWD using the namespace manager
 	svcfwd, err := nsManager.CreateServiceFWD(ctx, req.Namespace, svc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service forward: %w", err)
 	}
 
-	// Subscribe to PodAdded events BEFORE adding to registry
-	// This ensures we don't miss the event
-	podAddedCh := make(chan events.Event, 10)
-	var unsubscribe func()
-
-	if bus := fwdtui.GetEventBus(); bus != nil {
-		busUnsubscribe := bus.Subscribe(events.PodAdded, func(e events.Event) {
-			// Only capture events for this service
-			if e.ServiceKey == key {
-				select {
-				case podAddedCh <- e:
-				default:
-					// Channel full, event already captured
-				}
-			}
-		})
-		unsubscribe = func() {
-			busUnsubscribe() // Remove handler from bus to prevent memory leak
-			close(podAddedCh)
-		}
-	}
-
-	// Add to registry (this starts forwarding asynchronously)
+	podAddedCh, unsubscribe := setupPodAddedSubscription(key)
 	fwdsvcregistry.Add(svcfwd)
 
-	// Build port mappings from service spec
-	ports := make([]types.PortMapping, 0, len(svc.Spec.Ports))
-	for _, port := range svc.Spec.Ports {
-		if port.Protocol == "UDP" {
-			continue // UDP not supported
-		}
-		ports = append(ports, types.PortMapping{
-			LocalPort:  fmt.Sprintf("%d", port.Port),
-			RemotePort: port.TargetPort.String(),
-			Protocol:   string(port.Protocol),
-		})
-	}
-
-	// Wait for at least one pod to be added (up to 10 seconds)
-	// This ensures the service is in the state store before we return
-	var localIP string
-	var hostnames []string
-
-	if unsubscribe != nil {
-		timeout := time.After(10 * time.Second)
-		select {
-		case e := <-podAddedCh:
-			localIP = e.LocalIP
-			hostnames = e.Hostnames
-		case <-timeout:
-			// Timeout waiting for pod - service may still be starting
-			// Check the state store as a fallback
-			if store := fwdtui.GetStore(); store != nil {
-				if svcSnapshot := store.GetService(key); svcSnapshot != nil {
-					if len(svcSnapshot.PortForwards) > 0 {
-						localIP = svcSnapshot.PortForwards[0].LocalIP
-						hostnames = svcSnapshot.PortForwards[0].Hostnames
-					}
-				}
-			}
-		}
-		unsubscribe()
-	}
+	localIP, hostnames := waitForPodAdded(podAddedCh, unsubscribe, key)
 
 	return &types.AddServiceResponse{
 		Key:         key,
@@ -1603,7 +1579,7 @@ func (a *ServiceCRUDAdapter) AddService(req types.AddServiceRequest) (*types.Add
 		Context:     ctx,
 		LocalIP:     localIP,
 		Hostnames:   hostnames,
-		Ports:       ports,
+		Ports:       buildPortMappings(svc),
 	}, nil
 }
 
