@@ -108,10 +108,10 @@ func (h *LogsHandler) Stream(c *gin.Context) {
 				// Send new logs
 				for i := lastCount; i < len(logs); i++ {
 					log := logs[i]
-					data := fmt.Sprintf(`{"timestamp":"%s","level":"%s","message":"%s"}`,
+					data := fmt.Sprintf(`{"timestamp":%q,"level":%q,"message":%q}`,
 						log.Timestamp.Format(time.RFC3339),
 						log.Level,
-						escapeJSON(log.Message))
+						log.Message)
 					_, _ = fmt.Fprintf(w, "event: log\n")
 					_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				}
