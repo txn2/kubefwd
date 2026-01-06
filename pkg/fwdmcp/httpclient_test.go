@@ -2053,19 +2053,19 @@ func TestHistoryProviderHTTP_GetErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(struct {
-			Success bool                 `json:"success"`
-			Data    []types.HistoryError `json:"data"`
+			Success bool           `json:"success"`
+			Data    []HistoryError `json:"data"`
 		}{
 			Success: true,
-			Data: []types.HistoryError{
-				{ServiceKey: "svc1.default.ctx", Error: "connection refused"},
+			Data: []HistoryError{
+				{ServiceKey: "svc1.default.ctx", Message: "connection refused"},
 			},
 		})
 	}))
 	defer server.Close()
 
-	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
-	errors, err := provider.GetErrors("", 10)
+	provider := NewHistoryProviderHTTP(server.URL)
+	errors, err := provider.GetErrors(10)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -2078,19 +2078,19 @@ func TestHistoryProviderHTTP_GetReconnects(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(struct {
-			Success bool                     `json:"success"`
-			Data    []types.HistoryReconnect `json:"data"`
+			Success bool               `json:"success"`
+			Data    []HistoryReconnect `json:"data"`
 		}{
 			Success: true,
-			Data: []types.HistoryReconnect{
+			Data: []HistoryReconnect{
 				{ServiceKey: "svc1.default.ctx", Success: true},
 			},
 		})
 	}))
 	defer server.Close()
 
-	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
-	reconnects, err := provider.GetReconnects("", 10)
+	provider := NewHistoryProviderHTTP(server.URL)
+	reconnects, err := provider.GetReconnects(10, "")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -2103,11 +2103,11 @@ func TestHistoryProviderHTTP_GetStats(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(struct {
-			Success bool               `json:"success"`
-			Data    types.HistoryStats `json:"data"`
+			Success bool         `json:"success"`
+			Data    HistoryStats `json:"data"`
 		}{
 			Success: true,
-			Data: types.HistoryStats{
+			Data: HistoryStats{
 				TotalEvents:     100,
 				TotalErrors:     5,
 				TotalReconnects: 10,
@@ -2116,7 +2116,7 @@ func TestHistoryProviderHTTP_GetStats(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewHistoryProviderHTTP(NewHTTPClient(server.URL))
+	provider := NewHistoryProviderHTTP(server.URL)
 	stats, err := provider.GetStats()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
