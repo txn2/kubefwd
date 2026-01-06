@@ -13,16 +13,45 @@ linters:
     - unused
     - misspell
     - unconvert
+    - gocritic        # Style checks (ifElseChain, singleCaseSwitch, etc.)
+    - revive          # Unused params, exported comments, etc.
+    - predeclared     # Variable shadows predeclared identifier
+    - nilnil          # Return nil error with nil value
   disable:
     - depguard
   settings:
     govet:
       enable-all: true
       disable:
-        - shadow
         - fieldalignment  # Too noisy for existing codebase
     misspell:
       locale: US
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - whyNoLint         # We don't require nolint explanations
+        - hugeParam         # Too strict for existing code
+        - rangeValCopy      # Too noisy for k8s structs
+        - unnamedResult     # Style preference
+        - paramTypeCombine  # Style preference
+        - emptyStringTest   # Style preference (len(s) vs s == "")
+        - commentedOutCode  # Too noisy, especially in tests
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: unused-parameter
+          severity: warning
+        - name: var-declaration
+          severity: warning
+        - name: import-shadowing
+          severity: warning
+        - name: unreachable-code
+          severity: warning
+        - name: context-as-argument
+          severity: warning
   exclusions:
     rules:
       # Test files can be more relaxed
@@ -32,7 +61,12 @@ linters:
       # Ignore unused writes in test struct initializations
       - path: _test\.go
         text: "unusedwrite"
+      # Allow unused params in test helper functions
+      - path: _test\.go
+        linters:
+          - revive
+        text: "unused-parameter"
 
 issues:
-  max-issues-per-linter: 50
-  max-same-issues: 10
+  max-issues-per-linter: 100
+  max-same-issues: 20
