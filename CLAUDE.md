@@ -56,6 +56,10 @@ The TUI follows the Model-View-Update (MVU) pattern:
 - `?`: Help overlay
 - `q`: Quit
 
+## Git Policy
+
+**All commits require explicit human approval.** Do not run `git commit` unless the user explicitly asks you to commit. Always show the diff or summarize changes and wait for approval first.
+
 ## Build and Development Commands
 
 ### Building
