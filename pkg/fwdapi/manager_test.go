@@ -312,28 +312,28 @@ func TestManager_RunWithoutStateReader(t *testing.T) {
 
 type mockStateReader struct{}
 
-func (m *mockStateReader) GetServices() []state.ServiceSnapshot         { return nil }
-func (m *mockStateReader) GetService(key string) *state.ServiceSnapshot { return nil }
-func (m *mockStateReader) GetSummary() state.SummaryStats               { return state.SummaryStats{} }
-func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot         { return nil }
-func (m *mockStateReader) GetForward(key string) *state.ForwardSnapshot { return nil }
-func (m *mockStateReader) GetLogs(count int) []state.LogEntry           { return nil }
-func (m *mockStateReader) Count() int                                   { return 0 }
-func (m *mockStateReader) ServiceCount() int                            { return 0 }
+func (m *mockStateReader) GetServices() []state.ServiceSnapshot        { return nil }
+func (m *mockStateReader) GetService(_ string) *state.ServiceSnapshot  { return nil }
+func (m *mockStateReader) GetSummary() state.SummaryStats              { return state.SummaryStats{} }
+func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot        { return nil }
+func (m *mockStateReader) GetForward(_ string) *state.ForwardSnapshot  { return nil }
+func (m *mockStateReader) GetLogs(_ int) []state.LogEntry              { return nil }
+func (m *mockStateReader) Count() int                                  { return 0 }
+func (m *mockStateReader) ServiceCount() int                           { return 0 }
 
 type mockMetricsProvider struct{}
 
-func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot             { return nil }
-func (m *mockMetricsProvider) GetServiceSnapshot(key string) *fwdmetrics.ServiceSnapshot { return nil }
-func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)             { return 0, 0, 0, 0 }
-func (m *mockMetricsProvider) ServiceCount() int                                         { return 0 }
-func (m *mockMetricsProvider) PortForwardCount() int                                     { return 0 }
+func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot            { return nil }
+func (m *mockMetricsProvider) GetServiceSnapshot(_ string) *fwdmetrics.ServiceSnapshot  { return nil }
+func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)            { return 0, 0, 0, 0 }
+func (m *mockMetricsProvider) ServiceCount() int                                        { return 0 }
+func (m *mockMetricsProvider) PortForwardCount() int                                    { return 0 }
 
 type mockServiceController struct{}
 
-func (m *mockServiceController) Reconnect(key string) error        { return nil }
-func (m *mockServiceController) ReconnectAll() int                 { return 0 }
-func (m *mockServiceController) Sync(key string, force bool) error { return nil }
+func (m *mockServiceController) Reconnect(_ string) error       { return nil }
+func (m *mockServiceController) ReconnectAll() int              { return 0 }
+func (m *mockServiceController) Sync(_ string, _ bool) error    { return nil }
 
 type mockEventStreamer struct{}
 
@@ -341,7 +341,7 @@ func (m *mockEventStreamer) Subscribe() (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
 }
-func (m *mockEventStreamer) SubscribeType(eventType events.EventType) (<-chan events.Event, func()) {
+func (m *mockEventStreamer) SubscribeType(_ events.EventType) (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
 }
@@ -353,22 +353,22 @@ type mockDiagnosticsProvider struct{}
 func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return types.DiagnosticSummary{}
 }
-func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetServiceDiagnostic(_ string) (*types.ServiceDiagnostic, error) {
 	return nil, nil
 }
-func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetForwardDiagnostic(_ string) (*types.ForwardDiagnostic, error) {
 	return nil, nil
 }
 func (m *mockDiagnosticsProvider) GetNetworkStatus() types.NetworkStatus {
 	return types.NetworkStatus{}
 }
-func (m *mockDiagnosticsProvider) GetErrors(count int) []types.ErrorDetail { return nil }
+func (m *mockDiagnosticsProvider) GetErrors(_ int) []types.ErrorDetail { return nil }
 
 type mockNamespaceController struct {
 	namespaces []types.NamespaceInfoResponse
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	info := types.NamespaceInfoResponse{
 		Key:       namespace + "." + ctx,
 		Namespace: namespace,
@@ -378,7 +378,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	return &info, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return nil
 }
 
@@ -408,17 +408,17 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return nil
 }
 
 type mockKubernetesDiscovery struct{}
 
-func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockKubernetesDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	return []types.K8sNamespace{{Name: "default"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockKubernetesDiscovery) ListServices(_, namespace string) ([]types.K8sService, error) {
 	return []types.K8sService{{Name: "test-svc", Namespace: namespace}}, nil
 }
 
@@ -429,7 +429,7 @@ func (m *mockKubernetesDiscovery) ListContexts() (*types.K8sContextsResponse, er
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockKubernetesDiscovery) GetService(_, namespace, name string) (*types.K8sService, error) {
 	return &types.K8sService{Name: name, Namespace: namespace}, nil
 }
 
@@ -445,19 +445,19 @@ func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opt
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockKubernetesDiscovery) ListPods(_, namespace string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+func (m *mockKubernetesDiscovery) GetPod(_, namespace, podName string) (*types.K8sPodDetail, error) {
 	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockKubernetesDiscovery) GetEvents(_, namespace string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+func (m *mockKubernetesDiscovery) GetEndpoints(_, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
 }
 

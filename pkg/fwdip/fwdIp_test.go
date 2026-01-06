@@ -799,7 +799,7 @@ func TestBlockNonLoopbackIPs(t *testing.T) {
 }
 
 // TestNotifyOfDuplicateIPReservations tests duplicate IP detection
-func TestNotifyOfDuplicateIPReservations(t *testing.T) {
+func TestNotifyOfDuplicateIPReservations(_ *testing.T) {
 	// Test the no-duplicates case
 	// Note: Cannot test the duplicate case because notifyOfDuplicateIPReservations
 	// calls log.Fatal which exits the entire test process

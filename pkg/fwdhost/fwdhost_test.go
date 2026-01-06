@@ -397,7 +397,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(n int) {
+		go func() {
 			defer wg.Done()
 
 			// Each goroutine creates its own hosts file
@@ -405,7 +405,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 
 			_, err := BackupHostFile(hosts, false)
 			results <- err
-		}(i)
+		}()
 	}
 
 	wg.Wait()

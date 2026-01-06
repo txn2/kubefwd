@@ -1595,7 +1595,7 @@ func TestLogsModel_Update_MouseMsg_WheelUp(t *testing.T) {
 	}
 }
 
-func TestLogsModel_Update_NotFocused(t *testing.T) {
+func TestLogsModel_Update_NotFocused(_ *testing.T) {
 	m := NewLogsModel()
 	m.SetSize(80, 10)
 	m.SetFocus(false) // Not focused
@@ -1612,7 +1612,7 @@ func TestLogsModel_Update_NotFocused(t *testing.T) {
 	// Just verify no panic
 }
 
-func TestLogsModel_Update_NotReady(t *testing.T) {
+func TestLogsModel_Update_NotReady(_ *testing.T) {
 	m := NewLogsModel()
 	// Don't call SetSize, so viewport is not ready
 
@@ -1638,7 +1638,7 @@ func TestServicesModel_Init(t *testing.T) {
 	}
 }
 
-func TestServicesModel_GetSelectedRegistryKey(t *testing.T) {
+func TestServicesModel_GetSelectedRegistryKey(_ *testing.T) {
 	store := createTestStore()
 	model := NewServicesModel(store)
 	model.SetSize(80, 24)
@@ -1651,7 +1651,7 @@ func TestServicesModel_GetSelectedRegistryKey(t *testing.T) {
 	_ = key
 }
 
-func TestServicesModel_SelectByY(t *testing.T) {
+func TestServicesModel_SelectByY(_ *testing.T) {
 	store := createTestStore()
 	model := NewServicesModel(store)
 	model.SetSize(80, 24)
@@ -2016,7 +2016,7 @@ func TestServicesModel_Update_WindowSizeMsg(t *testing.T) {
 	}
 }
 
-func TestServicesModel_Update_MouseMsg(t *testing.T) {
+func TestServicesModel_Update_MouseMsg(_ *testing.T) {
 	store := state.NewStore(100)
 	m := NewServicesModel(store)
 
@@ -2131,7 +2131,7 @@ func TestServicesModel_Update_KeyMsg_Delete(t *testing.T) {
 	}
 }
 
-func TestServicesModel_Update_KeyMsg_Navigation(t *testing.T) {
+func TestServicesModel_Update_KeyMsg_Navigation(_ *testing.T) {
 	store := state.NewStore(100)
 	m := NewServicesModel(store)
 
@@ -2188,7 +2188,7 @@ func TestServicesModel_Update_KeyMsg_ClearFilter(t *testing.T) {
 	}
 }
 
-func TestServicesModel_StatusStyle(t *testing.T) {
+func TestServicesModel_StatusStyle(_ *testing.T) {
 	store := state.NewStore(100)
 	m := NewServicesModel(store)
 
@@ -2216,7 +2216,7 @@ func TestServicesModel_StatusStyle(t *testing.T) {
 // Additional Detail Model Update Tests
 // =============================================================================
 
-func TestDetailModel_Update_NumberKeyCopy(t *testing.T) {
+func TestDetailModel_Update_NumberKeyCopy(_ *testing.T) {
 	store := createTestStore()
 	m := NewDetailModel(store, nil)
 	m.Show("svc1.default.ctx1")
@@ -2233,7 +2233,7 @@ func TestDetailModel_Update_NumberKeyCopy(t *testing.T) {
 	_ = cmd
 }
 
-func TestDetailModel_Update_NumberKeyOutOfRange(t *testing.T) {
+func TestDetailModel_Update_NumberKeyOutOfRange(_ *testing.T) {
 	store := createTestStore()
 	m := NewDetailModel(store, nil)
 	m.Show("svc1.default.ctx1")

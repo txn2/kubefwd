@@ -23,7 +23,7 @@ func FuzzIpFromString(f *testing.F) {
 	f.Add("....")
 	f.Add("1.2.3.4.5.6.7.8")
 
-	f.Fuzz(func(t *testing.T, ipStr string) {
+	f.Fuzz(func(_ *testing.T, ipStr string) {
 		// Should not panic on any input
 		_, _ = ipFromString(ipStr)
 	})
@@ -43,7 +43,7 @@ func FuzzServiceConfigurationFromReservation(f *testing.F) {
 	f.Add("service:not-an-ip")
 	f.Add("multiple:colons:here")
 
-	f.Fuzz(func(t *testing.T, reservation string) {
+	f.Fuzz(func(_ *testing.T, reservation string) {
 		// Should not panic on any input
 		_ = ServiceConfigurationFromReservation(reservation)
 	})

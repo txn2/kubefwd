@@ -32,14 +32,14 @@ func (m *mockDiscovery) ListContexts() (*types.K8sContextsResponse, error) {
 	}, nil
 }
 
-func (m *mockDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	if m.listNsErr != nil {
 		return nil, m.listNsErr
 	}
 	return m.namespaces, nil
 }
 
-func (m *mockDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockDiscovery) ListServices(_, _ string) ([]types.K8sService, error) {
 	if m.listSvcErr != nil {
 		return nil, m.listSvcErr
 	}
@@ -47,22 +47,22 @@ func (m *mockDiscovery) ListServices(ctx, namespace string) ([]types.K8sService,
 }
 
 // Implement remaining interface methods with no-ops
-func (m *mockDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockDiscovery) GetService(_, _, _ string) (*types.K8sService, error) {
 	return nil, nil
 }
-func (m *mockDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockDiscovery) ListPods(_, _ string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return nil, nil
 }
-func (m *mockDiscovery) GetPod(ctx, namespace, name string) (*types.K8sPodDetail, error) {
+func (m *mockDiscovery) GetPod(_, _, _ string) (*types.K8sPodDetail, error) {
 	return nil, nil
 }
-func (m *mockDiscovery) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+func (m *mockDiscovery) GetPodLogs(_, _, _ string, _ types.PodLogsOptions) (*types.PodLogsResponse, error) {
 	return nil, nil
 }
-func (m *mockDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return nil, nil
 }
-func (m *mockDiscovery) GetEndpoints(ctx, namespace, service string) (*types.K8sEndpoints, error) {
+func (m *mockDiscovery) GetEndpoints(_, _, _ string) (*types.K8sEndpoints, error) {
 	return nil, nil
 }
 
@@ -72,7 +72,7 @@ type mockNamespaceController struct {
 	addedNs   []string
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	if m.addErr != nil {
 		return nil, m.addErr
 	}
@@ -84,7 +84,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	}, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return m.removeErr
 }
 
@@ -92,7 +92,7 @@ func (m *mockNamespaceController) ListNamespaces() []types.NamespaceInfoResponse
 	return nil
 }
 
-func (m *mockNamespaceController) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) GetNamespace(_, _ string) (*types.NamespaceInfoResponse, error) {
 	return nil, nil
 }
 
@@ -105,7 +105,7 @@ type mockServiceCRUD struct {
 }
 
 // ServiceController interface methods
-func (m *mockServiceCRUD) Reconnect(key string) error {
+func (m *mockServiceCRUD) Reconnect(_ string) error {
 	return m.reconnectErr
 }
 
@@ -113,7 +113,7 @@ func (m *mockServiceCRUD) ReconnectAll() int {
 	return 0
 }
 
-func (m *mockServiceCRUD) Sync(key string, force bool) error {
+func (m *mockServiceCRUD) Sync(_ string, _ bool) error {
 	return m.syncErr
 }
 
@@ -132,7 +132,7 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return m.removeErr
 }
 
@@ -936,7 +936,7 @@ func TestBrowseModel_AdjustScrollOffset_ScrollUp(t *testing.T) {
 	}
 }
 
-func TestBrowseModel_AdjustScrollOffset_ZeroVisibleItems(t *testing.T) {
+func TestBrowseModel_AdjustScrollOffset_ZeroVisibleItems(_ *testing.T) {
 	m := NewBrowseModel()
 	m.SetSize(80, 5) // Very small, will result in minimum visible items
 

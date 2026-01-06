@@ -83,7 +83,7 @@ The MCP server provides developer-focused tools for:
 	Run: runMCP,
 }
 
-func runMCP(cmd *cobra.Command, args []string) {
+func runMCP(_ *cobra.Command, _ []string) {
 	// Configure logging to stderr (stdout is used for MCP stdio transport)
 	log.SetOutput(os.Stderr)
 	if verbose {
