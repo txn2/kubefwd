@@ -1237,3 +1237,249 @@ func TestFormatDuration(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Detail Model Setter Tests
+// =============================================================================
+
+func TestDetailModel_SetHTTPLogs(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+
+	logs := []HTTPLogEntry{
+		{Timestamp: time.Now(), Method: "GET", Path: "/api/test", StatusCode: 200, Duration: time.Millisecond * 50},
+		{Timestamp: time.Now(), Method: "POST", Path: "/api/data", StatusCode: 201, Duration: time.Millisecond * 100},
+	}
+
+	model.SetHTTPLogs(logs)
+
+	// Verify logs were set
+	if len(model.httpLogs) != 2 {
+		t.Errorf("Expected 2 HTTP logs, got %d", len(model.httpLogs))
+	}
+}
+
+func TestDetailModel_SetPodLogs(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	model.width = 80
+	model.height = 24
+
+	logs := []string{"log line 1", "log line 2", "log line 3"}
+	model.SetPodLogs(logs)
+
+	// Verify logs were set and loading is false
+	if len(model.podLogs) != 3 {
+		t.Errorf("Expected 3 pod logs, got %d", len(model.podLogs))
+	}
+	if model.logsLoading {
+		t.Error("Expected logsLoading to be false after SetPodLogs")
+	}
+}
+
+func TestDetailModel_SetLogsLoading(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+
+	model.SetLogsLoading(true)
+	if !model.logsLoading {
+		t.Error("Expected logsLoading to be true")
+	}
+
+	model.SetLogsLoading(false)
+	if model.logsLoading {
+		t.Error("Expected logsLoading to be false")
+	}
+}
+
+func TestDetailModel_Init(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// Header Model Tests
+// =============================================================================
+
+func TestHeaderModel_Init(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+func TestHeaderModel_SetContext(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+
+	model.SetContext("test-context")
+
+	if model.GetContext() != "test-context" {
+		t.Errorf("Expected context 'test-context', got '%s'", model.GetContext())
+	}
+}
+
+func TestHeaderModel_GetContext(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+
+	// Default context should be empty
+	if model.GetContext() != "" {
+		t.Errorf("Expected empty context, got '%s'", model.GetContext())
+	}
+
+	// Set context via setter and verify
+	model.SetContext("my-ctx")
+	if model.GetContext() != "my-ctx" {
+		t.Errorf("Expected context 'my-ctx', got '%s'", model.GetContext())
+	}
+}
+
+// =============================================================================
+// Help Model Tests
+// =============================================================================
+
+func TestHelpModel_Init(t *testing.T) {
+	model := NewHelpModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// Logs Model Tests
+// =============================================================================
+
+func TestLogsModel_Init(t *testing.T) {
+	model := NewLogsModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// Services Model Tests
+// =============================================================================
+
+func TestServicesModel_Init(t *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+func TestServicesModel_GetSelectedRegistryKey(t *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	model.SetSize(80, 24)
+	model.Refresh()
+
+	// Initially no selection, should return empty
+	key := model.GetSelectedRegistryKey()
+	// Note: depends on whether table has data highlighted
+	// Just verify it doesn't panic
+	_ = key
+}
+
+func TestServicesModel_SelectByY(t *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	model.SetSize(80, 24)
+	model.Refresh()
+
+	// Test SelectByY doesn't panic with various Y values
+	model.SelectByY(0)
+	model.SelectByY(5)
+	model.SelectByY(100)
+	model.SelectByY(-1)
+}
+
+// =============================================================================
+// StatusBar Model Tests
+// =============================================================================
+
+func TestStatusBarModel_Init(t *testing.T) {
+	model := NewStatusBarModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// ClearCopiedAfterDelay Tests
+// =============================================================================
+
+func TestClearCopiedAfterDelay(t *testing.T) {
+	cmd := clearCopiedAfterDelay()
+
+	// Should return a non-nil command (tea.Tick)
+	if cmd == nil {
+		t.Error("Expected clearCopiedAfterDelay to return a non-nil command")
+	}
+}
+
+// =============================================================================
+// Detail Model Render Method Tests (via instance)
+// =============================================================================
+
+func TestDetailModel_RenderStatus(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []struct {
+		status   state.ForwardStatus
+		expected string
+	}{
+		{state.StatusActive, "Active"},
+		{state.StatusError, "Error"},
+		{state.StatusConnecting, "Connecting"},
+		{state.StatusPending, "Pending"},
+	}
+
+	for _, tt := range tests {
+		result := model.renderStatus(tt.status)
+		if !strings.Contains(result, tt.expected) {
+			t.Errorf("renderStatus(%s) = %s, expected to contain %s", tt.status, result, tt.expected)
+		}
+	}
+}
+
+func TestDetailModel_RenderMethod(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "UNKNOWN"}
+
+	for _, method := range tests {
+		result := model.renderMethod(method)
+		if !strings.Contains(result, method) {
+			t.Errorf("renderMethod(%s) should contain the method name", method)
+		}
+	}
+}
+
+func TestDetailModel_RenderStatusCode(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []int{200, 201, 301, 400, 404, 500, 503}
+
+	for _, code := range tests {
+		result := model.renderStatusCode(code)
+		// Should contain the status code as string
+		codeStr := strings.TrimSpace(result)
+		if codeStr == "" {
+			t.Errorf("renderStatusCode(%d) returned empty string", code)
+		}
+	}
+}
