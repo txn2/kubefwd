@@ -600,3 +600,45 @@ func TestGlobalPodInformer_RemovePfo(t *testing.T) {
 		t.Error("Pod should be removed after all pfos are removed")
 	}
 }
+
+// TestStopGlobalPodInformer tests that StopGlobalPodInformer properly stops the informer
+func TestStopGlobalPodInformer(t *testing.T) {
+	t.Cleanup(ResetGlobalPodInformer)
+
+	// First, ensure globalPodInformer is nil
+	ResetGlobalPodInformer()
+
+	// Call StopGlobalPodInformer on nil - should not panic
+	StopGlobalPodInformer()
+
+	// Create a mock informer
+	clientset := fake.NewClientset()
+	stopChannel := make(chan struct{})
+	globalPodInformer = &GlobalPodInformer{
+		clientSet:   clientset,
+		stopChannel: stopChannel,
+		activePods:  make(map[types.UID][]*PortForwardOpts),
+	}
+
+	// Call StopGlobalPodInformer - should stop without panic
+	StopGlobalPodInformer()
+}
+
+// TestResetGlobalPodInformer tests that ResetGlobalPodInformer properly resets state
+func TestResetGlobalPodInformer(t *testing.T) {
+	// Create a mock informer
+	clientset := fake.NewClientset()
+	stopChannel := make(chan struct{})
+	globalPodInformer = &GlobalPodInformer{
+		clientSet:   clientset,
+		stopChannel: stopChannel,
+		activePods:  make(map[types.UID][]*PortForwardOpts),
+	}
+
+	// Reset should clear globalPodInformer
+	ResetGlobalPodInformer()
+
+	if globalPodInformer != nil {
+		t.Error("globalPodInformer should be nil after reset")
+	}
+}
