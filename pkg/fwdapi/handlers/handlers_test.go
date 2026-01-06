@@ -3332,3 +3332,497 @@ func performRequestWithBody(r *gin.Engine, method, path, body string) *httptest.
 	r.ServeHTTP(w, req)
 	return w
 }
+
+// Mock implementation for LogBufferProvider
+
+type mockLogBufferProvider struct {
+	entries []types.LogBufferEntry
+	cleared bool
+}
+
+func (m *mockLogBufferProvider) GetLast(n int) []types.LogBufferEntry {
+	if n >= len(m.entries) {
+		return m.entries
+	}
+	return m.entries[:n]
+}
+
+func (m *mockLogBufferProvider) Count() int {
+	return len(m.entries)
+}
+
+func (m *mockLogBufferProvider) Clear() {
+	m.cleared = true
+	m.entries = nil
+}
+
+// LogsHandler System and ClearSystem tests
+
+func TestLogsHandler_System(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 1"},
+			{Timestamp: time.Now(), Level: "error", Message: "Test error message"},
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 2"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestLogsHandler_SystemWithCount(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 1"},
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 2"},
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 3"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system?count=2")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestLogsHandler_SystemWithLevelFilter(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 1"},
+			{Timestamp: time.Now(), Level: "error", Message: "Test error message"},
+			{Timestamp: time.Now(), Level: "info", Message: "Test message 2"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system?level=error")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestLogsHandler_SystemNilBuffer(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return nil })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestLogsHandler_SystemNilBufferGetter(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil, nil)
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestLogsHandler_SystemInvalidCount(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system?count=invalid")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d (should use default count)", http.StatusOK, w.Code)
+	}
+}
+
+func TestLogsHandler_SystemMaxCount(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.GET("/v1/logs/system", h.System)
+
+	w := performRequest(r, "GET", "/v1/logs/system?count=9999")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d (should cap at 1000)", http.StatusOK, w.Code)
+	}
+}
+
+func TestLogsHandler_ClearSystem(t *testing.T) {
+	r := setupRouter()
+	mockBuffer := &mockLogBufferProvider{
+		entries: []types.LogBufferEntry{
+			{Timestamp: time.Now(), Level: "info", Message: "Test message"},
+		},
+	}
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return mockBuffer })
+	r.DELETE("/v1/logs/system", h.ClearSystem)
+
+	w := performRequest(r, "DELETE", "/v1/logs/system")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	if !mockBuffer.cleared {
+		t.Errorf("Expected buffer to be cleared")
+	}
+}
+
+func TestLogsHandler_ClearSystemNilBuffer(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil, func() types.LogBufferProvider { return nil })
+	r.DELETE("/v1/logs/system", h.ClearSystem)
+
+	w := performRequest(r, "DELETE", "/v1/logs/system")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestLogsHandler_ClearSystemNilBufferGetter(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil, nil)
+	r.DELETE("/v1/logs/system", h.ClearSystem)
+
+	w := performRequest(r, "DELETE", "/v1/logs/system")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+// KubernetesHandler additional endpoint tests
+
+func TestKubernetesHandler_GetPodLogs(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace/:podName/logs", h.GetPodLogs)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/my-pod/logs")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestKubernetesHandler_GetPodLogsWithOptions(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace/:podName/logs", h.GetPodLogs)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/my-pod/logs?container=app&tail_lines=100&previous=true&timestamps=true")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetPodLogsNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/pods/:namespace/:podName/logs", h.GetPodLogs)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/my-pod/logs")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetPodLogsMissingParams(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	// Missing podName parameter
+	r.GET("/v1/kubernetes/pods/:namespace/logs", h.GetPodLogs)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/logs")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListPods(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace", h.ListPods)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestKubernetesHandler_ListPodsWithOptions(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace", h.ListPods)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default?label_selector=app%3Dtest&service_name=my-svc")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListPodsNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/pods/:namespace", h.ListPods)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_ListPodsMissingNamespace(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods", h.ListPods)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetPod(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace/:podName", h.GetPod)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/my-pod")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestKubernetesHandler_GetPodNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/pods/:namespace/:podName", h.GetPod)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default/my-pod")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetPodMissingParams(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/pods/:namespace", h.GetPod)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/pods/default")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetEvents(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/events/:namespace", h.GetEvents)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/events/default")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestKubernetesHandler_GetEventsWithOptions(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/events/:namespace", h.GetEvents)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/events/default?resource_kind=Pod&resource_name=my-pod&limit=50")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetEventsNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/events/:namespace", h.GetEvents)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/events/default")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetEventsMissingNamespace(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/events", h.GetEvents)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/events")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetEndpoints(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/endpoints/:namespace/:serviceName", h.GetEndpoints)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/endpoints/default/my-service")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if !response.Success {
+		t.Errorf("Expected success true, got false")
+	}
+}
+
+func TestKubernetesHandler_GetEndpointsNilDiscovery(t *testing.T) {
+	r := setupRouter()
+	h := NewKubernetesHandler(nil)
+	r.GET("/v1/kubernetes/endpoints/:namespace/:serviceName", h.GetEndpoints)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/endpoints/default/my-service")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestKubernetesHandler_GetEndpointsMissingParams(t *testing.T) {
+	r := setupRouter()
+	mock := &mockKubernetesDiscovery{}
+	h := NewKubernetesHandler(mock)
+	r.GET("/v1/kubernetes/endpoints/:namespace", h.GetEndpoints)
+
+	w := performRequest(r, "GET", "/v1/kubernetes/endpoints/default")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+}
+
+// LogsHandler Stream tests (partial - SSE is complex to fully test)
+
+func TestLogsHandler_StreamNilState(t *testing.T) {
+	r := setupRouter()
+	h := NewLogsHandler(nil, nil)
+	r.GET("/v1/logs/stream", h.Stream)
+
+	w := performRequest(r, "GET", "/v1/logs/stream")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
