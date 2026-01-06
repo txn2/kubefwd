@@ -300,7 +300,7 @@ func TestManager_RunWithoutStateReader(t *testing.T) {
 	err := manager.Run()
 
 	if err == nil {
-		t.Error("Expected error when stateReader is not configured")
+		t.Fatal("Expected error when stateReader is not configured")
 	}
 
 	if err.Error() != "state reader not configured" {
@@ -453,7 +453,7 @@ func (m *mockKubernetesDiscovery) GetPod(_, namespace, podName string) (*types.K
 	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEvents(_, namespace string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockKubernetesDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
 }
 
@@ -655,7 +655,7 @@ func TestLazyNamespaceManagerAdapter_AddNamespace(t *testing.T) {
 
 	_, err := adapter.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
 	if err == nil {
-		t.Error("Expected error when namespace manager is nil")
+		t.Fatal("Expected error when namespace manager is nil")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
@@ -668,7 +668,7 @@ func TestLazyNamespaceManagerAdapter_RemoveNamespace(t *testing.T) {
 
 	err := adapter.RemoveNamespace("minikube", "default")
 	if err == nil {
-		t.Error("Expected error when namespace manager is nil")
+		t.Fatal("Expected error when namespace manager is nil")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
@@ -691,7 +691,7 @@ func TestLazyNamespaceManagerAdapter_GetNamespace(t *testing.T) {
 
 	_, err := adapter.GetNamespace("minikube", "default")
 	if err == nil {
-		t.Error("Expected error when namespace manager is nil")
+		t.Fatal("Expected error when namespace manager is nil")
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
@@ -897,9 +897,134 @@ func TestManager_RunWithMissingStateReader(t *testing.T) {
 
 	err := manager.Run()
 	if err == nil {
-		t.Error("Expected error when stateReader is nil")
+		t.Fatal("Expected error when stateReader is nil")
 	}
 	if err.Error() != "state reader not configured" {
 		t.Errorf("Expected 'state reader not configured', got '%s'", err.Error())
+	}
+}
+
+// TestNamespaceManagerAdapter_ListNamespaces tests listing namespaces
+func TestNamespaceManagerAdapter_ListNamespaces(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// Should return empty list when no watchers
+	namespaces := adapter.ListNamespaces()
+	if len(namespaces) != 0 {
+		t.Errorf("Expected 0 namespaces, got %d", len(namespaces))
+	}
+}
+
+// TestNamespaceManagerAdapter_GetNamespace_NotFound tests getting non-existent namespace
+func TestNamespaceManagerAdapter_GetNamespace_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// Should return error for non-existent namespace
+	_, err := adapter.GetNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_NilManager tests lazy adapter with nil manager
+func TestLazyNamespaceManagerAdapter_NilManager(t *testing.T) {
+	// NewNamespaceManagerAdapter with nil-returning function creates lazy adapter
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	// AddNamespace should return error
+	_, err := adapter.AddNamespace("test-ctx", "default", types.AddNamespaceOpts{})
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// RemoveNamespace should return error
+	err = adapter.RemoveNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// GetNamespace should return error
+	_, err = adapter.GetNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for nil manager")
+	}
+
+	// ListNamespaces should return nil
+	namespaces := adapter.ListNamespaces()
+	if namespaces != nil {
+		t.Error("Expected nil for nil manager")
+	}
+}
+
+// Tests for the direct namespaceManagerAdapter (created via SetNamespaceManager)
+
+// TestDirectNamespaceManagerAdapter_ListNamespaces tests ListNamespaces through SetNamespaceManager
+func TestDirectNamespaceManagerAdapter_ListNamespaces(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	// Create manager and set namespace manager to create direct adapter
+	manager := &Manager{}
+	manager.SetNamespaceManager(mgr)
+
+	// Access the controller created by SetNamespaceManager
+	controller := manager.namespaceController
+
+	// Should return empty list when no watchers
+	namespaces := controller.ListNamespaces()
+	if len(namespaces) != 0 {
+		t.Errorf("Expected 0 namespaces, got %d", len(namespaces))
+	}
+}
+
+// TestDirectNamespaceManagerAdapter_GetNamespace_NotFound tests GetNamespace with non-existent namespace
+func TestDirectNamespaceManagerAdapter_GetNamespace_NotFound(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	// Create manager and set namespace manager
+	manager := &Manager{}
+	manager.SetNamespaceManager(mgr)
+
+	controller := manager.namespaceController
+
+	// Should return error for non-existent namespace
+	_, err := controller.GetNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestDirectNamespaceManagerAdapter_RemoveNamespace tests RemoveNamespace with non-existent namespace
+func TestDirectNamespaceManagerAdapter_RemoveNamespace(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	// Create manager and set namespace manager
+	manager := &Manager{}
+	manager.SetNamespaceManager(mgr)
+
+	controller := manager.namespaceController
+
+	// RemoveNamespace for non-existent watcher should return error
+	err := controller.RemoveNamespace("test-ctx", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
 	}
 }

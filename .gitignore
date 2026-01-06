@@ -3,6 +3,8 @@
 .DS_Store
 .vscode
 *.out
+coverage.html
+coverage.txt
 dist
 vendor
 dist/

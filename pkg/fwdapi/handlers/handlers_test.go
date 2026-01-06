@@ -88,7 +88,7 @@ func (m *mockServiceController) ReconnectAll() int {
 	return len(m.reconnected)
 }
 
-func (m *mockServiceController) Sync(key string, force bool) error {
+func (m *mockServiceController) Sync(_ string, _ bool) error {
 	return m.syncErr
 }
 
@@ -657,14 +657,14 @@ func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return m.summary
 }
 
-func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetServiceDiagnostic(_ string) (*types.ServiceDiagnostic, error) {
 	if m.serviceErr != nil {
 		return nil, m.serviceErr
 	}
 	return m.serviceDiagnostic, nil
 }
 
-func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetForwardDiagnostic(_ string) (*types.ForwardDiagnostic, error) {
 	if m.forwardErr != nil {
 		return nil, m.forwardErr
 	}
@@ -2562,7 +2562,7 @@ type mockNamespaceController struct {
 	getErr     error
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	if m.addErr != nil {
 		return nil, m.addErr
 	}
@@ -2573,7 +2573,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	}, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return m.removeErr
 }
 
@@ -2598,7 +2598,7 @@ type mockServiceCRUD struct {
 	removeErr error
 }
 
-func (m *mockServiceCRUD) Reconnect(key string) error {
+func (m *mockServiceCRUD) Reconnect(_ string) error {
 	return nil
 }
 
@@ -2606,7 +2606,7 @@ func (m *mockServiceCRUD) ReconnectAll() int {
 	return 0
 }
 
-func (m *mockServiceCRUD) Sync(key string, force bool) error {
+func (m *mockServiceCRUD) Sync(_ string, _ bool) error {
 	return nil
 }
 
@@ -2623,7 +2623,7 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return m.removeErr
 }
 
@@ -2637,21 +2637,21 @@ type mockKubernetesDiscovery struct {
 	listCtxErr error
 }
 
-func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockKubernetesDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	if m.listNsErr != nil {
 		return nil, m.listNsErr
 	}
 	return m.namespaces, nil
 }
 
-func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockKubernetesDiscovery) ListServices(_, _ string) ([]types.K8sService, error) {
 	if m.listSvcErr != nil {
 		return nil, m.listSvcErr
 	}
 	return m.services, nil
 }
 
-func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockKubernetesDiscovery) GetService(_, namespace, name string) (*types.K8sService, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
@@ -2682,19 +2682,19 @@ func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opt
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockKubernetesDiscovery) ListPods(_, namespace string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+func (m *mockKubernetesDiscovery) GetPod(_, namespace, podName string) (*types.K8sPodDetail, error) {
 	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockKubernetesDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+func (m *mockKubernetesDiscovery) GetEndpoints(_, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
 }
 
@@ -3046,6 +3046,20 @@ func TestServicesCRUDHandler_RemoveError(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+func TestServicesCRUDHandler_RemoveEmptyKey(t *testing.T) {
+	r := setupRouter()
+	mock := &mockServiceCRUD{}
+	h := NewServicesCRUDHandler(mock)
+	// Note: gin requires at least one character for :key param, so we use a route without the param
+	r.DELETE("/v1/services/", h.Remove)
+
+	w := performRequest(r, "DELETE", "/v1/services/")
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
 }
 
@@ -3826,3 +3840,259 @@ func TestLogsHandler_StreamNilState(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
 	}
 }
+
+// mockEventStreamer for testing SSE event streaming
+type mockEventStreamer struct {
+	eventCh      chan events.Event
+	closed       bool
+	subscribedTo events.EventType
+}
+
+func newMockEventStreamer() *mockEventStreamer {
+	return &mockEventStreamer{
+		eventCh: make(chan events.Event, 10),
+	}
+}
+
+func (m *mockEventStreamer) Subscribe() (<-chan events.Event, func()) {
+	return m.eventCh, func() { m.closed = true }
+}
+
+func (m *mockEventStreamer) SubscribeType(eventType events.EventType) (<-chan events.Event, func()) {
+	m.subscribedTo = eventType
+	return m.eventCh, func() { m.closed = true }
+}
+
+// EventsHandler tests
+
+func TestEventsHandler_StreamNilStreamer(t *testing.T) {
+	r := setupRouter()
+	h := NewEventsHandler(nil)
+	r.GET("/v1/events/stream", h.Stream)
+
+	w := performRequest(r, "GET", "/v1/events/stream")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Success {
+		t.Error("Expected success=false")
+	}
+	if response.Error == nil || response.Error.Code != "NOT_READY" {
+		t.Error("Expected NOT_READY error code")
+	}
+}
+
+func TestEventsHandler_StreamClosedChannel(t *testing.T) {
+	r := setupRouter()
+	streamer := newMockEventStreamer()
+	close(streamer.eventCh) // Close channel before request
+	h := NewEventsHandler(streamer)
+	r.GET("/v1/events/stream", h.Stream)
+
+	w := performRequest(r, "GET", "/v1/events/stream")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+
+	var response types.Response
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if response.Error == nil || response.Error.Code != "EVENT_BUS_UNAVAILABLE" {
+		t.Error("Expected EVENT_BUS_UNAVAILABLE error code")
+	}
+}
+
+func TestEventsHandler_StreamWithTypeFilter(t *testing.T) {
+	// This test verifies that SubscribeType is called with the correct filter.
+	// Full SSE streaming tests are complex due to httptest.ResponseRecorder
+	// not implementing CloseNotifier. Instead we test via closed channel.
+	streamer := newMockEventStreamer()
+
+	// Close the channel immediately to trigger the closed check
+	close(streamer.eventCh)
+
+	r := setupRouter()
+	h := NewEventsHandler(streamer)
+	r.GET("/v1/events/stream", h.Stream)
+
+	req := httptest.NewRequest("GET", "/v1/events/stream?type=ServiceAdded", http.NoBody)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Verify subscription type was set before channel closed
+	if streamer.subscribedTo != events.ServiceAdded {
+		t.Errorf("Expected subscription to ServiceAdded, got %v", streamer.subscribedTo)
+	}
+
+	// Should get error response since channel was closed
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("Expected status %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+// Test mapEventToResponse function
+func TestMapEventToResponse_BasicFields(t *testing.T) {
+	now := time.Now()
+	e := events.Event{
+		Type:       events.ServiceAdded,
+		Timestamp:  now,
+		ServiceKey: "myservice.default.ctx",
+		Service:    "myservice",
+		Namespace:  "default",
+		Context:    "ctx",
+	}
+
+	resp := mapEventToResponse(e)
+
+	if resp.Type != "ServiceAdded" {
+		t.Errorf("Expected type 'ServiceAdded', got '%s'", resp.Type)
+	}
+	if !resp.Timestamp.Equal(now) {
+		t.Error("Timestamp mismatch")
+	}
+	if resp.Data["serviceKey"] != "myservice.default.ctx" {
+		t.Errorf("Expected serviceKey 'myservice.default.ctx', got '%v'", resp.Data["serviceKey"])
+	}
+}
+
+func TestMapEventToResponse_AllOptionalFields(t *testing.T) {
+	err := fmt.Errorf("test error")
+	e := events.Event{
+		Type:          events.PodAdded,
+		Timestamp:     time.Now(),
+		ServiceKey:    "svc.ns.ctx",
+		Service:       "svc",
+		Namespace:     "ns",
+		Context:       "ctx",
+		RegistryKey:   "registry-key",
+		PodName:       "pod-1",
+		ContainerName: "container-1",
+		LocalIP:       "127.0.0.1",
+		LocalPort:     "8080",
+		PodPort:       "80",
+		Hostnames:     []string{"svc", "svc.ns"},
+		Status:        "Running",
+		Error:         err,
+		BytesIn:       1024,
+		BytesOut:      2048,
+		RateIn:        100.5,
+		RateOut:       200.5,
+	}
+
+	resp := mapEventToResponse(e)
+
+	if resp.Data["registryKey"] != "registry-key" {
+		t.Error("Missing registryKey")
+	}
+	if resp.Data["podName"] != "pod-1" {
+		t.Error("Missing podName")
+	}
+	if resp.Data["containerName"] != "container-1" {
+		t.Error("Missing containerName")
+	}
+	if resp.Data["localIP"] != "127.0.0.1" {
+		t.Error("Missing localIP")
+	}
+	if resp.Data["localPort"] != "8080" {
+		t.Error("Missing localPort")
+	}
+	if resp.Data["podPort"] != "80" {
+		t.Error("Missing podPort")
+	}
+	hostnames, ok := resp.Data["hostnames"].([]string)
+	if !ok || len(hostnames) != 2 {
+		t.Error("Missing or invalid hostnames")
+	}
+	if resp.Data["status"] != "Running" {
+		t.Error("Missing status")
+	}
+	if resp.Data["error"] != "test error" {
+		t.Error("Missing error")
+	}
+	if resp.Data["bytesIn"] != uint64(1024) {
+		t.Error("Missing bytesIn")
+	}
+	if resp.Data["bytesOut"] != uint64(2048) {
+		t.Error("Missing bytesOut")
+	}
+	if resp.Data["rateIn"] != 100.5 {
+		t.Error("Missing rateIn")
+	}
+	if resp.Data["rateOut"] != 200.5 {
+		t.Error("Missing rateOut")
+	}
+}
+
+func TestMapEventToResponse_EmptyOptionalFields(t *testing.T) {
+	e := events.Event{
+		Type:       events.ServiceRemoved,
+		Timestamp:  time.Now(),
+		ServiceKey: "svc.ns.ctx",
+		Service:    "svc",
+		Namespace:  "ns",
+		Context:    "ctx",
+	}
+
+	resp := mapEventToResponse(e)
+
+	// These fields should not be present when empty/zero
+	if _, exists := resp.Data["registryKey"]; exists {
+		t.Error("Empty registryKey should not be included")
+	}
+	if _, exists := resp.Data["podName"]; exists {
+		t.Error("Empty podName should not be included")
+	}
+	if _, exists := resp.Data["error"]; exists {
+		t.Error("Nil error should not be included")
+	}
+	if _, exists := resp.Data["bytesIn"]; exists {
+		t.Error("Zero bytesIn should not be included")
+	}
+	if _, exists := resp.Data["rateIn"]; exists {
+		t.Error("Zero rateIn should not be included")
+	}
+}
+
+// Test parseEventType function
+func TestParseEventType_AllTypes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected events.EventType
+	}{
+		{"ServiceAdded", events.ServiceAdded},
+		{"ServiceRemoved", events.ServiceRemoved},
+		{"ServiceUpdated", events.ServiceUpdated},
+		{"PodAdded", events.PodAdded},
+		{"PodRemoved", events.PodRemoved},
+		{"PodStatusChanged", events.PodStatusChanged},
+		{"BandwidthUpdate", events.BandwidthUpdate},
+		{"LogMessage", events.LogMessage},
+		{"ShutdownStarted", events.ShutdownStarted},
+		{"ShutdownComplete", events.ShutdownComplete},
+		{"UnknownType", events.PodStatusChanged}, // Default
+		{"", events.PodStatusChanged},            // Empty defaults
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := parseEventType(tt.input)
+			if result != tt.expected {
+				t.Errorf("parseEventType(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// Note: Full SSE streaming tests for LogsHandler.Stream require a real HTTP server
+// because httptest.ResponseRecorder does not implement http.CloseNotifier.
+// The nil state path is tested in TestLogsHandler_StreamNilState above.

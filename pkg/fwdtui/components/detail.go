@@ -320,255 +320,261 @@ func (m *DetailModel) Init() tea.Cmd {
 	return nil
 }
 
+// handleClearCopied handles the ClearCopiedMsg
+func (m *DetailModel) handleClearCopied() (DetailModel, tea.Cmd) {
+	m.copiedVisible = false
+	m.copiedIndex = -1
+	return *m, nil
+}
+
+// handlePodLogLine handles incoming log lines
+func (m *DetailModel) handlePodLogLine(line string) (DetailModel, tea.Cmd) {
+	m.AppendLogLine(line)
+	return *m, nil
+}
+
+// handlePodLogsError handles log streaming errors
+func (m *DetailModel) handlePodLogsError(err error) (DetailModel, tea.Cmd) {
+	m.logsError = err.Error()
+	m.logsLoading = false
+	m.logsStreaming = false
+	return *m, nil
+}
+
+// handleNumberKey handles number keys 1-9 for copying connect strings
+func (m *DetailModel) handleNumberKey(key string) (DetailModel, tea.Cmd) {
+	if m.currentTab != TabInfo || len(key) != 1 || key[0] < '1' || key[0] > '9' {
+		return *m, nil
+	}
+	idx := int(key[0] - '1')
+	connectStrings := m.getConnectStrings()
+	if idx < len(connectStrings) && copyToClipboard(connectStrings[idx]) {
+		m.copiedIndex = idx
+		m.copiedVisible = true
+		return *m, clearCopiedAfterDelay()
+	}
+	return *m, nil
+}
+
+// handleTabNavigation handles tab/shift+tab navigation
+func (m *DetailModel) handleTabNavigation(forward bool) (DetailModel, tea.Cmd) {
+	prevTab := m.currentTab
+	if forward {
+		m.currentTab = (m.currentTab + 1) % 3
+	} else {
+		m.currentTab = (m.currentTab + 2) % 3
+	}
+
+	var cmds []tea.Cmd
+
+	// Stop streaming if leaving Logs tab
+	if prevTab == TabLogs && m.logsStreaming {
+		m.logsStreaming = false
+		cmds = append(cmds, func() tea.Msg { return PodLogsStopMsg{} })
+	}
+
+	// Start streaming if entering Logs tab
+	if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
+		m.logsLoading = true
+		m.podLogs = nil
+		m.logsViewportReady = false
+		cmds = append(cmds, m.requestPodLogs())
+	}
+
+	if len(cmds) > 0 {
+		return *m, tea.Batch(cmds...)
+	}
+	return *m, nil
+}
+
+// handleYankKey handles the 'y' key for copying
+func (m *DetailModel) handleYankKey() (DetailModel, tea.Cmd) {
+	if m.currentTab != TabInfo {
+		return *m, nil
+	}
+	connectStrings := m.getConnectStrings()
+	if len(connectStrings) > 0 && copyToClipboard(connectStrings[0]) {
+		m.copiedIndex = 0
+		m.copiedVisible = true
+		return *m, clearCopiedAfterDelay()
+	}
+	return *m, nil
+}
+
+// handleHTTPScroll handles scroll operations for HTTP tab
+func (m *DetailModel) handleHTTPScroll(delta int) {
+	m.httpScrollOffset += delta
+	maxScroll := m.getHTTPMaxScroll()
+	if m.httpScrollOffset > maxScroll {
+		m.httpScrollOffset = maxScroll
+	}
+	if m.httpScrollOffset < 0 {
+		m.httpScrollOffset = 0
+	}
+}
+
+// handleVimScrollHTTP handles j/k/g/G for HTTP tab, returns true if handled
+func (m *DetailModel) handleVimScrollHTTP(key string) bool {
+	if m.currentTab != TabHTTP {
+		return false
+	}
+	switch key {
+	case "j":
+		m.handleHTTPScroll(1)
+	case "k":
+		m.handleHTTPScroll(-1)
+	case "g":
+		m.httpScrollOffset = 0
+	case "G":
+		m.httpScrollOffset = m.getHTTPMaxScroll()
+	}
+	return true
+}
+
+// handleVimScrollLogs handles j/k/g/G for Logs tab
+func (m *DetailModel) handleVimScrollLogs(key string) {
+	if m.currentTab != TabLogs || !m.logsViewportReady {
+		return
+	}
+	switch key {
+	case "j":
+		m.logsViewport.ScrollDown(1)
+	case "k":
+		m.logsViewport.ScrollUp(1)
+		m.logsAutoFollow = false
+	case "g":
+		m.logsViewport.GotoTop()
+		m.logsAutoFollow = false
+	case "G":
+		m.logsViewport.GotoBottom()
+		m.logsAutoFollow = true
+	}
+}
+
+// handleVimScroll handles j/k/g/G keys
+func (m *DetailModel) handleVimScroll(key string) (DetailModel, tea.Cmd) {
+	if m.handleVimScrollHTTP(key) {
+		return *m, nil
+	}
+	m.handleVimScrollLogs(key)
+	return *m, nil
+}
+
+// handleArrowScroll handles arrow keys, page up/down, ctrl+d/u
+func (m *DetailModel) handleArrowScroll(key string) (DetailModel, tea.Cmd) {
+	isDown := key == "down" || key == "pgdown" || key == "ctrl+d"
+	isPageMove := key != "down" && key != "up"
+
+	if m.currentTab == TabHTTP {
+		delta := 1
+		if isPageMove {
+			delta = m.getViewportHeight() / 2
+			if delta < 1 {
+				delta = 1
+			}
+		}
+		if !isDown {
+			delta = -delta
+		}
+		m.handleHTTPScroll(delta)
+		return *m, nil
+	}
+
+	// For Logs tab with up keys, pause auto-follow
+	if !isDown && m.currentTab == TabLogs && m.logsViewportReady {
+		m.logsAutoFollow = false
+	}
+	return *m, nil
+}
+
+// handleHomeEnd handles home/end keys
+func (m *DetailModel) handleHomeEnd(key string) (DetailModel, tea.Cmd) {
+	isEnd := key == "end"
+	if m.currentTab == TabHTTP {
+		if isEnd {
+			m.httpScrollOffset = m.getHTTPMaxScroll()
+		} else {
+			m.httpScrollOffset = 0
+		}
+		return *m, nil
+	} else if m.currentTab == TabLogs && m.logsViewportReady {
+		m.logsAutoFollow = isEnd
+	}
+	return *m, nil
+}
+
+// handleKeyMsg handles all keyboard input
+func (m *DetailModel) handleKeyMsg(msg tea.KeyMsg) (DetailModel, tea.Cmd) {
+	key := msg.String()
+
+	// Number keys 1-9 for copying connect strings
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		return m.handleNumberKey(key)
+	}
+
+	switch key {
+	case "esc", "q":
+		return *m, m.Hide()
+	case "r":
+		return *m, func() tea.Msg { return ReconnectErroredMsg{} }
+	case "tab", "right":
+		return m.handleTabNavigation(true)
+	case "shift+tab", "left":
+		return m.handleTabNavigation(false)
+	case "y":
+		return m.handleYankKey()
+	case "j", "k", "g", "G":
+		return m.handleVimScroll(key)
+	case "down", "pgdown", "ctrl+d", "up", "pgup", "ctrl+u":
+		return m.handleArrowScroll(key)
+	case "home", "end":
+		return m.handleHomeEnd(key)
+	}
+	return *m, nil
+}
+
+// handleMouseMsg handles mouse input
+func (m *DetailModel) handleMouseMsg(msg tea.MouseMsg) (DetailModel, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.currentTab == TabHTTP {
+			m.handleHTTPScroll(-3)
+			return *m, nil
+		} else if m.currentTab == TabLogs && m.logsViewportReady {
+			m.logsAutoFollow = false
+		}
+	case tea.MouseButtonWheelDown:
+		if m.currentTab == TabHTTP {
+			m.handleHTTPScroll(3)
+			return *m, nil
+		}
+	}
+	return *m, nil
+}
+
 // Update handles keyboard input for the detail view
 func (m *DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
-	// Capture position BEFORE any scrolling to track user intent (for logs tab)
 	wasAtBottom := m.logsViewportReady && m.currentTab == TabLogs && m.logsViewport.AtBottom()
 
 	switch msg := msg.(type) {
 	case ClearCopiedMsg:
-		m.copiedVisible = false
-		m.copiedIndex = -1
-		return *m, nil
-
+		return m.handleClearCopied()
 	case PodLogLineMsg:
-		// Append log line from stream
-		m.AppendLogLine(msg.Line)
-		return *m, nil
-
+		return m.handlePodLogLine(msg.Line)
 	case PodLogsErrorMsg:
-		m.logsError = msg.Error.Error()
-		m.logsLoading = false
-		m.logsStreaming = false
-		return *m, nil
-
+		return m.handlePodLogsError(msg.Error)
 	case tea.KeyMsg:
-		key := msg.String()
-
-		// Number keys 1-9 copy specific connect strings (only on Info tab)
-		if m.currentTab == TabInfo && len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-			idx := int(key[0] - '1') // Convert '1'-'9' to 0-8
-			connectStrings := m.getConnectStrings()
-			if idx < len(connectStrings) {
-				if copyToClipboard(connectStrings[idx]) {
-					m.copiedIndex = idx
-					m.copiedVisible = true
-					return *m, clearCopiedAfterDelay()
-				}
-			}
-			return *m, nil
-		}
-
-		switch key {
-		case "esc", "q":
-			cmd := m.Hide()
-			return *m, cmd
-
-		case "r":
-			// Request reconnection of errored services (handled by RootModel)
-			return *m, func() tea.Msg { return ReconnectErroredMsg{} }
-
-		case "tab", "right":
-			prevTab := m.currentTab
-			m.currentTab = (m.currentTab + 1) % 3
-
-			var cmds []tea.Cmd
-
-			// Stop streaming if leaving Logs tab
-			if prevTab == TabLogs && m.logsStreaming {
-				m.logsStreaming = false
-				cmds = append(cmds, func() tea.Msg { return PodLogsStopMsg{} })
-			}
-
-			// Start streaming if entering Logs tab
-			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
-				m.logsLoading = true
-				m.podLogs = nil             // Clear old logs
-				m.logsViewportReady = false // Reset viewport
-				cmds = append(cmds, m.requestPodLogs())
-			}
-
-			if len(cmds) > 0 {
-				return *m, tea.Batch(cmds...)
-			}
-			return *m, nil
-
-		case "shift+tab", "left":
-			prevTab := m.currentTab
-			m.currentTab = (m.currentTab + 2) % 3 // +2 is same as -1 mod 3
-
-			// Stop streaming if leaving Logs tab
-			if prevTab == TabLogs && m.logsStreaming {
-				m.logsStreaming = false
-				return *m, func() tea.Msg { return PodLogsStopMsg{} }
-			}
-
-			// Start streaming if entering Logs tab
-			if m.currentTab == TabLogs && !m.logsStreaming && !m.logsLoading {
-				m.logsLoading = true
-				m.podLogs = nil
-				m.logsViewportReady = false // Reset viewport
-				return *m, m.requestPodLogs()
-			}
-			return *m, nil
-
-		case "y": // Yank/copy first connect string (only on Info tab)
-			if m.currentTab == TabInfo {
-				connectStrings := m.getConnectStrings()
-				if len(connectStrings) > 0 {
-					if copyToClipboard(connectStrings[0]) {
-						m.copiedIndex = 0
-						m.copiedVisible = true
-						return *m, clearCopiedAfterDelay()
-					}
-				}
-			}
-			return *m, nil
-
-		case "j":
-			// Vim-style scroll - viewport doesn't handle 'j'
-			if m.currentTab == TabHTTP {
-				maxScroll := m.getHTTPMaxScroll()
-				if m.httpScrollOffset < maxScroll {
-					m.httpScrollOffset++
-				}
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.ScrollDown(1)
-			}
-
-		case "k":
-			// Vim-style scroll - viewport doesn't handle 'k'
-			if m.currentTab == TabHTTP {
-				if m.httpScrollOffset > 0 {
-					m.httpScrollOffset--
-				}
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.ScrollUp(1)
-				m.logsAutoFollow = false // User is pausing
-			}
-
-		case "g":
-			// Vim-style go to top - viewport doesn't handle 'g'
-			if m.currentTab == TabHTTP {
-				m.httpScrollOffset = 0
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.GotoTop()
-				m.logsAutoFollow = false // User is pausing
-			}
-
-		case "G":
-			// Vim-style go to bottom - viewport doesn't handle 'G'
-			if m.currentTab == TabHTTP {
-				m.httpScrollOffset = m.getHTTPMaxScroll()
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsViewport.GotoBottom()
-				m.logsAutoFollow = true // User explicitly resumed
-			}
-
-		case "down", "pgdown", "ctrl+d":
-			// Let viewport handle scrolling for Logs tab
-			if m.currentTab == TabHTTP {
-				if key == "down" {
-					maxScroll := m.getHTTPMaxScroll()
-					if m.httpScrollOffset < maxScroll {
-						m.httpScrollOffset++
-					}
-				} else {
-					pageSize := m.getViewportHeight() / 2
-					if pageSize < 1 {
-						pageSize = 1
-					}
-					m.httpScrollOffset += pageSize
-					maxScroll := m.getHTTPMaxScroll()
-					if m.httpScrollOffset > maxScroll {
-						m.httpScrollOffset = maxScroll
-					}
-				}
-				return *m, nil
-			}
-			// For Logs tab, viewport.Update handles the scroll below
-			// wasAtBottom check at the end will resume autoFollow if needed
-
-		case "up", "pgup", "ctrl+u":
-			if m.currentTab == TabHTTP {
-				if key == "up" {
-					if m.httpScrollOffset > 0 {
-						m.httpScrollOffset--
-					}
-				} else {
-					pageSize := m.getViewportHeight() / 2
-					if pageSize < 1 {
-						pageSize = 1
-					}
-					m.httpScrollOffset -= pageSize
-					if m.httpScrollOffset < 0 {
-						m.httpScrollOffset = 0
-					}
-				}
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsAutoFollow = false // User scrolling up = pausing
-			}
-
-		case "home":
-			if m.currentTab == TabHTTP {
-				m.httpScrollOffset = 0
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsAutoFollow = false // User going to top = pausing
-			}
-
-		case "end":
-			if m.currentTab == TabHTTP {
-				m.httpScrollOffset = m.getHTTPMaxScroll()
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				m.logsAutoFollow = true // User going to bottom = resuming
-			}
-
-		}
-
+		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
-
 	case tea.MouseMsg:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			if m.currentTab == TabHTTP && m.httpScrollOffset > 0 {
-				m.httpScrollOffset -= 3
-				if m.httpScrollOffset < 0 {
-					m.httpScrollOffset = 0
-				}
-				return *m, nil
-			} else if m.currentTab == TabLogs && m.logsViewportReady {
-				// Let viewport handle the scroll, just set pause intent
-				m.logsAutoFollow = false // User scrolling up = pausing
-			}
-		case tea.MouseButtonWheelDown:
-			if m.currentTab == TabHTTP {
-				maxScroll := m.getHTTPMaxScroll()
-				m.httpScrollOffset += 3
-				if m.httpScrollOffset > maxScroll {
-					m.httpScrollOffset = maxScroll
-				}
-				return *m, nil
-			}
-			// For Logs tab, viewport.Update handles the scroll below
-			// wasAtBottom check at the end will resume autoFollow if needed
-		}
+		return m.handleMouseMsg(msg)
 	}
 
-	// Let viewport handle its own updates (required for scrolling to work)
+	// Let viewport handle its own updates
 	var cmd tea.Cmd
 	if m.logsViewportReady && m.currentTab == TabLogs {
 		m.logsViewport, cmd = m.logsViewport.Update(msg)
-
-		// Resume autoFollow if user scrolled TO the bottom
-		// (they were not at bottom before, but are now)
 		if !wasAtBottom && m.logsViewport.AtBottom() {
 			m.logsAutoFollow = true
 		}

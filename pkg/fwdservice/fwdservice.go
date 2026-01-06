@@ -319,132 +319,136 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	return podsEligible
 }
 
+// forwardInfo holds forward key and pod name for sync operations
+type forwardInfo struct {
+	key     string
+	podName string
+}
+
+// isPodEligible checks if a pod is eligible for forwarding
+func isPodEligible(pod v1.Pod) bool {
+	return (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil
+}
+
+// scheduleRetry schedules a retry for pod sync if no pods were found
+func (svcFwd *ServiceFWD) scheduleRetry() {
+	if svcFwd.RetryInterval > 0 {
+		go func() {
+			select {
+			case <-svcFwd.DoneChannel:
+				return
+			case <-time.After(svcFwd.RetryInterval):
+				svcFwd.SyncPodForwards(false)
+			}
+		}()
+	}
+}
+
+// getForwardInfos returns a snapshot of current forwards
+func (svcFwd *ServiceFWD) getForwardInfos() []forwardInfo {
+	svcFwd.NamespaceServiceLock.Lock()
+	defer svcFwd.NamespaceServiceLock.Unlock()
+	forwards := make([]forwardInfo, 0, len(svcFwd.PortForwards))
+	for key, pfo := range svcFwd.PortForwards {
+		forwards = append(forwards, forwardInfo{key: key, podName: pfo.PodName})
+	}
+	return forwards
+}
+
+// removeStaleForwards removes forwards for pods no longer in the eligible list
+func (svcFwd *ServiceFWD) removeStaleForwards(k8sPods []v1.Pod) {
+	forwards := svcFwd.getForwardInfos()
+	for _, fwd := range forwards {
+		if !svcFwd.podStillEligible(fwd.podName, k8sPods) {
+			svcFwd.RemoveServicePod(fwd.key)
+		}
+	}
+}
+
+// podStillEligible checks if a pod name is in the eligible pods list
+func (svcFwd *ServiceFWD) podStillEligible(podName string, k8sPods []v1.Pod) bool {
+	for _, pod := range k8sPods {
+		if podName == pod.Name && isPodEligible(pod) {
+			return true
+		}
+	}
+	return false
+}
+
+// findKeyToKeep finds a forward key for a pod that is still eligible
+func (svcFwd *ServiceFWD) findKeyToKeep(k8sPods []v1.Pod) string {
+	forwards := svcFwd.getForwardInfos()
+	for _, fwd := range forwards {
+		if svcFwd.podStillEligible(fwd.podName, k8sPods) {
+			return fwd.key
+		}
+	}
+	return ""
+}
+
+// syncHeadlessService syncs forwards for a headless service
+func (svcFwd *ServiceFWD) syncHeadlessService(k8sPods []v1.Pod) {
+	svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+	svcFwd.LoopPodsToForward(k8sPods, true)
+}
+
+// syncNormalService syncs forwards for a normal (non-headless) service
+func (svcFwd *ServiceFWD) syncNormalService(k8sPods []v1.Pod) {
+	keyToKeep := svcFwd.findKeyToKeep(k8sPods)
+
+	// Remove forwards for pods we're not keeping
+	forwards := svcFwd.getForwardInfos()
+	for _, fwd := range forwards {
+		if fwd.key != keyToKeep {
+			svcFwd.RemoveServicePod(fwd.key)
+		}
+	}
+
+	// Start new forward if needed
+	if keyToKeep == "" {
+		svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+	}
+}
+
+// doSyncPods performs the actual pod sync logic
+func (svcFwd *ServiceFWD) doSyncPods(force bool) {
+	if !svcFwd.noPodsLogged {
+		log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
+	}
+	k8sPods := svcFwd.GetPodsForService()
+	if !svcFwd.noPodsLogged || len(k8sPods) > 0 {
+		log.Infof("SyncPodForwards: Found %d eligible pods for service %s", len(k8sPods), svcFwd)
+	}
+
+	if len(k8sPods) == 0 {
+		if !svcFwd.noPodsLogged {
+			log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
+			svcFwd.noPodsLogged = true
+		}
+		svcFwd.scheduleRetry()
+		return
+	}
+
+	if svcFwd.noPodsLogged {
+		log.Infof("Pods now available for service %s", svcFwd)
+		svcFwd.noPodsLogged = false
+	}
+
+	defer func() { svcFwd.LastSyncedAt = time.Now() }()
+
+	svcFwd.removeStaleForwards(k8sPods)
+
+	if svcFwd.Headless {
+		svcFwd.syncHeadlessService(k8sPods)
+	} else {
+		svcFwd.syncNormalService(k8sPods)
+	}
+}
+
 // SyncPodForwards selects one or all pods behind a service, and invokes
 // the forwarding setup for that or those pod(s). It will remove pods in-mem
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
-	doSync := func() {
-		// Only log sync details if we haven't already logged "no pods" (avoid log spam)
-		if !svcFwd.noPodsLogged {
-			log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
-		}
-		k8sPods := svcFwd.GetPodsForService()
-		if !svcFwd.noPodsLogged || len(k8sPods) > 0 {
-			log.Infof("SyncPodForwards: Found %d eligible pods for service %s", len(k8sPods), svcFwd)
-		}
-
-		// If no pods are found currently, schedule a retry if configured.
-		if len(k8sPods) == 0 {
-			// Only log warning once to avoid spamming logs
-			if !svcFwd.noPodsLogged {
-				log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
-				svcFwd.noPodsLogged = true
-			}
-			// Schedule retry - don't update LastSyncedAt so we retry sooner
-			if svcFwd.RetryInterval > 0 {
-				go func() {
-					select {
-					case <-svcFwd.DoneChannel:
-						return // Service is shutting down
-					case <-time.After(svcFwd.RetryInterval):
-						svcFwd.SyncPodForwards(false)
-					}
-				}()
-			}
-			return
-		}
-
-		// Pods found - reset the no-pods log flag so we log again if they disappear
-		if svcFwd.noPodsLogged {
-			log.Infof("Pods now available for service %s", svcFwd)
-			svcFwd.noPodsLogged = false
-		}
-
-		// Only update LastSyncedAt after successful pod discovery
-		defer func() { svcFwd.LastSyncedAt = time.Now() }()
-
-		// Note: Backoff reset moved to PortForward() when connection actually succeeds.
-		// Resetting here was causing rapid reconnection loops during pod transitions
-		// because pods would be found but connections would immediately fail.
-
-		// Check if the pods currently being forwarded still exist in k8s and if
-		// they are not in a (pre-)running state, if not: remove them
-		// NOTE: We must iterate over the map values (PortForwardOpts) to get the actual pod names,
-		// because the map keys are in format "service.podname.port", not just pod names.
-		type forwardInfo struct {
-			key     string
-			podName string
-		}
-		svcFwd.NamespaceServiceLock.Lock()
-		forwards := make([]forwardInfo, 0, len(svcFwd.PortForwards))
-		for key, pfo := range svcFwd.PortForwards {
-			forwards = append(forwards, forwardInfo{key: key, podName: pfo.PodName})
-		}
-		svcFwd.NamespaceServiceLock.Unlock()
-
-		for _, fwd := range forwards {
-			keep := false
-			for _, pod := range k8sPods {
-				if fwd.podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
-					keep = true
-					break
-				}
-			}
-			if !keep {
-				svcFwd.RemoveServicePod(fwd.key)
-			}
-		}
-
-		// Set up port-forwarding for one or all of these pods normal service
-		// port-forward the first pod as service name. headless service not only
-		// forward first Pod as service name, but also port-forward all pods.
-		if len(k8sPods) != 0 {
-
-			// if this is a headless service forward the first pod from the
-			// service name, then subsequent pods from their pod name
-			if svcFwd.Headless {
-				svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
-				svcFwd.LoopPodsToForward(k8sPods, true)
-				return
-			}
-
-			// Check if currently we are forwarding a pod which is good to keep using
-			// NOTE: We must get the actual pod names from PortForwardOpts, not from map keys
-			keyToKeep := ""
-			svcFwd.NamespaceServiceLock.Lock()
-			currentForwards := make([]forwardInfo, 0, len(svcFwd.PortForwards))
-			for key, pfo := range svcFwd.PortForwards {
-				currentForwards = append(currentForwards, forwardInfo{key: key, podName: pfo.PodName})
-			}
-			svcFwd.NamespaceServiceLock.Unlock()
-
-			for _, fwd := range currentForwards {
-				if keyToKeep != "" {
-					break
-				}
-				for _, pod := range k8sPods {
-					if fwd.podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) && pod.DeletionTimestamp == nil {
-						keyToKeep = fwd.key
-						break
-					}
-				}
-			}
-
-			// Stop forwarding others, should there be. In case none of the currently
-			// forwarded pods are good to keep, keyToKeep will be the empty string,
-			// and the comparison will mean we will remove all pods, which is the desired behavior.
-			for _, fwd := range currentForwards {
-				if fwd.key != keyToKeep {
-					svcFwd.RemoveServicePod(fwd.key)
-				}
-			}
-
-			// If no good pod was being forwarded already, start one
-			if keyToKeep == "" {
-				svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
-			}
-		}
-	}
 	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call.
 	// This would hammer k8s with load needlessly.  We therefore use a debouncer to only update pods
 	// if things have been stable for at least a few seconds.  However, if things never stabilize we
@@ -454,14 +458,10 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		resyncInterval = 5 * time.Minute // default fallback
 	}
 	if force || time.Since(svcFwd.LastSyncedAt) > resyncInterval {
-		// Replace current debounced function with no-op
 		svcFwd.SyncDebouncer(func() {})
-
-		// Do the syncing work
-		doSync()
+		svcFwd.doSyncPods(force)
 	} else {
-		// Queue sync
-		svcFwd.SyncDebouncer(doSync)
+		svcFwd.SyncDebouncer(func() { svcFwd.doSyncPods(force) })
 	}
 }
 

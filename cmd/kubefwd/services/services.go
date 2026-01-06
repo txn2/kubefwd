@@ -33,6 +33,7 @@ import (
 	utilRuntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // cmdline arguments
@@ -170,13 +171,9 @@ func checkConnection(clientSet kubernetes.Interface, namespaces []string) error 
 	return nil
 }
 
-func runCmd(cmd *cobra.Command, _ []string) {
-	if verbose {
-		log.SetLevel(log.DebugLevel)
-	}
-
+// validateEnvironment checks root privileges and hosts file
+func validateEnvironment() bool {
 	hasRoot, err := utils.CheckRoot()
-
 	if !hasRoot {
 		log.Errorf(`
 This program requires superuser privileges to run. These
@@ -192,63 +189,60 @@ Try:
 		if err != nil {
 			log.Fatalf("Root check failure: %s", err.Error())
 		}
-		return
+		return false
 	}
 
-	_, err = os.Stat(hostsPath)
-	if err != nil {
+	if _, err = os.Stat(hostsPath); err != nil {
 		log.Fatalf("Hosts path does not exist: %s", hostsPath)
 	}
+	return true
+}
 
-	// Detect idle mode: no namespaces specified and not --all-namespaces
-	// In idle mode, API is enabled automatically and kubefwd waits for API calls
+// detectAndConfigureIdleMode detects idle mode and configures flags
+func detectAndConfigureIdleMode(cmd *cobra.Command) bool {
 	idleMode := len(namespaces) == 0 && !isAllNs
 	if idleMode {
-		// Enable API automatically in idle mode
 		if !cmd.Flags().Changed("api") {
 			apiMode = true
 		}
-		// Enable auto-reconnect automatically in idle mode
 		if !cmd.Flags().Changed("auto-reconnect") {
 			autoReconnect = true
 		}
 		log.Println("Starting in idle mode - API enabled, waiting for namespaces/services via API")
 	}
+	return idleMode
+}
 
-	// Initialize TUI mode if enabled
-	if tuiMode {
-		fwdtui.Version = Version
-		fwdtui.Enable()
-		// Start metrics registry sampling EARLY, before port forwards begin
-		// This ensures rate calculation has samples from the start of data transfer
-		fwdmetrics.GetRegistry().Start()
-
-		// In TUI mode, enable auto-reconnect by default unless user explicitly disabled it
-		if !cmd.Flags().Changed("auto-reconnect") {
-			autoReconnect = true
-		}
+// initializeTUIMode sets up TUI mode if enabled
+func initializeTUIMode(cmd *cobra.Command) {
+	if !tuiMode {
+		return
 	}
-
-	// Initialize API mode if enabled
-	if apiMode {
-		fwdapi.Enable()
-
-		// In API mode, enable auto-reconnect by default unless user explicitly disabled it
-		if !cmd.Flags().Changed("auto-reconnect") {
-			autoReconnect = true
-		}
+	fwdtui.Version = Version
+	fwdtui.Enable()
+	fwdmetrics.GetRegistry().Start()
+	if !cmd.Flags().Changed("auto-reconnect") {
+		autoReconnect = true
 	}
+}
 
-	// Only show instructions in non-TUI mode (and non-API-only/idle mode)
-	if !tuiMode && !apiMode && !idleMode {
-		log.Println("Press [Ctrl-C] to stop forwarding.")
-		log.Println("'cat " + hostsPath + "' to see all host entries.")
+// initializeAPIMode sets up API mode if enabled
+func initializeAPIMode(cmd *cobra.Command) {
+	if !apiMode {
+		return
 	}
+	fwdapi.Enable()
+	if !cmd.Flags().Changed("auto-reconnect") {
+		autoReconnect = true
+	}
+}
 
+// setupHostsFile initializes and backs up the hosts file
+func setupHostsFile() *txeh.Hosts {
 	hostFile, err := txeh.NewHosts(&txeh.HostsConfig{
 		ReadFilePath:    hostsPath,
 		WriteFilePath:   hostsPath,
-		MaxHostsPerLine: 0, // Auto: 9 on Windows, unlimited elsewhere
+		MaxHostsPerLine: 0,
 	})
 	if err != nil {
 		log.Fatalf("HostFile error: %s", err.Error())
@@ -260,9 +254,14 @@ Try:
 	if err != nil {
 		log.Fatalf("Error backing up hostfile: %s\n", err.Error())
 	}
-
 	log.Printf("HostFile management: %s", msg)
 
+	handleStaleIPs(hostFile)
+	return hostFile
+}
+
+// handleStaleIPs purges or reports stale IP entries
+func handleStaleIPs(hostFile *txeh.Hosts) {
 	if purgeStaleIps {
 		count, err := fwdhost.PurgeStaleIps(hostFile)
 		if err != nil {
@@ -277,192 +276,52 @@ Try:
 			log.Infof("HOUSEKEEPING: Found %d existing host entries in kubefwd IP range. These will not affect operation and will be preserved. Use -p to purge on next run if you no longer need them.", staleCount)
 		}
 	}
+}
 
-	if domain != "" {
-		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)
-	}
-
-	// if sudo -E is used and the KUBECONFIG environment variable is set
-	// it's easy to merge with kubeconfig files in env automatic.
-	// if KUBECONFIG is blank, ToRawKubeConfigLoader() will use the
-	// default kubeconfig file in $HOME/.kube/config
-	cfgFilePath := ""
-
-	// if we set the option --kubeconfig, It will have a higher priority
-	// than KUBECONFIG environment. so it will override the KubeConfig options.
+// getKubeConfigPath returns the kubeconfig path from flag or default
+func getKubeConfigPath(cmd *cobra.Command) string {
 	flagCfgFilePath := cmd.Flag("kubeconfig").Value.String()
 	if flagCfgFilePath != "" {
-		cfgFilePath = flagCfgFilePath
+		return flagCfgFilePath
+	}
+	return ""
+}
+
+// setupListOptions creates list options from command flags
+func setupListOptions(cmd *cobra.Command) metav1.ListOptions {
+	return metav1.ListOptions{
+		LabelSelector: cmd.Flag("selector").Value.String(),
+		FieldSelector: cmd.Flag("field-selector").Value.String(),
+	}
+}
+
+// resolveNamespaces determines namespaces from config if not specified
+func resolveNamespaces(rawConfig *clientcmdapi.Config, idleMode bool) {
+	if len(namespaces) >= 1 || idleMode {
+		return
+	}
+	namespaces = []string{"default"}
+	x := rawConfig.CurrentContext
+	if len(contexts) > 0 {
+		x = contexts[0]
 	}
 
-	// create a ConfigGetter
-	configGetter := fwdcfg.NewConfigGetter()
-	// build the ClientConfig
-	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
-	if err != nil {
-		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
-	}
-
-	// labels selector to filter services
-	// see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-	listOptions := metav1.ListOptions{}
-	listOptions.LabelSelector = cmd.Flag("selector").Value.String()
-	listOptions.FieldSelector = cmd.Flag("field-selector").Value.String()
-
-	// if no namespaces were specified via the flags, check config from the k8s context
-	// then explicitly set one to "default" (unless in idle mode)
-	if len(namespaces) < 1 && !idleMode {
-		namespaces = []string{"default"}
-		x := rawConfig.CurrentContext
-		// use the first context if specified
-		if len(contexts) > 0 {
-			x = contexts[0]
-		}
-
-		for ctxName, ctxConfig := range rawConfig.Contexts {
-			if ctxName == x {
-				if ctxConfig.Namespace != "" {
-					log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
-					namespaces = []string{ctxConfig.Namespace}
-					break
-				}
-			}
+	for ctxName, ctxConfig := range rawConfig.Contexts {
+		if ctxName == x && ctxConfig.Namespace != "" {
+			log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
+			namespaces = []string{ctxConfig.Namespace}
+			break
 		}
 	}
+}
 
-	stopListenCh := make(chan struct{})
-
-	// Initialize TUI manager if in TUI mode
-	var tuiManager *fwdtui.Manager
-	var apiManager *fwdapi.Manager
-	var stopOnce sync.Once
-	triggerShutdown := func() {
-		stopOnce.Do(func() {
-			close(stopListenCh)
-		})
-	}
-	// Map of context -> clientSet for pod log streaming
-	clientSets := make(map[string]*kubernetes.Clientset)
-	var clientSetsMu sync.RWMutex
-
-	// Declare nsManager here so it can be captured by closures below
-	// It will be assigned later after config validation
-	var nsManager *fwdns.NamespaceManager
-
-	if fwdtui.IsEnabled() {
-		tuiManager = fwdtui.Init(stopListenCh, triggerShutdown)
-
-		// Set up pod logs streamer
-		tuiManager.SetPodLogsStreamer(func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
-			// First try the local clientSets map (populated during namespace watcher startup)
-			clientSetsMu.RLock()
-			cs, ok := clientSets[k8sContext]
-			clientSetsMu.RUnlock()
-
-			// Use kubernetes.Interface to support both *Clientset and Interface types
-			// Note: Must check ok && cs != nil because assigning nil pointer to interface
-			// creates non-nil interface with nil concrete value (Go nil interface gotcha)
-			var clientSet kubernetes.Interface
-			if ok && cs != nil {
-				clientSet = cs
-			}
-
-			if clientSet == nil {
-				// Fall back to NamespaceManager's cache for individually-added services
-				if nsManager != nil {
-					clientSet = nsManager.GetClientSet(k8sContext)
-				}
-				if clientSet == nil {
-					return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
-				}
-			}
-
-			opts := &v1.PodLogOptions{
-				Follow:    true,
-				TailLines: &tailLines,
-			}
-			// Set container name if specified (required for multi-container pods)
-			if containerName != "" {
-				opts.Container = containerName
-			}
-
-			return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
-		})
-
-		// Set up errored services reconnector
-		tuiManager.SetErroredServicesReconnector(func() int {
-			store := fwdtui.GetStore()
-			if store == nil {
-				return 0
-			}
-
-			forwards := store.GetFiltered()
-
-			// Collect unique registry keys with errors
-			// Use RegistryKey (not ServiceKey) for proper registry lookup
-			// ServiceKey may include pod name for headless services, but registry uses service.namespace.context
-			erroredServices := make(map[string]bool)
-			for _, fwd := range forwards {
-				if fwd.Status == state.StatusError {
-					// Prefer RegistryKey if available, fall back to ServiceKey for backwards compatibility
-					key := fwd.RegistryKey
-					if key == "" {
-						key = fwd.ServiceKey
-					}
-					erroredServices[key] = true
-				}
-			}
-
-			// Trigger reconnection for each errored service
-			count := 0
-			for registryKey := range erroredServices {
-				if svcfwd := fwdsvcregistry.Get(registryKey); svcfwd != nil {
-					// ForceReconnect resets backoff state and triggers immediate reconnection
-					// This bypasses any pending backoff timers from auto-reconnect
-					go svcfwd.ForceReconnect()
-					count++
-				}
-			}
-
-			return count
-		})
-	}
-
-	// Initialize API manager if in API mode
-	if fwdapi.IsEnabled() {
-		// Initialize event infrastructure for API mode (allows events without TUI)
-		fwdtui.InitEventInfrastructure()
-		fwdmetrics.GetRegistry().Start()
-
-		apiManager = fwdapi.Init(stopListenCh, triggerShutdown, Version)
-
-		// Set up adapters for API data access
-		stateReader, metricsProvider, serviceController, eventStreamer := fwdapi.CreateAPIAdapters()
-		apiManager.SetStateReader(stateReader)
-		apiManager.SetMetricsProvider(metricsProvider)
-		apiManager.SetServiceController(serviceController)
-		apiManager.SetEventStreamer(eventStreamer)
-		apiManager.SetNamespaces(namespaces)
-		apiManager.SetContexts(contexts)
-		apiManager.SetTUIEnabled(tuiMode)
-
-		// Set up diagnostics adapter
-		diagnosticsProvider := fwdapi.CreateDiagnosticsAdapter(func() types.ManagerInfo {
-			if mgr := fwdapi.GetManager(); mgr != nil {
-				return mgr
-			}
-			return nil
-		})
-		apiManager.SetDiagnosticsProvider(diagnosticsProvider)
-	}
-
-	// Listen for shutdown signal from user
+// setupSignalHandler sets up graceful shutdown on signals
+func setupSignalHandler(triggerShutdown func()) {
 	go func() {
 		sigChan := make(chan os.Signal, 2)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		defer signal.Stop(sigChan)
 
-		// First signal: graceful shutdown
 		<-sigChan
 		if fwdtui.EventsEnabled() {
 			fwdtui.Emit(events.Event{Type: events.ShutdownStarted})
@@ -472,7 +331,6 @@ Try:
 		}
 		triggerShutdown()
 
-		// Second signal: force exit
 		<-sigChan
 		log.Warnf("Forced shutdown - cleaning up hosts file")
 		if err := fwdhost.RemoveAllocatedHosts(); err != nil {
@@ -480,25 +338,233 @@ Try:
 		}
 		os.Exit(1)
 	}()
+}
 
-	// if no context override
-	if len(contexts) < 1 {
-		contexts = append(contexts, rawConfig.CurrentContext)
+// setupTUIManager initializes TUI manager with callbacks
+func setupTUIManager(
+	stopListenCh chan struct{},
+	triggerShutdown func(),
+	clientSets map[string]*kubernetes.Clientset,
+	clientSetsMu *sync.RWMutex,
+	getNsManager func() *fwdns.NamespaceManager,
+) *fwdtui.Manager {
+	if !fwdtui.IsEnabled() {
+		return nil
 	}
 
-	fwdsvcregistry.Init(stopListenCh)
+	tuiManager := fwdtui.Init(stopListenCh, triggerShutdown)
+	tuiManager.SetPodLogsStreamer(createPodLogsStreamer(clientSets, clientSetsMu, getNsManager))
+	tuiManager.SetErroredServicesReconnector(createErroredServicesReconnector())
+	return tuiManager
+}
 
-	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
+// createPodLogsStreamer creates the pod logs streaming function
+func createPodLogsStreamer(
+	clientSets map[string]*kubernetes.Clientset,
+	clientSetsMu *sync.RWMutex,
+	getNsManager func() *fwdns.NamespaceManager,
+) func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+	return func(ctx context.Context, namespace, podName, containerName, k8sContext string, tailLines int64) (io.ReadCloser, error) {
+		clientSetsMu.RLock()
+		cs, ok := clientSets[k8sContext]
+		clientSetsMu.RUnlock()
 
-	// Set up API network (loopback IP and hosts entry) if API mode enabled
-	if fwdapi.IsEnabled() {
-		if err := fwdapi.SetupAPINetwork(hostFileWithLock); err != nil {
-			log.Fatalf("Failed to setup API network: %s", err)
+		var clientSet kubernetes.Interface
+		if ok && cs != nil {
+			clientSet = cs
+		}
+
+		if clientSet == nil {
+			if nsManager := getNsManager(); nsManager != nil {
+				clientSet = nsManager.GetClientSet(k8sContext)
+			}
+			if clientSet == nil {
+				return nil, fmt.Errorf("no clientset for context: %s", k8sContext)
+			}
+		}
+
+		opts := &v1.PodLogOptions{Follow: true, TailLines: &tailLines}
+		if containerName != "" {
+			opts.Container = containerName
+		}
+		return clientSet.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+	}
+}
+
+// createErroredServicesReconnector creates the reconnection callback
+func createErroredServicesReconnector() func() int {
+	return func() int {
+		store := fwdtui.GetStore()
+		if store == nil {
+			return 0
+		}
+
+		forwards := store.GetFiltered()
+		erroredServices := make(map[string]bool)
+		for _, fwd := range forwards {
+			if fwd.Status == state.StatusError {
+				key := fwd.RegistryKey
+				if key == "" {
+					key = fwd.ServiceKey
+				}
+				erroredServices[key] = true
+			}
+		}
+
+		count := 0
+		for registryKey := range erroredServices {
+			if svcfwd := fwdsvcregistry.Get(registryKey); svcfwd != nil {
+				go svcfwd.ForceReconnect()
+				count++
+			}
+		}
+		return count
+	}
+}
+
+// setupAPIManager initializes API manager with adapters
+func setupAPIManager(stopListenCh chan struct{}, triggerShutdown func()) *fwdapi.Manager {
+	if !fwdapi.IsEnabled() {
+		return nil
+	}
+
+	fwdtui.InitEventInfrastructure()
+	fwdmetrics.GetRegistry().Start()
+
+	apiManager := fwdapi.Init(stopListenCh, triggerShutdown, Version)
+
+	stateReader, metricsProvider, serviceController, eventStreamer := fwdapi.CreateAPIAdapters()
+	apiManager.SetStateReader(stateReader)
+	apiManager.SetMetricsProvider(metricsProvider)
+	apiManager.SetServiceController(serviceController)
+	apiManager.SetEventStreamer(eventStreamer)
+	apiManager.SetNamespaces(namespaces)
+	apiManager.SetContexts(contexts)
+	apiManager.SetTUIEnabled(tuiMode)
+
+	diagnosticsProvider := fwdapi.CreateDiagnosticsAdapter(func() types.ManagerInfo {
+		if mgr := fwdapi.GetManager(); mgr != nil {
+			return mgr
+		}
+		return nil
+	})
+	apiManager.SetDiagnosticsProvider(diagnosticsProvider)
+
+	return apiManager
+}
+
+// startNamespaceWatchers starts watchers for each context/namespace
+func startNamespaceWatchers(
+	configGetter *fwdcfg.ConfigGetter,
+	cfgFilePath string,
+	nsManager *fwdns.NamespaceManager,
+	listOptions metav1.ListOptions,
+	clientSets map[string]*kubernetes.Clientset,
+	clientSetsMu *sync.RWMutex,
+) {
+	for _, ctx := range contexts {
+		restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
+		if err != nil {
+			log.Fatalf("Error generating REST configuration: %s\n", err.Error())
+		}
+
+		clientSet, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
+		}
+
+		clientSetsMu.Lock()
+		clientSets[ctx] = clientSet
+		clientSetsMu.Unlock()
+
+		if isAllNs {
+			if len(namespaces) > 1 {
+				log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
+			}
+			setAllNamespace(clientSet, listOptions, &namespaces)
+		}
+
+		if err = checkConnection(clientSet, namespaces); err != nil {
+			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
+		}
+
+		for _, namespace := range namespaces {
+			if _, err := nsManager.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
+				LabelSelector: listOptions.LabelSelector,
+				FieldSelector: listOptions.FieldSelector,
+			}); err != nil {
+				log.Errorf("Failed to start watcher for %s.%s: %v", namespace, ctx, err)
+			}
+		}
+	}
+}
+
+// runMainLoop runs the main blocking loop
+func runMainLoop(tuiManager *fwdtui.Manager, apiManager *fwdapi.Manager, idleMode bool, stopListenCh chan struct{}) {
+	switch {
+	case tuiManager != nil:
+		if err := tuiManager.Run(); err != nil {
+			log.Errorf("TUI error: %s", err)
+		}
+	case apiManager != nil && !tuiMode:
+		log.Infof("API server running at http://%s/ (http://%s/)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.Hostname)
+		if idleMode {
+			log.Println("Idle mode: Add namespaces via POST /api/v1/namespaces or services via POST /api/v1/services")
+		}
+		log.Println("Press [Ctrl-C] to stop.")
+		<-stopListenCh
+	default:
+		<-stopListenCh
+	}
+}
+
+// performShutdown handles graceful shutdown sequence
+func performShutdown(nsManager *fwdns.NamespaceManager, tuiManager *fwdtui.Manager, apiManager *fwdapi.Manager, hostFile *txeh.Hosts) {
+	go nsManager.StopAll()
+	select {
+	case <-nsManager.Done():
+		log.Debugf("All namespace watchers are done")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for namespace watchers, forcing exit")
+	}
+
+	select {
+	case <-fwdsvcregistry.Done():
+		log.Debugf("Service registry shutdown complete")
+	case <-time.After(3 * time.Second):
+		log.Debugf("Timeout waiting for service registry, forcing exit")
+	}
+
+	if tuiManager != nil {
+		select {
+		case <-tuiManager.Done():
+			log.Debugf("TUI cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for TUI cleanup")
 		}
 	}
 
-	// Create the namespace manager for dynamic watcher management
-	nsManager = fwdns.NewManager(fwdns.ManagerConfig{
+	if apiManager != nil {
+		apiManager.Stop()
+		select {
+		case <-apiManager.Done():
+			log.Debugf("API server cleanup complete")
+		case <-time.After(1 * time.Second):
+			log.Debugf("Timeout waiting for API cleanup")
+		}
+		_ = fwdapi.CleanupAPINetwork(hostFile)
+	}
+
+	if err := fwdhost.RemoveAllocatedHosts(); err != nil {
+		log.Errorf("Failed to clean hosts file: %s", err)
+	}
+
+	log.Infof("Clean exit")
+}
+
+// createNamespaceManager creates and configures the namespace manager
+func createNamespaceManager(hostFileWithLock *fwdport.HostFileWithLock, cfgFilePath string, listOptions metav1.ListOptions, stopListenCh chan struct{}) *fwdns.NamespaceManager {
+	return fwdns.NewManager(fwdns.ManagerConfig{
 		HostFile:        hostFileWithLock,
 		ConfigPath:      cfgFilePath,
 		Domain:          domain,
@@ -513,22 +579,19 @@ Try:
 		FieldSelector:   listOptions.FieldSelector,
 		GlobalStopCh:    stopListenCh,
 	})
+}
 
-	// Set up adapters for Kubernetes discovery and service CRUD
-	// These are used by both API and TUI for browse/forward operations
-	getNsManager := func() *fwdns.NamespaceManager { return nsManager }
+// wireUpAdapters creates adapters and wires them to managers
+func wireUpAdapters(getNsManager func() *fwdns.NamespaceManager, cfgFilePath string, apiManager *fwdapi.Manager, tuiManager *fwdtui.Manager) {
 	k8sDiscovery := fwdapi.NewKubernetesDiscoveryAdapter(getNsManager, cfgFilePath)
 	serviceCRUD := fwdapi.NewServiceCRUDAdapter(fwdtui.GetStore, getNsManager, cfgFilePath)
 	nsController := fwdapi.NewNamespaceManagerAdapter(getNsManager)
 
-	// Register namespace manager with API if enabled
 	if apiManager != nil {
-		apiManager.SetNamespaceManager(nsManager)
 		apiManager.SetKubernetesDiscovery(k8sDiscovery)
 		apiManager.SetServiceCRUD(serviceCRUD)
 	}
 
-	// Wire up TUI browse modal adapters
 	if tuiManager != nil {
 		tuiManager.SetBrowseDiscovery(k8sDiscovery)
 		tuiManager.SetBrowseServiceCRUD(serviceCRUD)
@@ -537,132 +600,101 @@ Try:
 			fwdsvcregistry.RemoveByName(key)
 			return nil
 		})
+	}
+}
 
-		// Set initial context in header
-		if len(contexts) > 0 {
-			tuiManager.SetHeaderContext(contexts[0])
+// startAPIServer starts the API server in background if enabled
+func startAPIServer(apiManager *fwdapi.Manager) {
+	if apiManager == nil {
+		return
+	}
+	go func() {
+		if err := apiManager.Run(); err != nil {
+			log.Errorf("API server error: %s", err)
+		}
+	}()
+}
+
+func runCmd(cmd *cobra.Command, _ []string) {
+	if verbose {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	if !validateEnvironment() {
+		return
+	}
+
+	idleMode := detectAndConfigureIdleMode(cmd)
+	initializeTUIMode(cmd)
+	initializeAPIMode(cmd)
+
+	if !tuiMode && !apiMode && !idleMode {
+		log.Println("Press [Ctrl-C] to stop forwarding.")
+		log.Println("'cat " + hostsPath + "' to see all host entries.")
+	}
+
+	hostFile := setupHostsFile()
+
+	if domain != "" {
+		log.Printf("Adding custom domain %s to all forwarded entries\n", domain)
+	}
+
+	cfgFilePath := getKubeConfigPath(cmd)
+	configGetter := fwdcfg.NewConfigGetter()
+	rawConfig, err := configGetter.GetClientConfig(cfgFilePath)
+	if err != nil {
+		log.Fatalf("Error in get rawConfig: %s\n", err.Error())
+	}
+
+	listOptions := setupListOptions(cmd)
+	resolveNamespaces(rawConfig, idleMode)
+
+	if len(contexts) < 1 {
+		contexts = append(contexts, rawConfig.CurrentContext)
+	}
+
+	stopListenCh := make(chan struct{})
+	var stopOnce sync.Once
+	triggerShutdown := func() {
+		stopOnce.Do(func() {
+			close(stopListenCh)
+		})
+	}
+
+	clientSets := make(map[string]*kubernetes.Clientset)
+	var clientSetsMu sync.RWMutex
+	var nsManager *fwdns.NamespaceManager
+	getNsManager := func() *fwdns.NamespaceManager { return nsManager }
+
+	tuiManager := setupTUIManager(stopListenCh, triggerShutdown, clientSets, &clientSetsMu, getNsManager)
+	apiManager := setupAPIManager(stopListenCh, triggerShutdown)
+	setupSignalHandler(triggerShutdown)
+
+	fwdsvcregistry.Init(stopListenCh)
+
+	hostFileWithLock := &fwdport.HostFileWithLock{Hosts: hostFile}
+	if fwdapi.IsEnabled() {
+		if err := fwdapi.SetupAPINetwork(hostFileWithLock); err != nil {
+			log.Fatalf("Failed to setup API network: %s", err)
 		}
 	}
 
-	// Start watchers for each context/namespace combination (skip in idle mode)
+	nsManager = createNamespaceManager(hostFileWithLock, cfgFilePath, listOptions, stopListenCh)
+	wireUpAdapters(getNsManager, cfgFilePath, apiManager, tuiManager)
+
+	if apiManager != nil {
+		apiManager.SetNamespaceManager(nsManager)
+	}
+	if tuiManager != nil && len(contexts) > 0 {
+		tuiManager.SetHeaderContext(contexts[0])
+	}
+
 	if !idleMode {
-		for _, ctx := range contexts {
-			// Create clientSet for this context (for connectivity check and --all-namespaces)
-			restConfig, err := configGetter.GetRestConfig(cfgFilePath, ctx)
-			if err != nil {
-				log.Fatalf("Error generating REST configuration: %s\n", err.Error())
-			}
-
-			clientSet, err := kubernetes.NewForConfig(restConfig)
-			if err != nil {
-				log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
-			}
-
-			// Store clientSet for pod log streaming
-			clientSetsMu.Lock()
-			clientSets[ctx] = clientSet
-			clientSetsMu.Unlock()
-
-			// if use --all-namespace, from v1 api get all ns.
-			if isAllNs {
-				if len(namespaces) > 1 {
-					log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
-				}
-				setAllNamespace(clientSet, listOptions, &namespaces)
-			}
-
-			// check connectivity
-			err = checkConnection(clientSet, namespaces)
-			if err != nil {
-				log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
-			}
-
-			// Start a watcher for each namespace
-			for _, namespace := range namespaces {
-				_, err := nsManager.StartWatcher(ctx, namespace, fwdns.WatcherOpts{
-					LabelSelector: listOptions.LabelSelector,
-					FieldSelector: listOptions.FieldSelector,
-				})
-				if err != nil {
-					log.Errorf("Failed to start watcher for %s.%s: %v", namespace, ctx, err)
-				}
-			}
-		}
+		startNamespaceWatchers(configGetter, cfgFilePath, nsManager, listOptions, clientSets, &clientSetsMu)
 	}
 
-	// Start API server in background if enabled
-	if apiManager != nil {
-		go func() {
-			if err := apiManager.Run(); err != nil {
-				log.Errorf("API server error: %s", err)
-			}
-		}()
-	}
+	startAPIServer(apiManager)
 
-	// If TUI mode, run the TUI (blocks until user quits)
-	// Otherwise, block until shutdown signal is received
-	switch {
-	case tuiManager != nil:
-		if err := tuiManager.Run(); err != nil {
-			log.Errorf("TUI error: %s", err)
-		}
-	case apiManager != nil && !tuiMode:
-		// API-only or idle mode (no TUI): show info and block
-		log.Infof("API server running at http://%s/ (http://%s/)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.Hostname)
-		if idleMode {
-			log.Println("Idle mode: Add namespaces via POST /api/v1/namespaces or services via POST /api/v1/services")
-		}
-		log.Println("Press [Ctrl-C] to stop.")
-		<-stopListenCh
-	default:
-		// Standard mode: block until shutdown signal (Ctrl+C)
-		<-stopListenCh
-	}
-
-	// Stop namespace manager and wait for watchers
-	go nsManager.StopAll()
-	select {
-	case <-nsManager.Done():
-		log.Debugf("All namespace watchers are done")
-	case <-time.After(3 * time.Second):
-		log.Debugf("Timeout waiting for namespace watchers, forcing exit")
-	}
-
-	// Shutdown all active services with timeout
-	select {
-	case <-fwdsvcregistry.Done():
-		log.Debugf("Service registry shutdown complete")
-	case <-time.After(3 * time.Second):
-		log.Debugf("Timeout waiting for service registry, forcing exit")
-	}
-
-	// Wait for TUI cleanup if enabled
-	if tuiManager != nil {
-		select {
-		case <-tuiManager.Done():
-			log.Debugf("TUI cleanup complete")
-		case <-time.After(1 * time.Second):
-			log.Debugf("Timeout waiting for TUI cleanup")
-		}
-	}
-
-	// Wait for API cleanup if enabled
-	if apiManager != nil {
-		apiManager.Stop()
-		select {
-		case <-apiManager.Done():
-			log.Debugf("API server cleanup complete")
-		case <-time.After(1 * time.Second):
-			log.Debugf("Timeout waiting for API cleanup")
-		}
-		// Clean up API network configuration
-		_ = fwdapi.CleanupAPINetwork(hostFile)
-	}
-
-	// Final safety net: ensure all hosts are cleaned up
-	if err := fwdhost.RemoveAllocatedHosts(); err != nil {
-		log.Errorf("Failed to clean hosts file: %s", err)
-	}
-
-	log.Infof("Clean exit")
+	runMainLoop(tuiManager, apiManager, idleMode, stopListenCh)
+	performShutdown(nsManager, tuiManager, apiManager, hostFile)
 }

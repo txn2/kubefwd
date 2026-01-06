@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
 
 // AnalyzeHandler handles AI-optimized analysis endpoints
@@ -140,134 +141,103 @@ type AnalysisStats struct {
 	Uptime          string `json:"uptime,omitempty"`
 }
 
-// Analyze returns full analysis for AI consumption
-// GET /v1/analyze
-func (h *AnalyzeHandler) Analyze(c *gin.Context) {
-	if h.stateReader == nil {
-		c.JSON(http.StatusServiceUnavailable, types.Response{
-			Success: false,
-			Error: &types.ErrorInfo{
-				Code:    "NOT_READY",
-				Message: "State reader not available",
-			},
-		})
-		return
-	}
+// errorClassification holds error type and severity
+type errorClassification struct {
+	errorType string
+	severity  string
+}
 
-	summary := h.stateReader.GetSummary()
-	services := h.stateReader.GetServices()
+// classifyError classifies an error message into type and severity
+func classifyError(errMsg string) errorClassification {
+	errLower := strings.ToLower(errMsg)
+	switch {
+	case strings.Contains(errLower, "connection refused"):
+		return errorClassification{"connection_refused", "high"}
+	case strings.Contains(errLower, "timeout"):
+		return errorClassification{"timeout", "high"}
+	case strings.Contains(errLower, "not found"):
+		return errorClassification{"pod_not_found", "critical"}
+	case strings.Contains(errLower, "broken pipe"):
+		return errorClassification{"broken_pipe", "high"}
+	default:
+		return errorClassification{"unknown", "high"}
+	}
+}
 
-	// Determine overall status
-	status := "healthy"
-	if summary.ErrorCount > 0 {
-		status = "degraded"
-		if summary.ErrorCount > summary.ActiveServices {
-			status = "unhealthy"
-		}
-	}
-
-	// Build summary message
-	var summaryParts []string
-	if summary.ActiveServices > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d active services", summary.ActiveServices))
-	}
-	if summary.ErrorCount > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d errors", summary.ErrorCount))
-	}
-	summaryMsg := strings.Join(summaryParts, ", ")
-	if summaryMsg == "" {
-		summaryMsg = "No services currently forwarded"
-	}
-
-	// Collect issues
+// buildIssues collects issues from services
+func (h *AnalyzeHandler) buildIssues(services []state.ServiceSnapshot) ([]Issue, []string, map[string]int) {
 	var issues []Issue
 	var erroredServiceKeys []string
 	errorTypes := make(map[string]int)
 
 	for _, svc := range services {
-		if svc.ErrorCount > 0 {
-			erroredServiceKeys = append(erroredServiceKeys, svc.Key)
-
-			for _, fwd := range svc.PortForwards {
-				if fwd.Error == "" {
-					continue
-				}
-
-				// Classify error
-				severity := "high"
-				errorType := "unknown"
-				errLower := strings.ToLower(fwd.Error)
-
-				switch {
-				case strings.Contains(errLower, "connection refused"):
-					errorType = "connection_refused"
-				case strings.Contains(errLower, "timeout"):
-					errorType = "timeout"
-				case strings.Contains(errLower, "not found"):
-					errorType = "pod_not_found"
-					severity = "critical"
-				case strings.Contains(errLower, "broken pipe"):
-					errorType = "broken_pipe"
-				}
-
-				errorTypes[errorType]++
-
-				issues = append(issues, Issue{
-					Severity:   severity,
-					Component:  "forward",
-					ServiceKey: svc.Key,
-					PodName:    fwd.PodName,
-					Message:    fwd.Error,
-					ErrorType:  errorType,
-				})
+		if svc.ErrorCount == 0 {
+			continue
+		}
+		erroredServiceKeys = append(erroredServiceKeys, svc.Key)
+		for _, fwd := range svc.PortForwards {
+			if fwd.Error == "" {
+				continue
 			}
+			class := classifyError(fwd.Error)
+			errorTypes[class.errorType]++
+			issues = append(issues, Issue{
+				Severity:   class.severity,
+				Component:  "forward",
+				ServiceKey: svc.Key,
+				PodName:    fwd.PodName,
+				Message:    fwd.Error,
+				ErrorType:  class.errorType,
+			})
 		}
 	}
+	return issues, erroredServiceKeys, errorTypes
+}
 
-	// Generate recommendations
-	var recommendations []Recommendation
+// buildRecommendations generates recommendations based on error analysis
+func buildRecommendations(erroredCount int, errorTypes map[string]int, noTraffic bool) []Recommendation {
+	var recs []Recommendation
 
-	if len(erroredServiceKeys) > 3 {
-		recommendations = append(recommendations, Recommendation{
+	if erroredCount > 3 {
+		recs = append(recs, Recommendation{
 			Priority: "high",
 			Category: "reliability",
-			Message:  fmt.Sprintf("Multiple services (%d) have errors. Consider using reconnect_all to attempt bulk recovery.", len(erroredServiceKeys)),
+			Message:  fmt.Sprintf("Multiple services (%d) have errors. Consider using reconnect_all to attempt bulk recovery.", erroredCount),
 		})
 	}
-
 	if errorTypes["pod_not_found"] > 0 {
-		recommendations = append(recommendations, Recommendation{
+		recs = append(recs, Recommendation{
 			Priority: "high",
 			Category: "reliability",
 			Message:  "Some pods are missing. Use sync to rediscover pods or check if deployments are healthy.",
 		})
 	}
-
 	if errorTypes["connection_refused"] > 0 {
-		recommendations = append(recommendations, Recommendation{
+		recs = append(recs, Recommendation{
 			Priority: "medium",
 			Category: "reliability",
 			Message:  "Connection refused errors indicate pods may not be ready. Check readiness probes and pod logs.",
 		})
 	}
-
 	if errorTypes["timeout"] > 0 {
-		recommendations = append(recommendations, Recommendation{
+		recs = append(recs, Recommendation{
 			Priority: "medium",
 			Category: "configuration",
 			Message:  "Timeout errors may indicate network policies blocking traffic. Review network policies.",
 		})
 	}
-
-	if summary.TotalBytesIn == 0 && summary.TotalBytesOut == 0 && summary.ActiveForwards > 0 {
-		recommendations = append(recommendations, Recommendation{
+	if noTraffic {
+		recs = append(recs, Recommendation{
 			Priority: "low",
 			Category: "performance",
 			Message:  "No traffic detected. Verify applications are sending requests through forwarded services.",
 		})
 	}
+	return recs
+}
 
-	// Generate suggested actions
+// buildActions generates suggested actions based on issues
+func buildActions(erroredServiceKeys []string, issues []Issue) []ActionSuggestion {
 	var actions []ActionSuggestion
 
 	if len(erroredServiceKeys) > 5 {
@@ -290,7 +260,6 @@ func (h *AnalyzeHandler) Analyze(c *gin.Context) {
 		}
 	}
 
-	// Add sync suggestions for pod_not_found errors
 	for _, issue := range issues {
 		if issue.ErrorType == "pod_not_found" {
 			actions = append(actions, ActionSuggestion{
@@ -300,41 +269,89 @@ func (h *AnalyzeHandler) Analyze(c *gin.Context) {
 				Endpoint: fmt.Sprintf("/v1/services/%s/sync", issue.ServiceKey),
 				Method:   "POST",
 			})
-			break // Only suggest once
+			break
 		}
 	}
 
-	// Limit actions
 	if len(actions) > 10 {
-		actions = actions[:10]
+		return actions[:10]
+	}
+	return actions
+}
+
+// determineStatus returns the overall health status
+func determineStatus(summary state.SummaryStats) string {
+	if summary.ErrorCount == 0 {
+		return "healthy"
+	}
+	if summary.ErrorCount > summary.ActiveServices {
+		return "unhealthy"
+	}
+	return "degraded"
+}
+
+// buildSummaryMessage creates a human-readable summary
+func buildSummaryMessage(summary state.SummaryStats) string {
+	var parts []string
+	if summary.ActiveServices > 0 {
+		parts = append(parts, fmt.Sprintf("%d active services", summary.ActiveServices))
+	}
+	if summary.ErrorCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d errors", summary.ErrorCount))
+	}
+	if len(parts) == 0 {
+		return "No services currently forwarded"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// getUptime retrieves the uptime string from manager info
+func (h *AnalyzeHandler) getUptime() string {
+	if h.getManagerInfo == nil {
+		return ""
+	}
+	if mgr := h.getManagerInfo(); mgr != nil {
+		return mgr.Uptime().Round(time.Second).String()
+	}
+	return ""
+}
+
+// Analyze returns full analysis for AI consumption
+// GET /v1/analyze
+func (h *AnalyzeHandler) Analyze(c *gin.Context) {
+	if h.stateReader == nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Error: &types.ErrorInfo{
+				Code:    "NOT_READY",
+				Message: "State reader not available",
+			},
+		})
+		return
 	}
 
-	// Build stats
-	uptime := ""
-	if h.getManagerInfo != nil {
-		if mgr := h.getManagerInfo(); mgr != nil {
-			uptime = mgr.Uptime().Round(time.Second).String()
-		}
-	}
+	summary := h.stateReader.GetSummary()
+	services := h.stateReader.GetServices()
 
-	stats := AnalysisStats{
-		TotalServices:   summary.TotalServices,
-		ActiveServices:  summary.ActiveServices,
-		ErroredServices: len(erroredServiceKeys),
-		TotalForwards:   summary.TotalForwards,
-		ActiveForwards:  summary.ActiveForwards,
-		TotalBytesIn:    summary.TotalBytesIn,
-		TotalBytesOut:   summary.TotalBytesOut,
-		Uptime:          uptime,
-	}
+	issues, erroredServiceKeys, errorTypes := h.buildIssues(services)
+	noTraffic := summary.TotalBytesIn == 0 && summary.TotalBytesOut == 0 && summary.ActiveForwards > 0
 
 	response := AnalysisResponse{
-		Status:           status,
-		Summary:          summaryMsg,
+		Status:           determineStatus(summary),
+		Summary:          buildSummaryMessage(summary),
 		Issues:           issues,
-		Recommendations:  recommendations,
-		SuggestedActions: actions,
-		Stats:            stats,
+		Recommendations:  buildRecommendations(len(erroredServiceKeys), errorTypes, noTraffic),
+		SuggestedActions: buildActions(erroredServiceKeys, issues),
+		Stats: AnalysisStats{
+			TotalServices:   summary.TotalServices,
+			ActiveServices:  summary.ActiveServices,
+			ErroredServices: len(erroredServiceKeys),
+			TotalForwards:   summary.TotalForwards,
+			ActiveForwards:  summary.ActiveForwards,
+			TotalBytesIn:    summary.TotalBytesIn,
+			TotalBytesOut:   summary.TotalBytesOut,
+			Uptime:          h.getUptime(),
+		},
 	}
 
 	c.JSON(http.StatusOK, types.Response{

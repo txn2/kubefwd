@@ -446,338 +446,38 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("TUI Update panic recovered: %v", r)
-			// Return model unchanged, no command - TUI continues working
 			model = m
 			cmd = nil
 		}
 	}()
 
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.updateSizes()
-
-		// Only forward to components that need it (not services/logs - we use SetSize)
-		m.header, _ = m.header.Update(msg)
-		m.statusBar, _ = m.statusBar.Update(msg)
-		m.help, _ = m.help.Update(msg)
-
+		m.handleWindowSizeMsg(msg)
 	case tea.KeyMsg:
-		// Help modal captures all input when visible
-		if m.help.IsVisible() {
-			m.help, _ = m.help.Update(msg)
-			return m, nil
-		}
-
-		// Detail view captures all input when visible
-		if m.detail.IsVisible() {
-			var cmd tea.Cmd
-			m.detail, cmd = m.detail.Update(msg)
-			// If detail closed, return focus to services
-			if !m.detail.IsVisible() {
-				m.focus = FocusServices
-			}
-			return m, cmd
-		}
-
-		// Browse modal captures all input when visible
-		if m.browse.IsVisible() {
-			var cmd tea.Cmd
-			m.browse, cmd = m.browse.Update(msg)
-			// Update header with current context from browse
-			if ctx := m.browse.GetCurrentContext(); ctx != "" {
-				m.header.SetContext(ctx)
-			}
-			return m, cmd
-		}
-
-		// Global keys
-		switch msg.String() {
-		case "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
-		case "q":
-			if !m.services.IsFiltering() {
-				m.quitting = true
-				return m, tea.Quit
-			}
-		case "?":
-			m.help.Toggle()
-			return m, nil
-		case "tab":
-			m.cycleFocus()
-			return m, nil
-		case "r":
-			if !m.services.IsFiltering() {
-				if m.reconnectErrored != nil {
-					count := m.reconnectErrored()
-					if count > 0 {
-						return m, SendLog(log.InfoLevel,
-							fmt.Sprintf("Reconnecting %d service(s) with errors...", count))
-					}
-					return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
-				}
-			}
-		case "f":
-			if !m.services.IsFiltering() {
-				m.browse.SetSize(m.width, m.height)
-				return m, m.browse.Show()
-			}
-		}
-
-		// Route to focused component
-		var cmd tea.Cmd
-		switch m.focus {
-		case FocusServices:
-			// Handle Enter to open detail view (but not when filtering)
-			if msg.String() == "enter" && m.services.HasSelection() && !m.services.IsFiltering() {
-				key := m.services.GetSelectedKey()
-				if key != "" {
-					m.detail.Show(key)
-					m.detail.SetSize(m.width, m.height)
-					m.focus = FocusDetail
-					return m, nil
-				}
-			}
-			m.services, cmd = m.services.Update(msg)
-			cmds = append(cmds, cmd)
-		case FocusLogs:
-			m.logs, cmd = m.logs.Update(msg)
-			cmds = append(cmds, cmd)
-		case FocusDetail:
-			// FocusDetail keyboard input is handled separately above
-		}
-
+		return m.handleKeyMsg(msg)
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling
-		// Hold Shift to select text (standard terminal behavior)
-		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
-			var cmd tea.Cmd
-			// Detail view gets priority if visible
-			if m.detail.IsVisible() {
-				m.detail, cmd = m.detail.Update(msg)
-				cmds = append(cmds, cmd)
-			} else {
-				switch m.focus {
-				case FocusServices:
-					m.services, cmd = m.services.Update(msg)
-					cmds = append(cmds, cmd)
-				case FocusLogs:
-					m.logs, cmd = m.logs.Update(msg)
-					cmds = append(cmds, cmd)
-				case FocusDetail:
-					// FocusDetail mouse input is handled above when detail.IsVisible()
-				}
-			}
-		}
-
-		// Handle click for focus switching (and row selection in Services)
-		if msg.Button == tea.MouseButtonLeft {
-			y := msg.Y
-
-			// Check if click is in Services area
-			if y >= m.servicesStartY && y < m.servicesStartY+m.servicesHeight {
-				m.focus = FocusServices
-				m.services.SetFocus(true)
-				m.logs.SetFocus(false)
-
-				// Calculate relative Y within services panel and select row
-				relativeY := y - m.servicesStartY
-				m.services.SelectByY(relativeY)
-				return m, nil
-			}
-
-			// Check if click is in Logs area
-			if y >= m.logsStartY && y < m.logsStartY+m.logsHeight {
-				m.focus = FocusLogs
-				m.services.SetFocus(false)
-				m.logs.SetFocus(true)
-				return m, nil
-			}
-		}
-
+		return m.handleMouseMsg(msg)
 	case MetricsUpdateMsg:
-		m.handleMetricsUpdate(msg)
-		m.services.Refresh()
-		m.statusBar.UpdateStats(m.store.GetSummary())
-		// Re-subscribe
-		cmds = append(cmds, ListenMetrics(m.metricsCh))
-
+		return m, m.handleMetricsUpdateMsg(msg)
 	case KubefwdEventMsg:
-		m.handleKubefwdEvent(msg.Event)
-		m.services.Refresh()
-		m.statusBar.UpdateStats(m.store.GetSummary())
-		// Re-subscribe
-		cmds = append(cmds, ListenEvents(m.eventCh))
-
+		return m, m.handleKubefwdEventMsg(msg)
 	case LogEntryMsg:
-		m.logs.AppendLog(msg.Level, msg.Message, msg.Time)
-		// Re-subscribe
-		cmds = append(cmds, ListenLogs(m.logCh))
-
+		return m, m.handleLogEntryMsg(msg)
 	case ShutdownMsg:
-		m.quitting = true
-		return m, tea.Quit
-
-	case components.OpenDetailMsg:
-		// Open detail view (from double-click when mouse is enabled)
-		if msg.Key != "" {
-			m.detail.Show(msg.Key)
-			m.detail.SetSize(m.width, m.height)
-			m.focus = FocusDetail
+		return m.handleShutdownMsg()
+	default:
+		// Check component messages
+		if result, cmd, handled := m.handleComponentMessage(msg); handled {
+			return result, cmd
 		}
-
-	case RefreshMsg:
-		m.services.Refresh()
-		m.statusBar.UpdateStats(m.store.GetSummary())
-
-	case components.PodLogsRequestMsg:
-		// Request to stream pod logs
-		if m.streamPodLogs != nil {
-			// Cancel any existing stream
-			if m.logStreamCancel != nil {
-				m.logStreamCancel()
-			}
-
-			// Create new context for this stream
-			ctx, cancel := context.WithCancel(context.Background())
-			m.logStreamCancel = cancel
-
-			// Create channel for log lines
-			m.logStreamCh = make(chan string, 100)
-
-			namespace := msg.Namespace
-			podName := msg.PodName
-			containerName := msg.ContainerName
-			k8sContext := msg.Context
-			tailLines := msg.TailLines
-			logCh := m.logStreamCh
-
-			// Start streaming goroutine
-			go func() {
-				defer close(logCh)
-
-				stream, err := m.streamPodLogs(ctx, namespace, podName, containerName, k8sContext, tailLines)
-				if err != nil {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						// Send error as a special message
-						logCh <- "\x00ERROR:" + err.Error()
-						return
-					}
-				}
-				defer func() { _ = stream.Close() }()
-
-				scanner := bufio.NewScanner(stream)
-				for scanner.Scan() {
-					select {
-					case <-ctx.Done():
-						return
-					case logCh <- scanner.Text():
-					}
-				}
-			}()
-
-			// Set streaming state and return command to listen for lines
-			m.detail.SetLogsStreaming(true)
-			m.detail.SetLogsLoading(false)
-			return m, m.waitForLogLine()
+		// Check browse messages
+		if result, cmd, handled := m.handleBrowseMessage(msg); handled {
+			return result, cmd
 		}
-
-		// No streamer configured
-		m.detail.SetLogsError("Pod logs not available - streamer not configured")
-
-	case components.PodLogsStopMsg:
-		// Stop the current log stream
-		if m.logStreamCancel != nil {
-			m.logStreamCancel()
-			m.logStreamCancel = nil
-		}
-		m.logStreamCh = nil
-
-	case components.PodLogLineMsg:
-		// Received a log line from the stream
-		line := msg.Line
-		// Check for error marker
-		if len(line) > 7 && line[:7] == "\x00ERROR:" {
-			m.detail.SetLogsError(line[7:])
-			m.detail.SetLogsStreaming(false)
-		} else {
-			// Update the detail model
-			m.detail.AppendLogLine(line)
-			// Continue listening for more lines if still streaming
-			if m.detail.IsLogsStreaming() && m.logStreamCh != nil {
-				return m, m.waitForLogLine()
-			}
-		}
-
-	case components.PodLogsErrorMsg:
-		m.detail.SetLogsError(msg.Error.Error())
-		m.detail.SetLogsStreaming(false)
-
-	case components.ReconnectErroredMsg:
-		// Handle reconnect request from detail view
-		if m.reconnectErrored != nil {
-			count := m.reconnectErrored()
-			if count > 0 {
-				return m, SendLog(log.InfoLevel,
-					fmt.Sprintf("Reconnecting %d service(s) with errors...", count))
-			}
-			return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
-		}
-
-	// Browse modal messages - IMPORTANT: must return the cmd from browse.Update!
-	case components.BrowseContextsLoadedMsg:
-		var cmd tea.Cmd
-		m.browse, cmd = m.browse.Update(msg)
-		// Update header with current context
-		if msg.CurrentContext != "" {
-			m.header.SetContext(msg.CurrentContext)
-		}
-		return m, cmd
-
-	case components.BrowseNamespacesLoadedMsg, components.BrowseServicesLoadedMsg:
-		var cmd tea.Cmd
-		m.browse, cmd = m.browse.Update(msg)
-		return m, cmd
-
-	case components.ServiceForwardedMsg:
-		var cmd tea.Cmd
-		m.browse, cmd = m.browse.Update(msg)
-		if msg.Error == nil {
-			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
-				fmt.Sprintf("Forwarded service %s (%s)", msg.ServiceName, msg.LocalIP)))
-		}
-		return m, cmd
-
-	case components.NamespaceForwardedMsg:
-		var cmd tea.Cmd
-		m.browse, cmd = m.browse.Update(msg)
-		if msg.Error == nil {
-			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
-				fmt.Sprintf("Forwarded %d services from namespace %s", msg.ServiceCount, msg.Namespace)))
-		}
-		return m, cmd
-
-	case components.RemoveForwardMsg:
-		// Remove the forward via the callback
-		if msg.RegistryKey != "" && m.removeForward != nil {
-			if err := m.removeForward(msg.RegistryKey); err != nil {
-				return m, SendLog(log.ErrorLevel,
-					fmt.Sprintf("Failed to remove forward %s: %v", msg.RegistryKey, err))
-			}
-			return m, SendLog(log.InfoLevel,
-				fmt.Sprintf("Removed forward: %s", msg.RegistryKey))
-		}
-		return m, nil
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, nil
 }
 
 // waitForLogLine returns a command that waits for the next log line
@@ -999,6 +699,385 @@ func (m *RootModel) handleMetricsUpdate(msg MetricsUpdateMsg) {
 			}
 		}
 	}
+}
+
+// handleWindowSizeMsg handles terminal resize events
+func (m *RootModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) {
+	m.width = msg.Width
+	m.height = msg.Height
+	m.updateSizes()
+	m.header, _ = m.header.Update(msg)
+	m.statusBar, _ = m.statusBar.Update(msg)
+	m.help, _ = m.help.Update(msg)
+}
+
+// handleKeyMsg handles keyboard input
+func (m *RootModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Help modal captures all input when visible
+	if m.help.IsVisible() {
+		m.help, _ = m.help.Update(msg)
+		return m, nil
+	}
+
+	// Detail view captures all input when visible
+	if m.detail.IsVisible() {
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		if !m.detail.IsVisible() {
+			m.focus = FocusServices
+		}
+		return m, cmd
+	}
+
+	// Browse modal captures all input when visible
+	if m.browse.IsVisible() {
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if ctx := m.browse.GetCurrentContext(); ctx != "" {
+			m.header.SetContext(ctx)
+		}
+		return m, cmd
+	}
+
+	// Handle global keys
+	if result, cmd, handled := m.handleGlobalKeys(msg); handled {
+		return result, cmd
+	}
+
+	// Route to focused component
+	return m.handleFocusedComponentKey(msg)
+}
+
+// handleGlobalKeys handles global keyboard shortcuts
+func (m *RootModel) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit, true
+	case "q":
+		if !m.services.IsFiltering() {
+			m.quitting = true
+			return m, tea.Quit, true
+		}
+	case "?":
+		m.help.Toggle()
+		return m, nil, true
+	case "tab":
+		m.cycleFocus()
+		return m, nil, true
+	case "r":
+		if !m.services.IsFiltering() && m.reconnectErrored != nil {
+			count := m.reconnectErrored()
+			if count > 0 {
+				return m, SendLog(log.InfoLevel,
+					fmt.Sprintf("Reconnecting %d service(s) with errors...", count)), true
+			}
+			return m, SendLog(log.InfoLevel, "No services with errors to reconnect"), true
+		}
+	case "f":
+		if !m.services.IsFiltering() {
+			m.browse.SetSize(m.width, m.height)
+			return m, m.browse.Show(), true
+		}
+	}
+	return nil, nil, false
+}
+
+// handleFocusedComponentKey routes key to the focused component
+func (m *RootModel) handleFocusedComponentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.focus {
+	case FocusServices:
+		if msg.String() == "enter" && m.services.HasSelection() && !m.services.IsFiltering() {
+			key := m.services.GetSelectedKey()
+			if key != "" {
+				m.detail.Show(key)
+				m.detail.SetSize(m.width, m.height)
+				m.focus = FocusDetail
+				return m, nil
+			}
+		}
+		m.services, cmd = m.services.Update(msg)
+	case FocusLogs:
+		m.logs, cmd = m.logs.Update(msg)
+	}
+	return m, cmd
+}
+
+// handleMouseMsg handles mouse input
+func (m *RootModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	// Handle mouse wheel scrolling
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		var cmd tea.Cmd
+		if m.detail.IsVisible() {
+			m.detail, cmd = m.detail.Update(msg)
+			cmds = append(cmds, cmd)
+		} else {
+			switch m.focus {
+			case FocusServices:
+				m.services, cmd = m.services.Update(msg)
+				cmds = append(cmds, cmd)
+			case FocusLogs:
+				m.logs, cmd = m.logs.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+
+	// Handle click for focus switching
+	if msg.Button == tea.MouseButtonLeft {
+		return m.handleMouseClick(msg)
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+// handleMouseClick handles mouse click events
+func (m *RootModel) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	y := msg.Y
+
+	// Check if click is in Services area
+	if y >= m.servicesStartY && y < m.servicesStartY+m.servicesHeight {
+		m.focus = FocusServices
+		m.services.SetFocus(true)
+		m.logs.SetFocus(false)
+		relativeY := y - m.servicesStartY
+		m.services.SelectByY(relativeY)
+		return m, nil
+	}
+
+	// Check if click is in Logs area
+	if y >= m.logsStartY && y < m.logsStartY+m.logsHeight {
+		m.focus = FocusLogs
+		m.services.SetFocus(false)
+		m.logs.SetFocus(true)
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handlePodLogsRequest handles pod log streaming requests
+func (m *RootModel) handlePodLogsRequest(msg components.PodLogsRequestMsg) (tea.Model, tea.Cmd) {
+	if m.streamPodLogs == nil {
+		m.detail.SetLogsError("Pod logs not available - streamer not configured")
+		return m, nil
+	}
+
+	// Cancel any existing stream
+	if m.logStreamCancel != nil {
+		m.logStreamCancel()
+	}
+
+	// Create new context for this stream
+	ctx, cancel := context.WithCancel(context.Background())
+	m.logStreamCancel = cancel
+	m.logStreamCh = make(chan string, 100)
+
+	namespace := msg.Namespace
+	podName := msg.PodName
+	containerName := msg.ContainerName
+	k8sContext := msg.Context
+	tailLines := msg.TailLines
+	logCh := m.logStreamCh
+
+	go m.streamPodLogsGoroutine(ctx, logCh, namespace, podName, containerName, k8sContext, tailLines)
+
+	m.detail.SetLogsStreaming(true)
+	m.detail.SetLogsLoading(false)
+	return m, m.waitForLogLine()
+}
+
+// streamPodLogsGoroutine streams pod logs in background
+func (m *RootModel) streamPodLogsGoroutine(ctx context.Context, logCh chan<- string, namespace, podName, containerName, k8sContext string, tailLines int64) {
+	defer close(logCh)
+
+	stream, err := m.streamPodLogs(ctx, namespace, podName, containerName, k8sContext, tailLines)
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			logCh <- "\x00ERROR:" + err.Error()
+			return
+		}
+	}
+	defer func() { _ = stream.Close() }()
+
+	scanner := bufio.NewScanner(stream)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		case logCh <- scanner.Text():
+		}
+	}
+}
+
+// handlePodLogLine handles individual log lines from the stream
+func (m *RootModel) handlePodLogLine(msg components.PodLogLineMsg) (tea.Model, tea.Cmd) {
+	line := msg.Line
+	if len(line) > 7 && line[:7] == "\x00ERROR:" {
+		m.detail.SetLogsError(line[7:])
+		m.detail.SetLogsStreaming(false)
+	} else {
+		m.detail.AppendLogLine(line)
+		if m.detail.IsLogsStreaming() && m.logStreamCh != nil {
+			return m, m.waitForLogLine()
+		}
+	}
+	return m, nil
+}
+
+// handleBrowseMessage handles browse modal related messages
+func (m *RootModel) handleBrowseMessage(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case components.BrowseContextsLoadedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if msg.CurrentContext != "" {
+			m.header.SetContext(msg.CurrentContext)
+		}
+		return m, cmd, true
+	case components.BrowseNamespacesLoadedMsg, components.BrowseServicesLoadedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		return m, cmd, true
+	case components.ServiceForwardedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if msg.Error == nil {
+			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
+				fmt.Sprintf("Forwarded service %s (%s)", msg.ServiceName, msg.LocalIP))), true
+		}
+		return m, cmd, true
+	case components.NamespaceForwardedMsg:
+		var cmd tea.Cmd
+		m.browse, cmd = m.browse.Update(msg)
+		if msg.Error == nil {
+			return m, tea.Batch(cmd, SendLog(log.InfoLevel,
+				fmt.Sprintf("Forwarded %d services from namespace %s", msg.ServiceCount, msg.Namespace))), true
+		}
+		return m, cmd, true
+	}
+	return nil, nil, false
+}
+
+// handleMetricsUpdateMsg handles metrics update messages
+func (m *RootModel) handleMetricsUpdateMsg(msg MetricsUpdateMsg) tea.Cmd {
+	m.handleMetricsUpdate(msg)
+	m.services.Refresh()
+	m.statusBar.UpdateStats(m.store.GetSummary())
+	return ListenMetrics(m.metricsCh)
+}
+
+// handleKubefwdEventMsg handles kubefwd event messages
+func (m *RootModel) handleKubefwdEventMsg(msg KubefwdEventMsg) tea.Cmd {
+	m.handleKubefwdEvent(msg.Event)
+	m.services.Refresh()
+	m.statusBar.UpdateStats(m.store.GetSummary())
+	return ListenEvents(m.eventCh)
+}
+
+// handleLogEntryMsg handles log entry messages
+func (m *RootModel) handleLogEntryMsg(msg LogEntryMsg) tea.Cmd {
+	m.logs.AppendLog(msg.Level, msg.Message, msg.Time)
+	return ListenLogs(m.logCh)
+}
+
+// handleOpenDetailMsg handles opening the detail view
+func (m *RootModel) handleOpenDetailMsg(msg components.OpenDetailMsg) {
+	if msg.Key != "" {
+		m.detail.Show(msg.Key)
+		m.detail.SetSize(m.width, m.height)
+		m.focus = FocusDetail
+	}
+}
+
+// handleRefreshMsg handles refresh requests
+func (m *RootModel) handleRefreshMsg() {
+	m.services.Refresh()
+	m.statusBar.UpdateStats(m.store.GetSummary())
+}
+
+// handlePodLogsErrorMsg handles pod logs error messages
+func (m *RootModel) handlePodLogsErrorMsg(msg components.PodLogsErrorMsg) {
+	m.detail.SetLogsError(msg.Error.Error())
+	m.detail.SetLogsStreaming(false)
+}
+
+// handleShutdownMsg handles shutdown messages
+func (m *RootModel) handleShutdownMsg() (tea.Model, tea.Cmd) {
+	m.quitting = true
+	return m, tea.Quit
+}
+
+// handleComponentMessage handles component-specific messages
+func (m *RootModel) handleComponentMessage(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case components.OpenDetailMsg:
+		m.handleOpenDetailMsg(msg)
+		return m, nil, true
+	case RefreshMsg:
+		m.handleRefreshMsg()
+		return m, nil, true
+	case components.PodLogsRequestMsg:
+		result, cmd := m.handlePodLogsRequest(msg)
+		return result, cmd, true
+	case components.PodLogsStopMsg:
+		m.handlePodLogsStopMsg()
+		return m, nil, true
+	case components.PodLogLineMsg:
+		result, cmd := m.handlePodLogLine(msg)
+		return result, cmd, true
+	case components.PodLogsErrorMsg:
+		m.handlePodLogsErrorMsg(msg)
+		return m, nil, true
+	case components.ReconnectErroredMsg:
+		result, cmd := m.handleReconnectErroredMsg()
+		return result, cmd, true
+	case components.RemoveForwardMsg:
+		result, cmd := m.handleRemoveForward(msg)
+		return result, cmd, true
+	}
+	return nil, nil, false
+}
+
+// handlePodLogsStopMsg handles stopping pod log streaming
+func (m *RootModel) handlePodLogsStopMsg() {
+	if m.logStreamCancel != nil {
+		m.logStreamCancel()
+		m.logStreamCancel = nil
+	}
+	m.logStreamCh = nil
+}
+
+// handleReconnectErroredMsg handles reconnect requests
+func (m *RootModel) handleReconnectErroredMsg() (tea.Model, tea.Cmd) {
+	if m.reconnectErrored != nil {
+		count := m.reconnectErrored()
+		if count > 0 {
+			return m, SendLog(log.InfoLevel,
+				fmt.Sprintf("Reconnecting %d service(s) with errors...", count))
+		}
+		return m, SendLog(log.InfoLevel, "No services with errors to reconnect")
+	}
+	return m, nil
+}
+
+// handleRemoveForward handles forward removal requests
+func (m *RootModel) handleRemoveForward(msg components.RemoveForwardMsg) (tea.Model, tea.Cmd) {
+	if msg.RegistryKey != "" && m.removeForward != nil {
+		if err := m.removeForward(msg.RegistryKey); err != nil {
+			return m, SendLog(log.ErrorLevel,
+				fmt.Sprintf("Failed to remove forward %s: %v", msg.RegistryKey, err))
+		}
+		return m, SendLog(log.InfoLevel,
+			fmt.Sprintf("Removed forward: %s", msg.RegistryKey))
+	}
+	return m, nil
 }
 
 // handleKubefwdEvent processes kubefwd events

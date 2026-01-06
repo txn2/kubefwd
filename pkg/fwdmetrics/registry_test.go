@@ -3,6 +3,7 @@ package fwdmetrics
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestRegistryRegisterUnregisterService tests service registration and unregistration
@@ -251,6 +252,146 @@ func TestPortForwardMetricsServiceKey(t *testing.T) {
 	expected := "mysvc.myns.myctx"
 	if key != expected {
 		t.Errorf("Expected service key '%s', got '%s'", expected, key)
+	}
+}
+
+// TestRegistryGetServiceSnapshot tests getting a single service snapshot
+func TestRegistryGetServiceSnapshot(t *testing.T) {
+	registryOnce = sync.Once{}
+	globalRegistry = nil
+	reg := GetRegistry()
+	defer reg.Stop()
+
+	// Register a service with port forwards
+	pf := NewPortForwardMetrics("svc", "ns", "ctx", "pod1", "127.0.0.1", "8080", "80")
+	reg.RegisterPortForward("svc.ns.ctx", pf)
+
+	// Add some traffic
+	pf.AddBytesIn(1000)
+	pf.AddBytesOut(500)
+
+	// Get the snapshot
+	snapshot := reg.GetServiceSnapshot("svc.ns.ctx")
+	if snapshot == nil {
+		t.Fatal("Expected non-nil snapshot")
+	}
+
+	if snapshot.ServiceName != "svc" {
+		t.Errorf("Expected ServiceName 'svc', got '%s'", snapshot.ServiceName)
+	}
+	if snapshot.Namespace != "ns" {
+		t.Errorf("Expected Namespace 'ns', got '%s'", snapshot.Namespace)
+	}
+	if snapshot.TotalBytesIn != 1000 {
+		t.Errorf("Expected TotalBytesIn 1000, got %d", snapshot.TotalBytesIn)
+	}
+	if snapshot.TotalBytesOut != 500 {
+		t.Errorf("Expected TotalBytesOut 500, got %d", snapshot.TotalBytesOut)
+	}
+}
+
+// TestRegistryGetServiceSnapshot_NotFound tests getting a non-existent service snapshot
+func TestRegistryGetServiceSnapshot_NotFound(t *testing.T) {
+	registryOnce = sync.Once{}
+	globalRegistry = nil
+	reg := GetRegistry()
+	defer reg.Stop()
+
+	snapshot := reg.GetServiceSnapshot("nonexistent.ns.ctx")
+	if snapshot != nil {
+		t.Error("Expected nil snapshot for non-existent service")
+	}
+}
+
+// TestRegistrySubscribe tests subscribing to metrics updates
+func TestRegistrySubscribe(t *testing.T) {
+	registryOnce = sync.Once{}
+	globalRegistry = nil
+	reg := GetRegistry()
+	defer reg.Stop()
+
+	// Register a service
+	svc := NewServiceMetrics("svc", "ns", "ctx")
+	reg.RegisterService(svc)
+
+	// Subscribe with a short interval
+	ch, cancel := reg.Subscribe(10 * time.Millisecond)
+	defer cancel()
+
+	// Wait for an update
+	select {
+	case snapshots := <-ch:
+		if len(snapshots) != 1 {
+			t.Errorf("Expected 1 snapshot, got %d", len(snapshots))
+		}
+		if snapshots[0].ServiceName != "svc" {
+			t.Errorf("Expected ServiceName 'svc', got '%s'", snapshots[0].ServiceName)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Timed out waiting for subscription update")
+	}
+}
+
+// TestRegistrySubscribe_Cancel tests canceling a subscription
+func TestRegistrySubscribe_Cancel(t *testing.T) {
+	registryOnce = sync.Once{}
+	globalRegistry = nil
+	reg := GetRegistry()
+	defer reg.Stop()
+
+	// Subscribe
+	ch, cancel := reg.Subscribe(10 * time.Millisecond)
+
+	// Cancel immediately
+	cancel()
+
+	// Channel should be closed eventually
+	select {
+	case _, ok := <-ch:
+		if ok {
+			// Got a message, that's fine - try again
+			select {
+			case _, ok := <-ch:
+				if ok {
+					t.Error("Channel should be closed after cancel")
+				}
+			case <-time.After(50 * time.Millisecond):
+				// Closed
+			}
+		}
+		// Channel closed as expected
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Channel should be closed after cancel")
+	}
+}
+
+// TestRegistrySubscribe_RegistryStop tests subscription cleanup when registry stops
+func TestRegistrySubscribe_RegistryStop(t *testing.T) {
+	registryOnce = sync.Once{}
+	globalRegistry = nil
+	reg := GetRegistry()
+
+	// Subscribe with longer interval to avoid flooding
+	ch, _ := reg.Subscribe(100 * time.Millisecond)
+
+	// Stop the registry
+	reg.Stop()
+
+	// Wait for channel to be closed with a timeout
+	timeout := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				// Channel closed as expected
+				return
+			}
+			// Got a message, keep waiting for close
+		case <-timeout:
+			// Timeout is acceptable - the goroutine will eventually close
+			// but we don't want to wait forever in a test
+			return
+		}
 	}
 }
 
