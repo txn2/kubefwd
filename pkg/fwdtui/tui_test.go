@@ -2149,3 +2149,18 @@ func TestManager_SetCallbacks_NilModel(t *testing.T) {
 	manager.SetHeaderContext("test")
 	manager.SetRemoveForwardCallback(nil)
 }
+
+func TestManager_SetCallbacks_WithModel(t *testing.T) {
+	model := createTestRootModel()
+	manager := &Manager{model: model}
+
+	// Should set callbacks without panic (nil values are acceptable)
+	manager.SetBrowseDiscovery(nil)
+	manager.SetBrowseNamespaceController(nil)
+	manager.SetBrowseServiceCRUD(nil)
+	manager.SetHeaderContext("test-context")
+
+	// Test with non-nil callbacks
+	manager.SetErroredServicesReconnector(func() int { return 0 })
+	manager.SetRemoveForwardCallback(func(key string) error { return nil })
+}
