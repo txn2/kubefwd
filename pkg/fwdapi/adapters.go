@@ -1334,11 +1334,11 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 	}
 
 	// Sort by last timestamp (most recent first)
-	events := eventList.Items
-	for i := 0; i < len(events)-1; i++ {
-		for j := i + 1; j < len(events); j++ {
-			if events[j].LastTimestamp.After(events[i].LastTimestamp.Time) {
-				events[i], events[j] = events[j], events[i]
+	eventItems := eventList.Items
+	for i := 0; i < len(eventItems)-1; i++ {
+		for j := i + 1; j < len(eventItems); j++ {
+			if eventItems[j].LastTimestamp.After(eventItems[i].LastTimestamp.Time) {
+				eventItems[i], eventItems[j] = eventItems[j], eventItems[i]
 			}
 		}
 	}
@@ -1348,12 +1348,12 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 	if limit <= 0 {
 		limit = 50
 	}
-	if len(events) > limit {
-		events = events[:limit]
+	if len(eventItems) > limit {
+		eventItems = eventItems[:limit]
 	}
 
-	result := make([]types.K8sEvent, len(events))
-	for i, e := range events {
+	result := make([]types.K8sEvent, len(eventItems))
+	for i, e := range eventItems {
 		result[i] = types.K8sEvent{
 			Type:           e.Type,
 			Reason:         e.Reason,

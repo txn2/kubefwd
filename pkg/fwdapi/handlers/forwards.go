@@ -16,9 +16,9 @@ type ForwardsHandler struct {
 }
 
 // NewForwardsHandler creates a new forwards handler
-func NewForwardsHandler(state types.StateReader) *ForwardsHandler {
+func NewForwardsHandler(stateReader types.StateReader) *ForwardsHandler {
 	return &ForwardsHandler{
-		state: state,
+		state: stateReader,
 	}
 }
 
