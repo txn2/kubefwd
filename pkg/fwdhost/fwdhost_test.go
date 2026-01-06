@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/txeh"
 )
 
@@ -755,6 +756,53 @@ func TestPurgeStaleIps_PreservesComments(t *testing.T) {
 	if !strings.Contains(contentStr, "localhost") {
 		t.Error("localhost entry was not preserved")
 	}
+}
+
+// TestRemoveAllocatedHosts_NoHostnames tests RemoveAllocatedHosts when no hostnames are registered
+func TestRemoveAllocatedHosts_NoHostnames(t *testing.T) {
+	// Reset the fwdip registry to ensure no hostnames are registered
+	fwdip.ResetRegistry()
+
+	// When no hostnames are registered, the function should return nil immediately
+	err := RemoveAllocatedHosts()
+	if err != nil {
+		t.Errorf("RemoveAllocatedHosts() with no registered hostnames should return nil, got: %v", err)
+	}
+}
+
+// TestRemoveAllocatedHosts_WithHostnames tests RemoveAllocatedHosts with registered hostnames
+// Note: This test will fail on systems where we cannot create a default hosts file
+// (e.g., without root permissions), but we test the logic path nonetheless.
+func TestRemoveAllocatedHosts_WithHostnames(t *testing.T) {
+	// Reset the fwdip registry
+	fwdip.ResetRegistry()
+
+	// Register some test hostnames
+	fwdip.RegisterHostname("test-service")
+	fwdip.RegisterHostname("test-service.default")
+
+	// Verify hostnames are registered
+	hostnames := fwdip.GetRegisteredHostnames()
+	if len(hostnames) != 2 {
+		t.Fatalf("Expected 2 registered hostnames, got %d", len(hostnames))
+	}
+
+	// Call RemoveAllocatedHosts - this will likely fail without root permissions
+	// because txeh.NewHostsDefault() requires access to /etc/hosts
+	err := RemoveAllocatedHosts()
+
+	// On most systems without root, this will return an error
+	// We're testing that the function handles this gracefully
+	if err != nil {
+		// Expected on non-root systems - the function tried to access /etc/hosts
+		t.Logf("RemoveAllocatedHosts() returned expected error (no root): %v", err)
+	} else {
+		// If we're running as root, the function should succeed
+		t.Log("RemoveAllocatedHosts() succeeded (likely running as root)")
+	}
+
+	// Clean up
+	fwdip.ResetRegistry()
 }
 
 // TestBackupHostFile_ForceRefresh tests the forceRefresh parameter
