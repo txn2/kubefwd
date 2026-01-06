@@ -1850,6 +1850,186 @@ func TestKubernetesDiscoveryAdapter_GetPod_NotFound(t *testing.T) {
 	}
 }
 
+func TestKubernetesDiscoveryAdapter_GetPod_TerminatingWithWaitingContainers(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	deletionTime := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "terminating-pod",
+			Namespace:         "default",
+			DeletionTimestamp: &deletionTime,
+			Labels:            map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{
+					Name:  "main",
+					Image: "app:v1",
+					Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
+				},
+				{
+					Name:  "sidecar",
+					Image: "sidecar:v1",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			PodIP:     "10.1.1.1",
+			HostIP:    "192.168.1.1",
+			StartTime: &now,
+			Message:   "Pod is terminating",
+			Reason:    "Terminating",
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        false,
+					RestartCount: 0,
+					State: corev1.ContainerState{
+						Waiting: &corev1.ContainerStateWaiting{
+							Reason:  "ContainerCreating",
+							Message: "Creating container",
+						},
+					},
+				},
+				{
+					Name:         "sidecar",
+					Ready:        false,
+					RestartCount: 2,
+					State: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 1,
+							Reason:   "Error",
+							Message:  "Container failed",
+						},
+					},
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 137,
+							Reason:   "OOMKilled",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetPod("test-context", "default", "terminating-pod")
+	if err != nil {
+		t.Fatalf("GetPod failed: %v", err)
+	}
+
+	// Status should be "Terminating" due to DeletionTimestamp
+	if result.Status != "Terminating" {
+		t.Errorf("Expected status 'Terminating', got %s", result.Status)
+	}
+
+	// Should have 2 containers
+	if len(result.Containers) != 2 {
+		t.Fatalf("Expected 2 containers, got %d", len(result.Containers))
+	}
+
+	// Check waiting container state
+	mainContainer := result.Containers[0]
+	if mainContainer.State != "Waiting" {
+		t.Errorf("Expected main container state 'Waiting', got %s", mainContainer.State)
+	}
+	if mainContainer.StateReason != "ContainerCreating" {
+		t.Errorf("Expected main container reason 'ContainerCreating', got %s", mainContainer.StateReason)
+	}
+
+	// Check terminated container state
+	sidecarContainer := result.Containers[1]
+	if sidecarContainer.State != "Terminated" {
+		t.Errorf("Expected sidecar container state 'Terminated', got %s", sidecarContainer.State)
+	}
+	if sidecarContainer.StateReason != "Error" {
+		t.Errorf("Expected sidecar state reason 'Error', got %s", sidecarContainer.StateReason)
+	}
+	// Verify last state is captured
+	if sidecarContainer.LastState == "" {
+		t.Error("Expected last state to be set for terminated container with restart")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_RunningContainerState(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	startedAt := metav1.NewTime(now.Add(-time.Hour))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{Name: "main", Image: "app:v1"},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        true,
+					RestartCount: 0,
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{StartedAt: startedAt},
+					},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetPod("test-context", "default", "running-pod")
+	if err != nil {
+		t.Fatalf("GetPod failed: %v", err)
+	}
+
+	if result.Status != "Running" {
+		t.Errorf("Expected status 'Running', got %s", result.Status)
+	}
+
+	if len(result.Containers) != 1 {
+		t.Fatalf("Expected 1 container, got %d", len(result.Containers))
+	}
+
+	container := result.Containers[0]
+	if container.State != "Running" {
+		t.Errorf("Expected container state 'Running', got %s", container.State)
+	}
+}
+
 func TestKubernetesDiscoveryAdapter_GetEvents_WithFakeClient(t *testing.T) {
 	now := metav1.Now()
 	event1 := &corev1.Event{
