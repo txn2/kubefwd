@@ -331,6 +331,13 @@ func (m *NamespaceManager) GetClientSet(ctx string) kubernetes.Interface {
 	return m.clientSets[ctx]
 }
 
+// SetClientSet sets a clientSet for a context (for testing)
+func (m *NamespaceManager) SetClientSet(ctx string, clientSet kubernetes.Interface) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clientSets[ctx] = clientSet
+}
+
 // getOrCreateClient gets or creates kubernetes clients for a context
 func (m *NamespaceManager) getOrCreateClient(ctx string) (kubernetes.Interface, *restclient.Config, *restclient.RESTClient, error) {
 	// Check cache first (already holding lock)
