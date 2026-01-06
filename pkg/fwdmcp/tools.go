@@ -321,6 +321,20 @@ func (s *Server) registerTools() {
 
 // Tool handlers
 
+// calculateMCPServiceStatus determines the status string for a service based on active/error counts
+func calculateMCPServiceStatus(activeCount, errorCount int) string {
+	switch {
+	case activeCount > 0 && errorCount == 0:
+		return "active"
+	case errorCount > 0 && activeCount == 0:
+		return "error"
+	case errorCount > 0 && activeCount > 0:
+		return "partial"
+	default:
+		return "pending"
+	}
+}
+
 func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolRequest, input ListServicesInput) (*mcp.CallToolResult, any, error) {
 	state := s.getState()
 	if state == nil {
@@ -333,18 +347,7 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 	// Apply filters
 	var filtered []map[string]interface{}
 	for _, svc := range services {
-		// Calculate status
-		var status string
-		switch {
-		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
-			status = "active"
-		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
-			status = "error"
-		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
-			status = "partial"
-		default:
-			status = "pending"
-		}
+		status := calculateMCPServiceStatus(svc.ActiveCount, svc.ErrorCount)
 
 		// Apply namespace filter
 		if input.Namespace != "" && svc.Namespace != input.Namespace {
