@@ -84,6 +84,32 @@ func (h *ForwardsHandler) List(c *gin.Context) {
 	})
 }
 
+// forwardMatchesSearch checks if a forward matches the search term (case-insensitive)
+func forwardMatchesSearch(fwd *state.ForwardSnapshot, search string) bool {
+	searchLower := strings.ToLower(search)
+	return strings.Contains(strings.ToLower(fwd.ServiceName), searchLower) ||
+		strings.Contains(strings.ToLower(fwd.PodName), searchLower) ||
+		strings.Contains(strings.ToLower(fwd.Namespace), searchLower) ||
+		strings.Contains(strings.ToLower(fwd.Context), searchLower)
+}
+
+// forwardMatchesFilters checks if a forward matches all filter criteria
+func forwardMatchesFilters(fwd *state.ForwardSnapshot, params types.ListParams) bool {
+	if params.Status != "" && strings.ToLower(fwd.Status.String()) != params.Status {
+		return false
+	}
+	if params.Namespace != "" && fwd.Namespace != params.Namespace {
+		return false
+	}
+	if params.Context != "" && fwd.Context != params.Context {
+		return false
+	}
+	if params.Search != "" && !forwardMatchesSearch(fwd, params.Search) {
+		return false
+	}
+	return true
+}
+
 // filterForwards applies query parameter filters to forwards
 func filterForwards(forwards []state.ForwardSnapshot, params types.ListParams) []state.ForwardSnapshot {
 	if params.Status == "" && params.Namespace == "" && params.Context == "" && params.Search == "" {
@@ -91,37 +117,10 @@ func filterForwards(forwards []state.ForwardSnapshot, params types.ListParams) [
 	}
 
 	result := make([]state.ForwardSnapshot, 0, len(forwards))
-	for _, fwd := range forwards {
-		// Apply status filter
-		if params.Status != "" {
-			status := strings.ToLower(fwd.Status.String())
-			if status != params.Status {
-				continue
-			}
+	for i := range forwards {
+		if forwardMatchesFilters(&forwards[i], params) {
+			result = append(result, forwards[i])
 		}
-
-		// Apply namespace filter
-		if params.Namespace != "" && fwd.Namespace != params.Namespace {
-			continue
-		}
-
-		// Apply context filter
-		if params.Context != "" && fwd.Context != params.Context {
-			continue
-		}
-
-		// Apply search filter (case-insensitive)
-		if params.Search != "" {
-			search := strings.ToLower(params.Search)
-			if !strings.Contains(strings.ToLower(fwd.ServiceName), search) &&
-				!strings.Contains(strings.ToLower(fwd.PodName), search) &&
-				!strings.Contains(strings.ToLower(fwd.Namespace), search) &&
-				!strings.Contains(strings.ToLower(fwd.Context), search) {
-				continue
-			}
-		}
-
-		result = append(result, fwd)
 	}
 	return result
 }
