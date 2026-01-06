@@ -1502,10 +1502,10 @@ func TestSplitPortMapping_EdgeCases(t *testing.T) {
 		input    string
 		expected []string
 	}{
-		{":", []string{"", ""}},                     // Empty parts
-		{"a:", []string{"a", ""}},                   // Empty target
-		{":b", []string{"", "b"}},                   // Empty source
-		{"abc:def:ghi", []string{"abc", "def:ghi"}}, // Multiple colons
+		{":", []string{"", ""}},                       // Empty parts
+		{"a:", []string{"a", ""}},                     // Empty target
+		{":b", []string{"", "b"}},                     // Empty source
+		{"abc:def:ghi", []string{"abc", "def:ghi"}},   // Multiple colons
 	}
 
 	for _, tt := range tests {

@@ -50,13 +50,13 @@ func RequestLogger() gin.HandlerFunc {
 // allowedOrigins lists origins permitted to make cross-origin requests.
 // Restricted to local origins for security since kubefwd runs with root privileges.
 var allowedOrigins = map[string]bool{
-	"http://kubefwd.internal": true,
-	"http://localhost":        true,
-	"http://localhost:8080":   true,
-	"http://127.0.0.1":        true,
-	"http://127.0.0.1:8080":   true,
-	"http://127.2.27.1":       true, // kubefwd API IP
-	"http://127.2.27.1:8080":  true,
+	"http://kubefwd.internal":   true,
+	"http://localhost":          true,
+	"http://localhost:8080":     true,
+	"http://127.0.0.1":          true,
+	"http://127.0.0.1:8080":     true,
+	"http://127.2.27.1":         true, // kubefwd API IP
+	"http://127.2.27.1:8080":    true,
 }
 
 // CORS middleware for browser access.
