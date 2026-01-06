@@ -111,7 +111,7 @@ func newRootCmd() *cobra.Command {
 		Example: " kubefwd version\n" +
 			" kubefwd version quiet\n",
 		Long: ``,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Printf("Kubefwd version: %s\nhttps://kubefwd.com\n", Version)
 		},
 	}

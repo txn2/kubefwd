@@ -9,6 +9,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	restclient "k8s.io/client-go/rest"
 
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
 )
@@ -852,4 +853,678 @@ func TestNamespaceWatcher_Done(t *testing.T) {
 // Delegates to the standard library to avoid custom reimplementation.
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
+}
+
+func TestManager_StopWatcher_RunningWatcher(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Create a fake running watcher
+	watcherStopCh := make(chan struct{})
+	watcherDoneCh := make(chan struct{})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		key:       "default.test",
+		namespace: "default",
+		context:   "test",
+		clientSet: fake.NewClientset(),
+		stopCh:    watcherStopCh,
+		doneCh:    watcherDoneCh,
+		running:   true,
+	}
+
+	mgr.mu.Lock()
+	mgr.watchers["default.test"] = watcher
+	mgr.mu.Unlock()
+
+	// Simulate watcher closing its done channel when stopped
+	go func() {
+		<-watcherStopCh
+		close(watcherDoneCh)
+	}()
+
+	// Stop the watcher
+	err := mgr.StopWatcher("test", "default")
+	if err != nil {
+		t.Fatalf("StopWatcher failed: %v", err)
+	}
+
+	// Verify watcher is removed
+	mgr.mu.RLock()
+	_, exists := mgr.watchers["default.test"]
+	mgr.mu.RUnlock()
+
+	if exists {
+		t.Error("Watcher should be removed after stopping")
+	}
+}
+
+func TestManager_StopAll_WithRunningWatchers(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Track stopped watchers
+	stoppedCount := 0
+	var stoppedMu sync.Mutex
+
+	// Create multiple fake watchers
+	for i := 0; i < 3; i++ {
+		key := WatcherKey("ns"+string(rune('0'+i)), "ctx")
+		watcherStopCh := make(chan struct{})
+		watcherDoneCh := make(chan struct{})
+		watcher := &NamespaceWatcher{
+			manager:   mgr,
+			key:       key,
+			namespace: "ns" + string(rune('0'+i)),
+			context:   "ctx",
+			clientSet: fake.NewClientset(),
+			stopCh:    watcherStopCh,
+			doneCh:    watcherDoneCh,
+			running:   true,
+		}
+
+		// Simulate watcher closing done channel on stop
+		go func(stopCh, doneCh chan struct{}) {
+			<-stopCh
+			stoppedMu.Lock()
+			stoppedCount++
+			stoppedMu.Unlock()
+			close(doneCh)
+		}(watcherStopCh, watcherDoneCh)
+
+		mgr.mu.Lock()
+		mgr.watchers[key] = watcher
+		mgr.mu.Unlock()
+	}
+
+	// Verify we have 3 watchers
+	mgr.mu.RLock()
+	count := len(mgr.watchers)
+	mgr.mu.RUnlock()
+
+	if count != 3 {
+		t.Errorf("Expected 3 watchers, got %d", count)
+	}
+
+	// Stop all
+	mgr.StopAll()
+
+	// Verify all watchers were stopped (StopAll doesn't remove them from map)
+	stoppedMu.Lock()
+	finalCount := stoppedCount
+	stoppedMu.Unlock()
+
+	if finalCount != 3 {
+		t.Errorf("Expected 3 watchers stopped, got %d", finalCount)
+	}
+
+	// Verify manager's done channel is closed
+	select {
+	case <-mgr.Done():
+		// Expected
+	default:
+		t.Error("Manager's done channel should be closed after StopAll")
+	}
+}
+
+func TestNamespaceWatcher_Info_AllFields(t *testing.T) {
+	now := time.Now()
+	watcher := &NamespaceWatcher{
+		key:           "default.minikube",
+		namespace:     "default",
+		context:       "minikube",
+		clusterN:      1,
+		namespaceN:    2,
+		labelSelector: "app=web",
+		fieldSelector: "metadata.name=svc1",
+		startedAt:     now,
+		running:       true,
+	}
+
+	info := watcher.Info()
+
+	if info.Key != "default.minikube" {
+		t.Errorf("Expected key 'default.minikube', got %q", info.Key)
+	}
+	if info.Namespace != "default" {
+		t.Errorf("Expected namespace 'default', got %q", info.Namespace)
+	}
+	if info.Context != "minikube" {
+		t.Errorf("Expected context 'minikube', got %q", info.Context)
+	}
+	if info.LabelSelector != "app=web" {
+		t.Errorf("Expected LabelSelector 'app=web', got %q", info.LabelSelector)
+	}
+	if info.FieldSelector != "metadata.name=svc1" {
+		t.Errorf("Expected FieldSelector 'metadata.name=svc1', got %q", info.FieldSelector)
+	}
+	if !info.Running {
+		t.Error("Expected Running to be true")
+	}
+	if info.StartedAt != now {
+		t.Error("Expected StartedAt to match")
+	}
+}
+
+func TestManager_removeNamespaceServices(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Call removeNamespaceServices - should not panic even with no services
+	mgr.removeNamespaceServices("default", "test")
+
+	// The function clears services from the registry and updates store
+	// Since we don't have actual services, this tests the path doesn't panic
+}
+
+func TestManager_GetCurrentContext(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		ConfigPath:   "/nonexistent/kubeconfig", // Will fail
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	_, err := mgr.GetCurrentContext()
+	// Should fail because config path doesn't exist
+	if err == nil {
+		t.Log("GetCurrentContext didn't fail - kubeconfig may be available in default location")
+	}
+}
+
+func TestManager_SetClientSet(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+
+	// Initially no clientset
+	if cs := mgr.GetClientSet("test-context"); cs != nil {
+		t.Error("Expected nil clientset initially")
+	}
+
+	// Set a fake clientset
+	fakeClient := fake.NewClientset()
+	mgr.SetClientSet("test-context", fakeClient)
+
+	// Verify it's set
+	if cs := mgr.GetClientSet("test-context"); cs == nil {
+		t.Error("Expected non-nil clientset after setting")
+	} else if cs != fakeClient {
+		t.Error("Expected same clientset that was set")
+	}
+
+	// Test with different contexts
+	fakeClient2 := fake.NewClientset()
+	mgr.SetClientSet("other-context", fakeClient2)
+
+	if cs := mgr.GetClientSet("test-context"); cs != fakeClient {
+		t.Error("test-context should still have original clientset")
+	}
+	if cs := mgr.GetClientSet("other-context"); cs != fakeClient2 {
+		t.Error("other-context should have second clientset")
+	}
+}
+
+func TestManager_GetClientSet_NonexistentContext(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+
+	// Non-existent context should return nil
+	if cs := mgr.GetClientSet("nonexistent"); cs != nil {
+		t.Error("Expected nil for nonexistent context")
+	}
+}
+
+func TestNamespaceWatcher_AddServiceHandler_ValidService(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "valid-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector:  map[string]string{"app": "test"},
+			ClusterIP: "10.0.0.1",
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300, Domain: "test.local"})
+
+	// Create a minimal rest config
+	restCfg := &restclient.Config{
+		Host: "https://localhost:6443",
+	}
+
+	watcher := &NamespaceWatcher{
+		manager:    mgr,
+		namespace:  "default",
+		context:    "test-ctx",
+		clientSet:  fake.NewClientset(),
+		restConfig: restCfg,
+		ipLock:     &sync.Mutex{},
+	}
+
+	// Clear registry before test
+	for _, s := range fwdsvcregistry.GetAll() {
+		key := s.Svc.Name + "." + s.Namespace + "." + s.Context
+		fwdsvcregistry.RemoveByName(key)
+	}
+
+	// Add service handler should add to registry
+	watcher.addServiceHandler(svc)
+
+	// Check registry
+	key := "valid-svc.default.test-ctx"
+	found := fwdsvcregistry.Get(key)
+	if found == nil {
+		t.Error("Expected service to be added to registry")
+	}
+
+	// Cleanup
+	fwdsvcregistry.RemoveByName(key)
+}
+
+func TestNamespaceWatcher_AddServiceHandler_HeadlessService(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "headless-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector:  map[string]string{"app": "test"},
+			ClusterIP: "None", // Headless
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+	restCfg := &restclient.Config{Host: "https://localhost:6443"}
+	watcher := &NamespaceWatcher{
+		manager:    mgr,
+		namespace:  "default",
+		context:    "test-ctx",
+		clientSet:  fake.NewClientset(),
+		restConfig: restCfg,
+		ipLock:     &sync.Mutex{},
+	}
+
+	// Clear registry before test
+	for _, s := range fwdsvcregistry.GetAll() {
+		key := s.Svc.Name + "." + s.Namespace + "." + s.Context
+		fwdsvcregistry.RemoveByName(key)
+	}
+
+	// Add service handler
+	watcher.addServiceHandler(svc)
+
+	// Check registry - headless service should be marked as such
+	key := "headless-svc.default.test-ctx"
+	found := fwdsvcregistry.Get(key)
+	if found == nil {
+		t.Error("Expected headless service to be added to registry")
+	} else if !found.Headless {
+		t.Error("Expected Headless flag to be true")
+	}
+
+	// Cleanup
+	fwdsvcregistry.RemoveByName(key)
+}
+
+func TestNamespaceWatcher_DeleteServiceHandler_ValidService(t *testing.T) {
+	initRegistryOnce()
+
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "to-delete",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "test"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+	restCfg := &restclient.Config{Host: "https://localhost:6443"}
+	watcher := &NamespaceWatcher{
+		manager:    mgr,
+		namespace:  "default",
+		context:    "test-ctx",
+		clientSet:  fake.NewClientset(),
+		restConfig: restCfg,
+		ipLock:     &sync.Mutex{},
+	}
+
+	// First add the service
+	watcher.addServiceHandler(svc)
+
+	key := "to-delete.default.test-ctx"
+	if fwdsvcregistry.Get(key) == nil {
+		t.Fatal("Service should exist before delete test")
+	}
+
+	// Now delete it
+	watcher.deleteServiceHandler(svc)
+
+	// Verify removed - the RemoveByName stops the service, so it may still be in registry
+	// but will be cleaned up. Just verify the function didn't panic
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_SelectorChanged(t *testing.T) {
+	initRegistryOnce()
+
+	oldSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "updated-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "old"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	newSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "updated-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "new"}, // Changed selector
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test-ctx",
+		clientSet: fake.NewClientset(),
+		ipLock:    &sync.Mutex{},
+	}
+
+	// Update handler should detect selector change
+	// This won't trigger resync since service isn't in registry, but should not panic
+	watcher.updateServiceHandler(oldSvc, newSvc)
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_PortsChanged(t *testing.T) {
+	initRegistryOnce()
+
+	oldSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ports-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "test"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+
+	newSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ports-svc",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "test"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+				{Port: 443, Name: "https"}, // Added port
+			},
+		},
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+	watcher := &NamespaceWatcher{
+		manager:   mgr,
+		namespace: "default",
+		context:   "test-ctx",
+		clientSet: fake.NewClientset(),
+		ipLock:    &sync.Mutex{},
+	}
+
+	// Update handler should detect ports change
+	watcher.updateServiceHandler(oldSvc, newSvc)
+}
+
+func TestManager_RemoveNamespaceServices_WithServices(t *testing.T) {
+	initRegistryOnce()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		Timeout:      300,
+		Domain:       "test.local",
+	})
+
+	// Create a watcher with fake clientset
+	restCfg := &restclient.Config{Host: "https://localhost:6443"}
+	watcher := &NamespaceWatcher{
+		manager:    mgr,
+		namespace:  "test-ns",
+		context:    "test-ctx",
+		clientSet:  fake.NewClientset(),
+		restConfig: restCfg,
+		ipLock:     &sync.Mutex{},
+	}
+
+	// Add a service to registry
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-svc",
+			Namespace: "test-ns",
+		},
+		Spec: v1.ServiceSpec{
+			Selector: map[string]string{"app": "test"},
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http"},
+			},
+		},
+	}
+	watcher.addServiceHandler(svc)
+
+	// Verify service is in registry
+	key := "test-svc.test-ns.test-ctx"
+	if fwdsvcregistry.Get(key) == nil {
+		t.Fatal("Service should exist before removal")
+	}
+
+	// Remove namespace services
+	mgr.removeNamespaceServices("test-ns", "test-ctx")
+
+	// Service should be removed/stopped
+	// Note: RemoveByName may not immediately remove if Stop is async
+}
+
+func TestNamespaceWatcher_Info_NotRunning(t *testing.T) {
+	watcher := &NamespaceWatcher{
+		key:       "default.minikube",
+		namespace: "default",
+		context:   "minikube",
+		running:   false,
+	}
+
+	info := watcher.Info()
+
+	if info.Running {
+		t.Error("Expected Running to be false")
+	}
+}
+
+func TestManager_StopWatcher_EmptyContext(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{
+		GlobalStopCh: stopCh,
+		ConfigPath:   "/nonexistent/kubeconfig",
+	})
+
+	// StopWatcher with empty context should try to get current context and fail
+	err := mgr.StopWatcher("", "default")
+	if err == nil {
+		t.Log("StopWatcher didn't fail - kubeconfig may be available")
+	}
+}
+
+func TestManager_ListWatchers_WithWatchers(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+
+	// Add some watchers manually
+	w1 := &NamespaceWatcher{
+		key:       "ns1.ctx1",
+		namespace: "ns1",
+		context:   "ctx1",
+		running:   true,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+	}
+	w2 := &NamespaceWatcher{
+		key:       "ns2.ctx1",
+		namespace: "ns2",
+		context:   "ctx1",
+		running:   true,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+	}
+
+	mgr.mu.Lock()
+	mgr.watchers["ns1.ctx1"] = w1
+	mgr.watchers["ns2.ctx1"] = w2
+	mgr.mu.Unlock()
+
+	watchers := mgr.ListWatchers()
+
+	if len(watchers) != 2 {
+		t.Errorf("Expected 2 watchers, got %d", len(watchers))
+	}
+
+	// Verify keys are present
+	keys := make(map[string]bool)
+	for _, w := range watchers {
+		keys[w.Key] = true
+	}
+	if !keys["ns1.ctx1"] || !keys["ns2.ctx1"] {
+		t.Error("Expected both watcher keys to be present")
+	}
+}
+
+func TestNamespaceWatcher_ParsePortMap_WithPortMapping(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh})
+	watcher := &NamespaceWatcher{manager: mgr}
+
+	// Test with mixed valid and invalid mappings
+	result := watcher.parsePortMap([]string{"80:8080", "invalid-no-colon", "443:8443"})
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if len(*result) != 2 {
+		t.Errorf("Expected 2 valid mappings, got %d", len(*result))
+	}
+}
+
+func TestSplitPortMapping_EdgeCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []string
+	}{
+		{":", []string{"", ""}},                       // Empty parts
+		{"a:", []string{"a", ""}},                     // Empty target
+		{":b", []string{"", "b"}},                     // Empty source
+		{"abc:def:ghi", []string{"abc", "def:ghi"}},   // Multiple colons
+	}
+
+	for _, tt := range tests {
+		result := splitPortMapping(tt.input)
+		if tt.expected == nil {
+			if result != nil {
+				t.Errorf("splitPortMapping(%q) = %v, want nil", tt.input, result)
+			}
+		} else {
+			if result == nil || len(result) != len(tt.expected) {
+				t.Errorf("splitPortMapping(%q) = %v, want %v", tt.input, result, tt.expected)
+				continue
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("splitPortMapping(%q)[%d] = %q, want %q",
+						tt.input, i, result[i], tt.expected[i])
+				}
+			}
+		}
+	}
 }

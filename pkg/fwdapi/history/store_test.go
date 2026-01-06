@@ -399,3 +399,29 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Errorf("TotalErrors = %d, want 50", stats.TotalErrors)
 	}
 }
+
+// TestBoundedSize tests the boundedSize helper function
+func TestBoundedSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int
+		limit    int
+		expected int
+	}{
+		{"zero size", 0, 100, 0},
+		{"negative size", -5, 100, 0},
+		{"below limit", 50, 100, 50},
+		{"at limit", 100, 100, 100},
+		{"above limit", 150, 100, 100},
+		{"way above limit", 10000, 100, 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := boundedSize(tt.size, tt.limit)
+			if result != tt.expected {
+				t.Errorf("boundedSize(%d, %d) = %d, want %d", tt.size, tt.limit, result, tt.expected)
+			}
+		})
+	}
+}

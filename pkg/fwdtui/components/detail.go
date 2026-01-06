@@ -681,7 +681,7 @@ func copyToClipboard(text string) bool {
 
 // clearCopiedAfterDelay returns a command that clears the copied feedback
 func clearCopiedAfterDelay() tea.Cmd {
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(2*time.Second, func(_ time.Time) tea.Msg {
 		return ClearCopiedMsg{}
 	})
 }
@@ -939,7 +939,7 @@ func (m *DetailModel) renderHTTPTab() string {
 			scrollInfo = "↑ " + scrollInfo
 		}
 		if m.httpScrollOffset < maxScroll {
-			scrollInfo = scrollInfo + " ↓"
+			scrollInfo += " ↓"
 		}
 		b.WriteString(styles.DetailLabelStyle.Render(scrollInfo))
 	}
@@ -1051,10 +1051,10 @@ func (m *DetailModel) renderStatusCode(code int) string {
 
 // renderFooter renders the footer with keybindings based on current tab
 func (m *DetailModel) renderFooter() string {
-	var parts []string
-
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Esc]")+" Back")
-	parts = append(parts, styles.DetailFooterKeyStyle.Render("[Tab]")+" Switch")
+	parts := []string{
+		styles.DetailFooterKeyStyle.Render("[Esc]") + " Back",
+		styles.DetailFooterKeyStyle.Render("[Tab]") + " Switch",
+	}
 
 	switch m.currentTab {
 	case TabInfo:
@@ -1068,14 +1068,16 @@ func (m *DetailModel) renderFooter() string {
 
 // formatDuration formats a duration in a human-readable way
 func formatDuration(d time.Duration) string {
-	if d < time.Minute {
+	switch {
+	case d < time.Minute:
 		return fmt.Sprintf("%ds ago", int(d.Seconds()))
-	} else if d < time.Hour {
+	case d < time.Hour:
 		return fmt.Sprintf("%dm %ds ago", int(d.Minutes()), int(d.Seconds())%60)
-	} else if d < 24*time.Hour {
+	case d < 24*time.Hour:
 		return fmt.Sprintf("%dh %dm ago", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd %dh ago", int(d.Hours()/24), int(d.Hours())%24)
 	}
-	return fmt.Sprintf("%dd %dh ago", int(d.Hours()/24), int(d.Hours())%24)
 }
 
 // wrapLogText wraps text to fit within the given width

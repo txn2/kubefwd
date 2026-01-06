@@ -34,7 +34,7 @@ func BackupHostFile(hostFile *txeh.Hosts, forceRefresh bool) (string, error) {
 	}
 	defer func() { _ = from.Close() }()
 
-	to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0644)
+	to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return "", err
 	}

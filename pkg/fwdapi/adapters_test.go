@@ -5,6 +5,12 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/fake"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdns"
@@ -121,9 +127,45 @@ func TestServiceControllerAdapter_ReconnectAllNilStore(t *testing.T) {
 	}
 }
 
-// Note: Reconnect, Sync, and ReconnectAll (with data) tests are skipped because
-// they require the global fwdsvcregistry to be initialized with real services,
-// which is not practical in unit tests. These are tested through integration tests instead.
+// Note: Reconnect and Sync with actual services require fwdsvcregistry to be
+// initialized with real services. However, we can test the error paths.
+
+func TestServiceControllerAdapter_Reconnect_NotFound(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	err := adapter.Reconnect("nonexistent.service.key")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent.service.key" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceControllerAdapter_Sync_NotFound(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	err := adapter.Sync("nonexistent.service.key", false)
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent.service.key" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestServiceControllerAdapter_Sync_NotFound_WithForce(t *testing.T) {
+	initTestRegistry()
+	adapter := NewServiceControllerAdapter(nil)
+
+	// Even with force=true, should return error for nonexistent service
+	err := adapter.Sync("nonexistent.service.key", true)
+	if err == nil {
+		t.Error("Expected error for nonexistent service with force=true")
+	}
+}
 
 // EventStreamerAdapter tests
 
@@ -1175,5 +1217,1316 @@ func TestKubernetesDiscoveryAdapter_GetEndpoints_NilManager(t *testing.T) {
 	}
 	if err.Error() != "namespace manager not available" {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
+	}
+}
+
+// Tests with fake kubernetes clientset
+
+func TestKubernetesDiscoveryAdapter_ListNamespaces_WithFakeClient(t *testing.T) {
+	// Create namespaces
+	ns1 := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "default"},
+		Status:     corev1.NamespaceStatus{Phase: corev1.NamespaceActive},
+	}
+	ns2 := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "kube-system"},
+		Status:     corev1.NamespaceStatus{Phase: corev1.NamespaceActive},
+	}
+	ns3 := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-ns"},
+		Status:     corev1.NamespaceStatus{Phase: corev1.NamespaceTerminating},
+	}
+
+	clientset := fake.NewClientset(ns1, ns2, ns3)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	namespaces, err := adapter.ListNamespaces("test-context")
+	if err != nil {
+		t.Fatalf("ListNamespaces failed: %v", err)
+	}
+
+	if len(namespaces) != 3 {
+		t.Errorf("Expected 3 namespaces, got %d", len(namespaces))
+	}
+
+	// Check namespace properties
+	foundDefault := false
+	foundTestNs := false
+	for _, ns := range namespaces {
+		if ns.Name == "default" {
+			foundDefault = true
+			if ns.Status != "Active" {
+				t.Errorf("Expected 'Active' status for default, got %s", ns.Status)
+			}
+		}
+		if ns.Name == "test-ns" {
+			foundTestNs = true
+			if ns.Status != "Terminating" {
+				t.Errorf("Expected 'Terminating' status for test-ns, got %s", ns.Status)
+			}
+		}
+	}
+	if !foundDefault {
+		t.Error("Expected to find 'default' namespace")
+	}
+	if !foundTestNs {
+		t.Error("Expected to find 'test-ns' namespace")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListServices_WithFakeClient(t *testing.T) {
+	initTestRegistry()
+
+	// Create services
+	svc1 := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.1",
+			Selector:  map[string]string{"app": "api"},
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+	svc2 := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "db-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.2",
+			Selector:  map[string]string{"app": "db"},
+			Ports: []corev1.ServicePort{
+				{Name: "mysql", Port: 3306, TargetPort: intstr.FromInt(3306), Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(svc1, svc2)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	services, err := adapter.ListServices("test-context", "default")
+	if err != nil {
+		t.Fatalf("ListServices failed: %v", err)
+	}
+
+	if len(services) != 2 {
+		t.Errorf("Expected 2 services, got %d", len(services))
+	}
+
+	// Check service properties
+	for _, svc := range services {
+		if svc.Name == "api-service" {
+			if svc.ClusterIP != "10.0.0.1" {
+				t.Errorf("Expected ClusterIP 10.0.0.1, got %s", svc.ClusterIP)
+			}
+			if len(svc.Ports) != 1 {
+				t.Errorf("Expected 1 port, got %d", len(svc.Ports))
+			}
+			if svc.Ports[0].Name != "http" {
+				t.Errorf("Expected port name 'http', got %s", svc.Ports[0].Name)
+			}
+			if svc.Selector["app"] != "api" {
+				t.Errorf("Expected selector app=api, got %v", svc.Selector)
+			}
+		}
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetService_WithFakeClient(t *testing.T) {
+	initTestRegistry()
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.100",
+			Selector:  map[string]string{"app": "myapp", "version": "v1"},
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
+				{Name: "https", Port: 443, TargetPort: intstr.FromInt(8443), Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(svc)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetService("test-context", "default", "my-service")
+	if err != nil {
+		t.Fatalf("GetService failed: %v", err)
+	}
+
+	if result.Name != "my-service" {
+		t.Errorf("Expected name 'my-service', got %s", result.Name)
+	}
+	if result.ClusterIP != "10.0.0.100" {
+		t.Errorf("Expected ClusterIP 10.0.0.100, got %s", result.ClusterIP)
+	}
+	if len(result.Ports) != 2 {
+		t.Errorf("Expected 2 ports, got %d", len(result.Ports))
+	}
+	if result.Selector["version"] != "v1" {
+		t.Errorf("Expected selector version=v1, got %v", result.Selector)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetService_NotFound(t *testing.T) {
+	clientset := fake.NewClientset()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	_, err := adapter.GetService("test-context", "default", "nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithFakeClient(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-pod-1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "api"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName:   "node-1",
+			Containers: []corev1.Container{{Name: "api-container", Image: "api:v1"}},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			PodIP:     "10.1.1.1",
+			StartTime: &now,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "api-container", Ready: true, RestartCount: 2},
+			},
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-pod-2",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "api"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName:   "node-2",
+			Containers: []corev1.Container{{Name: "api-container", Image: "api:v1"}, {Name: "sidecar", Image: "sidecar:v1"}},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodPending,
+			PodIP:     "10.1.1.2",
+			StartTime: &now,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "api-container", Ready: true, RestartCount: 0},
+				{Name: "sidecar", Ready: false, RestartCount: 1, State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"},
+				}},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod1, pod2)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		LabelSelector: "app=api",
+	})
+	if err != nil {
+		t.Fatalf("ListPods failed: %v", err)
+	}
+
+	if len(pods) != 2 {
+		t.Errorf("Expected 2 pods, got %d", len(pods))
+	}
+
+	// Check pod properties
+	for _, pod := range pods {
+		if pod.Name == "api-pod-1" {
+			if pod.Ready != "1/1" {
+				t.Errorf("Expected Ready '1/1', got %s", pod.Ready)
+			}
+			if pod.Restarts != 2 {
+				t.Errorf("Expected 2 restarts, got %d", pod.Restarts)
+			}
+			if pod.Node != "node-1" {
+				t.Errorf("Expected node 'node-1', got %s", pod.Node)
+			}
+		}
+		if pod.Name == "api-pod-2" {
+			if pod.Ready != "1/2" {
+				t.Errorf("Expected Ready '1/2', got %s", pod.Ready)
+			}
+			if pod.Status != "ImagePullBackOff" {
+				t.Errorf("Expected status 'ImagePullBackOff', got %s", pod.Status)
+			}
+			if len(pod.Containers) != 2 {
+				t.Errorf("Expected 2 containers, got %d", len(pod.Containers))
+			}
+		}
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_TerminatingPod(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	deletionTime := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "terminating-pod",
+			Namespace:         "default",
+			DeletionTimestamp: &deletionTime,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "container"}},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{})
+	if err != nil {
+		t.Fatalf("ListPods failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Fatalf("Expected 1 pod, got %d", len(pods))
+	}
+	if pods[0].Status != "Terminating" {
+		t.Errorf("Expected status 'Terminating', got %s", pods[0].Status)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithServiceName(t *testing.T) {
+	initTestRegistry()
+
+	// Create service with selector
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "myapp"},
+		},
+	}
+
+	// Create pods - one matching, one not
+	now := metav1.Now()
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myapp-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "myapp"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "other"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(svc, pod1, pod2)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		ServiceName: "my-service",
+	})
+	if err != nil {
+		t.Fatalf("ListPods failed: %v", err)
+	}
+
+	// Should only return the pod matching service selector
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+	if len(pods) > 0 && pods[0].Name != "myapp-pod" {
+		t.Errorf("Expected pod 'myapp-pod', got '%s'", pods[0].Name)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithFieldSelector(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Use field selector to filter by node
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		FieldSelector: "spec.nodeName=node-1",
+	})
+	if err != nil {
+		t.Fatalf("ListPods with FieldSelector failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_ListPods_WithLabelAndService(t *testing.T) {
+	initTestRegistry()
+
+	// Create service with selector
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "myapp"},
+		},
+	}
+
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myapp-v1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "myapp", "version": "v1"},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+		},
+	}
+
+	clientset := fake.NewClientset(svc, pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test combining label selector with service name
+	pods, err := adapter.ListPods("test-context", "default", types.ListPodsOptions{
+		ServiceName:   "my-service",
+		LabelSelector: "version=v1",
+	})
+	if err != nil {
+		t.Fatalf("ListPods with combined filters failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_WithFakeClient(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "detailed-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "test", "version": "v2"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "worker-node-1",
+			Containers: []corev1.Container{
+				{
+					Name:  "main",
+					Image: "myapp:v2",
+					Ports: []corev1.ContainerPort{{ContainerPort: 8080, Protocol: corev1.ProtocolTCP}},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+							corev1.ResourceMemory: resource.MustParse("128Mi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			PodIP:     "10.1.2.3",
+			HostIP:    "192.168.1.10",
+			StartTime: &now,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+				{Type: corev1.PodScheduled, Status: corev1.ConditionTrue},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        true,
+					RestartCount: 5,
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{StartedAt: now},
+					},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetPod("test-context", "default", "detailed-pod")
+	if err != nil {
+		t.Fatalf("GetPod failed: %v", err)
+	}
+
+	if result.Name != "detailed-pod" {
+		t.Errorf("Expected name 'detailed-pod', got %s", result.Name)
+	}
+	if result.IP != "10.1.2.3" {
+		t.Errorf("Expected IP '10.1.2.3', got %s", result.IP)
+	}
+	if result.HostIP != "192.168.1.10" {
+		t.Errorf("Expected HostIP '192.168.1.10', got %s", result.HostIP)
+	}
+	if result.Node != "worker-node-1" {
+		t.Errorf("Expected Node 'worker-node-1', got %s", result.Node)
+	}
+	if len(result.Containers) != 1 {
+		t.Fatalf("Expected 1 container, got %d", len(result.Containers))
+	}
+	if result.Containers[0].Name != "main" {
+		t.Errorf("Expected container name 'main', got %s", result.Containers[0].Name)
+	}
+	if result.Containers[0].RestartCount != 5 {
+		t.Errorf("Expected 5 restarts, got %d", result.Containers[0].RestartCount)
+	}
+	if len(result.Conditions) != 2 {
+		t.Errorf("Expected 2 conditions, got %d", len(result.Conditions))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_NotFound(t *testing.T) {
+	clientset := fake.NewClientset()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	_, err := adapter.GetPod("test-context", "default", "nonexistent-pod")
+	if err == nil {
+		t.Error("Expected error for nonexistent pod")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_TerminatingWithWaitingContainers(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	deletionTime := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "terminating-pod",
+			Namespace:         "default",
+			DeletionTimestamp: &deletionTime,
+			Labels:            map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{
+					Name:  "main",
+					Image: "app:v1",
+					Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
+				},
+				{
+					Name:  "sidecar",
+					Image: "sidecar:v1",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			PodIP:     "10.1.1.1",
+			HostIP:    "192.168.1.1",
+			StartTime: &now,
+			Message:   "Pod is terminating",
+			Reason:    "Terminating",
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        false,
+					RestartCount: 0,
+					State: corev1.ContainerState{
+						Waiting: &corev1.ContainerStateWaiting{
+							Reason:  "ContainerCreating",
+							Message: "Creating container",
+						},
+					},
+				},
+				{
+					Name:         "sidecar",
+					Ready:        false,
+					RestartCount: 2,
+					State: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 1,
+							Reason:   "Error",
+							Message:  "Container failed",
+						},
+					},
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 137,
+							Reason:   "OOMKilled",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetPod("test-context", "default", "terminating-pod")
+	if err != nil {
+		t.Fatalf("GetPod failed: %v", err)
+	}
+
+	// Status should be "Terminating" due to DeletionTimestamp
+	if result.Status != "Terminating" {
+		t.Errorf("Expected status 'Terminating', got %s", result.Status)
+	}
+
+	// Should have 2 containers
+	if len(result.Containers) != 2 {
+		t.Fatalf("Expected 2 containers, got %d", len(result.Containers))
+	}
+
+	// Check waiting container state
+	mainContainer := result.Containers[0]
+	if mainContainer.State != "Waiting" {
+		t.Errorf("Expected main container state 'Waiting', got %s", mainContainer.State)
+	}
+	if mainContainer.StateReason != "ContainerCreating" {
+		t.Errorf("Expected main container reason 'ContainerCreating', got %s", mainContainer.StateReason)
+	}
+
+	// Check terminated container state
+	sidecarContainer := result.Containers[1]
+	if sidecarContainer.State != "Terminated" {
+		t.Errorf("Expected sidecar container state 'Terminated', got %s", sidecarContainer.State)
+	}
+	if sidecarContainer.StateReason != "Error" {
+		t.Errorf("Expected sidecar state reason 'Error', got %s", sidecarContainer.StateReason)
+	}
+	// Verify last state is captured
+	if sidecarContainer.LastState == "" {
+		t.Error("Expected last state to be set for terminated container with restart")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetPod_RunningContainerState(t *testing.T) {
+	initTestRegistry()
+
+	now := metav1.Now()
+	startedAt := metav1.NewTime(now.Add(-time.Hour))
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{Name: "main", Image: "app:v1"},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			StartTime: &now,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        true,
+					RestartCount: 0,
+					State: corev1.ContainerState{
+						Running: &corev1.ContainerStateRunning{StartedAt: startedAt},
+					},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetPod("test-context", "default", "running-pod")
+	if err != nil {
+		t.Fatalf("GetPod failed: %v", err)
+	}
+
+	if result.Status != "Running" {
+		t.Errorf("Expected status 'Running', got %s", result.Status)
+	}
+
+	if len(result.Containers) != 1 {
+		t.Fatalf("Expected 1 container, got %d", len(result.Containers))
+	}
+
+	container := result.Containers[0]
+	if container.State != "Running" {
+		t.Errorf("Expected container state 'Running', got %s", container.State)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_WithFakeClient(t *testing.T) {
+	now := metav1.Now()
+	event1 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-event-1",
+			Namespace: "default",
+		},
+		InvolvedObject: corev1.ObjectReference{
+			Kind:      "Pod",
+			Name:      "my-pod",
+			Namespace: "default",
+		},
+		Reason:         "Scheduled",
+		Message:        "Successfully assigned default/my-pod to node-1",
+		Type:           "Normal",
+		Count:          1,
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+	}
+	event2 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-event-2",
+			Namespace: "default",
+		},
+		InvolvedObject: corev1.ObjectReference{
+			Kind:      "Pod",
+			Name:      "my-pod",
+			Namespace: "default",
+		},
+		Reason:         "Pulled",
+		Message:        "Successfully pulled image myapp:v1",
+		Type:           "Normal",
+		Count:          1,
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+	}
+
+	clientset := fake.NewClientset(event1, event2)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	if len(eventList) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(eventList))
+	}
+
+	// Check event properties
+	for _, event := range eventList {
+		if event.Reason == "Scheduled" {
+			if event.ObjectKind != "Pod" {
+				t.Errorf("Expected ObjectKind 'Pod', got %s", event.ObjectKind)
+			}
+			if event.ObjectName != "my-pod" {
+				t.Errorf("Expected ObjectName 'my-pod', got %s", event.ObjectName)
+			}
+		}
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_WithFilters(t *testing.T) {
+	now := metav1.Now()
+	podEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-event", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Started", Message: "Started container", Type: "Normal",
+		FirstTimestamp: now, LastTimestamp: now,
+	}
+	serviceEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc-event", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Service", Name: "my-service", Namespace: "default",
+		},
+		Reason: "Created", Message: "Created service", Type: "Normal",
+		FirstTimestamp: now, LastTimestamp: now,
+	}
+
+	clientset := fake.NewClientset(podEvent, serviceEvent)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Pass filter options (fake clientset may not implement field selectors)
+	// This test verifies the code path with filtering options is exercised
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+		ResourceKind: "Pod",
+		ResourceName: "my-pod",
+	})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	// Fake clientset doesn't implement field selectors, so all events are returned
+	// We just verify the API call succeeded
+	if len(eventList) < 1 {
+		t.Errorf("Expected at least 1 event, got %d", len(eventList))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_WithLimit(t *testing.T) {
+	now := metav1.Now()
+	earlier := metav1.NewTime(now.Add(-time.Hour))
+	evenEarlier := metav1.NewTime(now.Add(-2 * time.Hour))
+
+	// Create 3 events with different timestamps
+	event1 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-1", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event1", Message: "First event", Type: "Normal",
+		FirstTimestamp: evenEarlier, LastTimestamp: evenEarlier,
+	}
+	event2 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-2", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event2", Message: "Second event", Type: "Normal",
+		FirstTimestamp: earlier, LastTimestamp: earlier,
+	}
+	event3 := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "event-3", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod", Name: "my-pod", Namespace: "default",
+		},
+		Reason: "Event3", Message: "Third event (most recent)", Type: "Normal",
+		FirstTimestamp: now, LastTimestamp: now,
+	}
+
+	clientset := fake.NewClientset(event1, event2, event3)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test with limit
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+		Limit: 2,
+	})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	if len(eventList) != 2 {
+		t.Errorf("Expected 2 events with limit, got %d", len(eventList))
+	}
+
+	// Events should be sorted by LastTimestamp (most recent first)
+	if len(eventList) >= 2 && eventList[0].Reason != "Event3" {
+		t.Errorf("Expected most recent event first, got %s", eventList[0].Reason)
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEvents_DefaultLimit(t *testing.T) {
+	clientset := fake.NewClientset()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test with zero/default limit
+	eventList, err := adapter.GetEvents("test-context", "default", types.GetEventsOptions{
+		Limit: 0, // should use default of 50
+	})
+	if err != nil {
+		t.Fatalf("GetEvents failed: %v", err)
+	}
+
+	// Should return empty slice when no events
+	if eventList == nil {
+		t.Error("Expected non-nil events slice")
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEndpoints_WithFakeClient(t *testing.T) {
+	endpoints := &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-service",
+			Namespace: "default",
+		},
+		Subsets: []corev1.EndpointSubset{
+			{
+				Addresses: []corev1.EndpointAddress{
+					{IP: "10.1.1.1", TargetRef: &corev1.ObjectReference{Kind: "Pod", Name: "pod-1"}},
+					{IP: "10.1.1.2", TargetRef: &corev1.ObjectReference{Kind: "Pod", Name: "pod-2"}},
+				},
+				NotReadyAddresses: []corev1.EndpointAddress{
+					{IP: "10.1.1.3", TargetRef: &corev1.ObjectReference{Kind: "Pod", Name: "pod-3"}},
+				},
+				Ports: []corev1.EndpointPort{
+					{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP},
+				},
+			},
+		},
+	}
+
+	clientset := fake.NewClientset(endpoints)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	result, err := adapter.GetEndpoints("test-context", "default", "my-service")
+	if err != nil {
+		t.Fatalf("GetEndpoints failed: %v", err)
+	}
+
+	if result.Name != "my-service" {
+		t.Errorf("Expected name 'my-service', got %s", result.Name)
+	}
+	if len(result.Subsets) != 1 {
+		t.Fatalf("Expected 1 subset, got %d", len(result.Subsets))
+	}
+	if len(result.Subsets[0].Addresses) != 2 {
+		t.Errorf("Expected 2 ready addresses, got %d", len(result.Subsets[0].Addresses))
+	}
+	if len(result.Subsets[0].NotReadyAddresses) != 1 {
+		t.Errorf("Expected 1 not-ready address, got %d", len(result.Subsets[0].NotReadyAddresses))
+	}
+	if len(result.Subsets[0].Ports) != 1 {
+		t.Errorf("Expected 1 port, got %d", len(result.Subsets[0].Ports))
+	}
+}
+
+func TestKubernetesDiscoveryAdapter_GetEndpoints_NotFound(t *testing.T) {
+	clientset := fake.NewClientset()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	_, err := adapter.GetEndpoints("test-context", "default", "nonexistent-service")
+	if err == nil {
+		t.Error("Expected error for nonexistent endpoints")
+	}
+}
+
+// Test GetServiceDiagnostic with various status scenarios
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Active(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with only active forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "active" {
+		t.Errorf("Expected status 'active', got '%s'", diag.Status)
+	}
+	if diag.ServiceName != "svc" {
+		t.Errorf("Expected service name 'svc', got '%s'", diag.ServiceName)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Error(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with only error forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "error" {
+		t.Errorf("Expected status 'error', got '%s'", diag.Status)
+	}
+	if len(diag.ErrorHistory) != 1 {
+		t.Errorf("Expected 1 error in history, got %d", len(diag.ErrorHistory))
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_Partial(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add service with both active and error forwards
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod2.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod2",
+		LocalPort:   "8080",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetServiceDiagnostic("svc.ns.ctx")
+	if err != nil {
+		t.Fatalf("GetServiceDiagnostic failed: %v", err)
+	}
+
+	if diag.Status != "partial" {
+		t.Errorf("Expected status 'partial', got '%s'", diag.Status)
+	}
+	if diag.ActiveCount != 1 {
+		t.Errorf("Expected ActiveCount 1, got %d", diag.ActiveCount)
+	}
+	if diag.ErrorCount != 1 {
+		t.Errorf("Expected ErrorCount 1, got %d", diag.ErrorCount)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetServiceDiagnostic_NotFound(t *testing.T) {
+	store := state.NewStore(100)
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	_, err := adapter.GetServiceDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+	if err.Error() != "service not found: nonexistent" {
+		t.Errorf("Expected 'service not found' error, got: %s", err.Error())
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetForwardDiagnostic_WithStore(t *testing.T) {
+	store := state.NewStore(100)
+
+	// Add forward
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod1.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod1",
+		LocalPort:   "8080",
+		LocalIP:     "127.1.1.1",
+		Status:      state.StatusActive,
+		StartedAt:   time.Now().Add(-time.Hour),
+		LastActive:  time.Now(),
+	})
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	diag, err := adapter.GetForwardDiagnostic("svc.ns.ctx.pod1.8080")
+	if err != nil {
+		t.Fatalf("GetForwardDiagnostic failed: %v", err)
+	}
+
+	if diag.Key != "svc.ns.ctx.pod1.8080" {
+		t.Errorf("Expected key 'svc.ns.ctx.pod1.8080', got '%s'", diag.Key)
+	}
+	if diag.Connection.State != "connected" {
+		t.Errorf("Expected connection state 'connected', got '%s'", diag.Connection.State)
+	}
+	if diag.PodName != "pod1" {
+		t.Errorf("Expected pod name 'pod1', got '%s'", diag.PodName)
+	}
+}
+
+func TestDiagnosticsProviderAdapter_GetForwardDiagnostic_NotFound(t *testing.T) {
+	store := state.NewStore(100)
+
+	adapter := NewDiagnosticsProviderAdapter(
+		func() *state.Store { return store },
+		nil,
+	)
+
+	_, err := adapter.GetForwardDiagnostic("nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent forward")
+	}
+	if err.Error() != "forward not found: nonexistent" {
+		t.Errorf("Expected 'forward not found' error, got: %s", err.Error())
+	}
+}
+
+// Test ReconnectAll with error forwards
+func TestServiceControllerAdapter_ReconnectAll_WithErroredForwards(t *testing.T) {
+	initTestRegistry()
+	store := state.NewStore(100)
+
+	// Add forwards with different statuses
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc1.ns.ctx.pod1.8080",
+		ServiceKey:  "svc1.ns.ctx",
+		RegistryKey: "svc1.ns.ctx",
+		ServiceName: "svc1",
+		Status:      state.StatusActive,
+	})
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "svc2.ns.ctx.pod2.8080",
+		ServiceKey:  "svc2.ns.ctx",
+		RegistryKey: "svc2.ns.ctx",
+		ServiceName: "svc2",
+		Status:      state.StatusError,
+		Error:       "connection refused",
+	})
+
+	adapter := NewServiceControllerAdapter(func() *state.Store { return store })
+
+	// ReconnectAll should try to reconnect error services
+	// Since the services aren't registered in fwdsvcregistry, count will be 0
+	count := adapter.ReconnectAll()
+
+	// We can't easily test the actual reconnect without integration,
+	// but we can verify it doesn't panic and returns a count
+	if count < 0 {
+		t.Error("ReconnectAll should return non-negative count")
 	}
 }

@@ -111,7 +111,7 @@ func (c *HTTPClient) PostJSON(path string, body interface{}, result interface{})
 
 // Delete performs a DELETE request and decodes JSON response
 func (c *HTTPClient) Delete(path string, result interface{}) error {
-	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, nil)
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

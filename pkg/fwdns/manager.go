@@ -29,8 +29,8 @@ import (
 )
 
 // WatcherKey creates a unique key for a namespace/context combination
-func WatcherKey(namespace, context string) string {
-	return namespace + "." + context
+func WatcherKey(namespace, k8sContext string) string {
+	return namespace + "." + k8sContext
 }
 
 // NamespaceManager manages the lifecycle of namespace watchers.
@@ -329,6 +329,13 @@ func (m *NamespaceManager) GetClientSet(ctx string) kubernetes.Interface {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.clientSets[ctx]
+}
+
+// SetClientSet sets a clientSet for a context (for testing)
+func (m *NamespaceManager) SetClientSet(ctx string, clientSet kubernetes.Interface) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clientSets[ctx] = clientSet
 }
 
 // getOrCreateClient gets or creates kubernetes clients for a context

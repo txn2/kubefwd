@@ -195,6 +195,66 @@ func TestServer_Done(t *testing.T) {
 	}
 }
 
+func TestServer_SetAnalysisProvider(t *testing.T) {
+	resetGlobalState()
+
+	server := Init("1.0.0")
+
+	// Initially nil
+	if server.getAnalysisProvider() != nil {
+		t.Error("Expected analysisProvider to be nil initially")
+	}
+
+	// Set it (using nil pointer since we can't create a real one without HTTP)
+	var provider *AnalysisProviderHTTP
+	server.SetAnalysisProvider(provider)
+
+	// Should still be nil since we set nil
+	if server.getAnalysisProvider() != nil {
+		t.Error("Expected analysisProvider to remain nil")
+	}
+}
+
+func TestServer_SetHTTPTrafficProvider(t *testing.T) {
+	resetGlobalState()
+
+	server := Init("1.0.0")
+
+	// Initially nil
+	if server.getHTTPTrafficProvider() != nil {
+		t.Error("Expected httpTrafficProvider to be nil initially")
+	}
+
+	// Set it (using nil pointer)
+	var provider *HTTPTrafficProviderHTTP
+	server.SetHTTPTrafficProvider(provider)
+
+	// Should still be nil
+	if server.getHTTPTrafficProvider() != nil {
+		t.Error("Expected httpTrafficProvider to remain nil")
+	}
+}
+
+func TestServer_SetHistoryProvider(t *testing.T) {
+	resetGlobalState()
+
+	server := Init("1.0.0")
+
+	// Initially nil
+	if server.getHistoryProvider() != nil {
+		t.Error("Expected historyProvider to be nil initially")
+	}
+
+	// Set it (using nil pointer)
+	var provider *HistoryProviderHTTP
+	server.SetHistoryProvider(provider)
+
+	// Should still be nil
+	if server.getHistoryProvider() != nil {
+		t.Error("Expected historyProvider to remain nil")
+	}
+}
+
 // Mock implementations
 
 type mockStateReader struct {

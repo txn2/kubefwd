@@ -601,11 +601,12 @@ Try:
 
 	// If TUI mode, run the TUI (blocks until user quits)
 	// Otherwise, block until shutdown signal is received
-	if tuiManager != nil {
+	switch {
+	case tuiManager != nil:
 		if err := tuiManager.Run(); err != nil {
 			log.Errorf("TUI error: %s", err)
 		}
-	} else if apiManager != nil && !tuiMode {
+	case apiManager != nil && !tuiMode:
 		// API-only or idle mode (no TUI): show info and block
 		log.Infof("API server running at http://%s/ (http://%s/)", fwdapi.APIIP+":"+fwdapi.APIPort, fwdapi.Hostname)
 		if idleMode {
@@ -613,7 +614,7 @@ Try:
 		}
 		log.Println("Press [Ctrl-C] to stop.")
 		<-stopListenCh
-	} else {
+	default:
 		// Standard mode: block until shutdown signal (Ctrl+C)
 		<-stopListenCh
 	}

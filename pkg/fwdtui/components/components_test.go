@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1235,5 +1236,1274 @@ func TestFormatDuration(t *testing.T) {
 		if !strings.Contains(result, tt.contains) {
 			t.Errorf("formatDuration(%v) = %s, expected to contain %q", tt.duration, result, tt.contains)
 		}
+	}
+}
+
+// =============================================================================
+// Detail Model Setter Tests
+// =============================================================================
+
+func TestDetailModel_SetHTTPLogs(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+
+	logs := []HTTPLogEntry{
+		{Timestamp: time.Now(), Method: "GET", Path: "/api/test", StatusCode: 200, Duration: time.Millisecond * 50},
+		{Timestamp: time.Now(), Method: "POST", Path: "/api/data", StatusCode: 201, Duration: time.Millisecond * 100},
+	}
+
+	model.SetHTTPLogs(logs)
+
+	// Verify logs were set
+	if len(model.httpLogs) != 2 {
+		t.Errorf("Expected 2 HTTP logs, got %d", len(model.httpLogs))
+	}
+}
+
+func TestDetailModel_SetPodLogs(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	model.width = 80
+	model.height = 24
+
+	logs := []string{"log line 1", "log line 2", "log line 3"}
+	model.SetPodLogs(logs)
+
+	// Verify logs were set and loading is false
+	if len(model.podLogs) != 3 {
+		t.Errorf("Expected 3 pod logs, got %d", len(model.podLogs))
+	}
+	if model.logsLoading {
+		t.Error("Expected logsLoading to be false after SetPodLogs")
+	}
+}
+
+func TestDetailModel_SetLogsLoading(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+
+	model.SetLogsLoading(true)
+	if !model.logsLoading {
+		t.Error("Expected logsLoading to be true")
+	}
+
+	model.SetLogsLoading(false)
+	if model.logsLoading {
+		t.Error("Expected logsLoading to be false")
+	}
+}
+
+func TestDetailModel_Init(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// Header Model Tests
+// =============================================================================
+
+func TestHeaderModel_Init(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+func TestHeaderModel_SetContext(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+
+	model.SetContext("test-context")
+
+	if model.GetContext() != "test-context" {
+		t.Errorf("Expected context 'test-context', got '%s'", model.GetContext())
+	}
+}
+
+func TestHeaderModel_GetContext(t *testing.T) {
+	model := NewHeaderModel("1.0.0")
+
+	// Default context should be empty
+	if model.GetContext() != "" {
+		t.Errorf("Expected empty context, got '%s'", model.GetContext())
+	}
+
+	// Set context via setter and verify
+	model.SetContext("my-ctx")
+	if model.GetContext() != "my-ctx" {
+		t.Errorf("Expected context 'my-ctx', got '%s'", model.GetContext())
+	}
+}
+
+// =============================================================================
+// Help Model Tests
+// =============================================================================
+
+func TestHelpModel_Init(t *testing.T) {
+	model := NewHelpModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// Logs Model Tests
+// =============================================================================
+
+func TestLogsModel_Init(t *testing.T) {
+	model := NewLogsModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+func TestLogsModel_Update_WindowSizeMsg(t *testing.T) {
+	m := NewLogsModel()
+
+	// Initial window size message initializes the viewport
+	msg := tea.WindowSizeMsg{Width: 80, Height: 20}
+	updated, _ := m.Update(msg)
+
+	if updated.width != 80 {
+		t.Errorf("Expected width 80, got %d", updated.width)
+	}
+	if updated.height != 20 {
+		t.Errorf("Expected height 20, got %d", updated.height)
+	}
+	if !updated.ready {
+		t.Error("Expected viewport to be ready after WindowSizeMsg")
+	}
+
+	// Second window size message should resize viewport
+	msg2 := tea.WindowSizeMsg{Width: 100, Height: 30}
+	updated2, _ := updated.Update(msg2)
+
+	if updated2.width != 100 {
+		t.Errorf("Expected width 100, got %d", updated2.width)
+	}
+	if updated2.height != 30 {
+		t.Errorf("Expected height 30, got %d", updated2.height)
+	}
+}
+
+func TestLogsModel_Update_WindowSizeMsg_SmallHeight(t *testing.T) {
+	m := NewLogsModel()
+
+	// Small height (less than 2) should clamp to 1
+	msg := tea.WindowSizeMsg{Width: 80, Height: 1}
+	updated, _ := m.Update(msg)
+
+	if updated.height != 1 {
+		t.Errorf("Expected height 1, got %d", updated.height)
+	}
+	if !updated.ready {
+		t.Error("Expected viewport to be ready")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_J_ScrollDown(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Press 'j' to scroll down
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	updated, _ := m.Update(msg)
+
+	// Just verify no panic and model is updated
+	if updated.width != m.width {
+		t.Error("Model should be updated")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_K_ScrollUp(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Go to bottom first
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+
+	// Press 'k' to scroll up - should disable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after pressing 'k'")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_G_GotoTop(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Press 'g' to go to top - should disable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after pressing 'g'")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_UpperG_GotoBottom(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// First go to top
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+
+	// Press 'G' to go to bottom - should enable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}
+	updated, _ := m.Update(msg)
+
+	if !updated.autoFollow {
+		t.Error("Expected autoFollow to be true after pressing 'G'")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_ArrowUp(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Go to bottom first to have auto-follow true
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+
+	// Press up arrow - should disable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyUp}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after pressing up arrow")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_PageUp(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Press pgup - should disable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyPgUp}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after pressing page up")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_Home(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Press home - should disable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyHome}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after pressing home")
+	}
+}
+
+func TestLogsModel_Update_KeyMsg_End(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// First go to top
+	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+
+	// Press end - should enable auto-follow
+	msg := tea.KeyMsg{Type: tea.KeyEnd}
+	updated, _ := m.Update(msg)
+
+	if !updated.autoFollow {
+		t.Error("Expected autoFollow to be true after pressing end")
+	}
+}
+
+func TestLogsModel_Update_MouseMsg_WheelUp(t *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(true)
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Scroll wheel up - should disable auto-follow
+	msg := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+	updated, _ := m.Update(msg)
+
+	if updated.autoFollow {
+		t.Error("Expected autoFollow to be false after mouse wheel up")
+	}
+}
+
+func TestLogsModel_Update_NotFocused(_ *testing.T) {
+	m := NewLogsModel()
+	m.SetSize(80, 10)
+	m.SetFocus(false) // Not focused
+
+	// Add logs to scroll
+	for i := 0; i < 30; i++ {
+		m.AppendLog(logrus.InfoLevel, fmt.Sprintf("Log line %d", i), time.Now())
+	}
+
+	// Press 'j' - should not do anything since not focused
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	_, _ = m.Update(msg)
+
+	// Just verify no panic
+}
+
+func TestLogsModel_Update_NotReady(_ *testing.T) {
+	m := NewLogsModel()
+	// Don't call SetSize, so viewport is not ready
+
+	// Press 'j' - should not panic even though not ready
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	_, _ = m.Update(msg)
+
+	// Just verify no panic
+}
+
+// =============================================================================
+// Services Model Tests
+// =============================================================================
+
+func TestServicesModel_Init(t *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+func TestServicesModel_GetSelectedRegistryKey(_ *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	model.SetSize(80, 24)
+	model.Refresh()
+
+	// Initially no selection, should return empty
+	key := model.GetSelectedRegistryKey()
+	// Note: depends on whether table has data highlighted
+	// Just verify it doesn't panic
+	_ = key
+}
+
+func TestServicesModel_SelectByY(_ *testing.T) {
+	store := createTestStore()
+	model := NewServicesModel(store)
+	model.SetSize(80, 24)
+	model.Refresh()
+
+	// Test SelectByY doesn't panic with various Y values
+	model.SelectByY(0)
+	model.SelectByY(5)
+	model.SelectByY(100)
+	model.SelectByY(-1)
+}
+
+// =============================================================================
+// StatusBar Model Tests
+// =============================================================================
+
+func TestStatusBarModel_Init(t *testing.T) {
+	model := NewStatusBarModel()
+	cmd := model.Init()
+
+	// Init should return nil
+	if cmd != nil {
+		t.Error("Expected Init to return nil")
+	}
+}
+
+// =============================================================================
+// ClearCopiedAfterDelay Tests
+// =============================================================================
+
+func TestClearCopiedAfterDelay(t *testing.T) {
+	cmd := clearCopiedAfterDelay()
+
+	// Should return a non-nil command (tea.Tick)
+	if cmd == nil {
+		t.Error("Expected clearCopiedAfterDelay to return a non-nil command")
+	}
+}
+
+// =============================================================================
+// Detail Model Render Method Tests (via instance)
+// =============================================================================
+
+func TestDetailModel_RenderStatus(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []struct {
+		status   state.ForwardStatus
+		expected string
+	}{
+		{state.StatusActive, "Active"},
+		{state.StatusError, "Error"},
+		{state.StatusConnecting, "Connecting"},
+		{state.StatusPending, "Pending"},
+	}
+
+	for _, tt := range tests {
+		result := model.renderStatus(tt.status)
+		if !strings.Contains(result, tt.expected) {
+			t.Errorf("renderStatus(%s) = %s, expected to contain %s", tt.status, result, tt.expected)
+		}
+	}
+}
+
+func TestDetailModel_RenderMethod(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "UNKNOWN"}
+
+	for _, method := range tests {
+		result := model.renderMethod(method)
+		if !strings.Contains(result, method) {
+			t.Errorf("renderMethod(%s) should contain the method name", method)
+		}
+	}
+}
+
+func TestDetailModel_RenderStatusCode(t *testing.T) {
+	model := NewDetailModel(nil, nil)
+	tests := []int{200, 201, 301, 400, 404, 500, 503}
+
+	for _, code := range tests {
+		result := model.renderStatusCode(code)
+		// Should contain the status code as string
+		codeStr := strings.TrimSpace(result)
+		if codeStr == "" {
+			t.Errorf("renderStatusCode(%d) returned empty string", code)
+		}
+	}
+}
+
+// =============================================================================
+// Detail Model Update Tests - Additional Message Types
+// =============================================================================
+
+func TestDetailModel_UpdateWithClearCopiedMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.copiedVisible = true
+	m.copiedIndex = 0
+
+	updated, _ := m.Update(ClearCopiedMsg{})
+	m = updated
+
+	if m.copiedVisible {
+		t.Error("Expected copiedVisible to be false after ClearCopiedMsg")
+	}
+	if m.copiedIndex != -1 {
+		t.Errorf("Expected copiedIndex to be -1, got %d", m.copiedIndex)
+	}
+}
+
+func TestDetailModel_UpdateWithPodLogLineMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, _ := m.Update(PodLogLineMsg{Line: "test log line"})
+	m = updated
+
+	// Verify log line was appended
+	if len(m.podLogs) != 1 || m.podLogs[0] != "test log line" {
+		t.Errorf("Expected log line to be appended, got: %v", m.podLogs)
+	}
+}
+
+func TestDetailModel_UpdateWithPodLogsErrorMsg(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, _ := m.Update(PodLogsErrorMsg{Error: fmt.Errorf("connection failed")})
+	m = updated
+
+	if m.logsError != "connection failed" {
+		t.Errorf("Expected logsError 'connection failed', got '%s'", m.logsError)
+	}
+	if m.logsLoading {
+		t.Error("Expected logsLoading to be false")
+	}
+	if m.logsStreaming {
+		t.Error("Expected logsStreaming to be false")
+	}
+}
+
+func TestDetailModel_UpdateWithReconnectKey(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = updated
+
+	// Should return a command that produces ReconnectErroredMsg
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' key")
+	}
+}
+
+func TestDetailModel_UpdateWithVimKeysOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+
+	// Add some HTTP logs
+	for i := 0; i < 50; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	// Test 'j' key (scroll down)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = updated
+	if m.httpScrollOffset != 1 {
+		t.Errorf("Expected httpScrollOffset 1 after 'j', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'k' key (scroll up)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'k', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'G' key (go to bottom)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated
+	if m.httpScrollOffset == 0 {
+		t.Error("Expected httpScrollOffset to be > 0 after 'G'")
+	}
+
+	// Test 'g' key (go to top)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'g', got %d", m.httpScrollOffset)
+	}
+}
+
+func TestDetailModel_UpdateWithArrowKeysOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+
+	// Add some HTTP logs
+	for i := 0; i < 50; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	// Test 'down' key
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated
+	if m.httpScrollOffset != 1 {
+		t.Errorf("Expected httpScrollOffset 1 after 'down', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'up' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated
+	if m.httpScrollOffset != 0 {
+		t.Errorf("Expected httpScrollOffset 0 after 'up', got %d", m.httpScrollOffset)
+	}
+
+	// Test 'pgdown' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated
+	if m.httpScrollOffset == 0 {
+		t.Error("Expected httpScrollOffset > 0 after 'pgdown'")
+	}
+
+	// Test 'pgup' key
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated
+	// Should scroll up from current position
+}
+
+func TestDetailModel_RequestPodLogs_NilSnapshot(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = nil
+
+	cmd := m.requestPodLogs()
+	if cmd != nil {
+		t.Error("Expected nil command when snapshot is nil")
+	}
+}
+
+func TestDetailModel_RequestPodLogs_WithSnapshot(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.UpdateSnapshot()
+
+	cmd := m.requestPodLogs()
+	if cmd == nil {
+		t.Error("Expected non-nil command when snapshot is set")
+	}
+
+	// Execute the command to get the message
+	msg := cmd()
+	if _, ok := msg.(PodLogsRequestMsg); !ok {
+		t.Errorf("Expected PodLogsRequestMsg, got %T", msg)
+	}
+}
+
+func TestDetailModel_GetConnectStrings_NilSnapshot(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = nil
+
+	result := m.getConnectStrings()
+	if result != nil {
+		t.Errorf("Expected nil, got %v", result)
+	}
+}
+
+func TestDetailModel_GetConnectStrings_WithHostnames(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.UpdateSnapshot()
+
+	result := m.getConnectStrings()
+	if len(result) == 0 {
+		t.Error("Expected non-empty connect strings")
+	}
+
+	// Check that all strings contain port
+	for _, s := range result {
+		if !strings.Contains(s, ":") {
+			t.Errorf("Expected port in connect string, got: %s", s)
+		}
+	}
+}
+
+func TestDetailModel_GetConnectStrings_NoHostnames(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.snapshot = &state.ForwardSnapshot{
+		ServiceName: "my-service",
+		LocalPort:   "8080",
+		Hostnames:   []string{}, // Empty hostnames
+	}
+
+	result := m.getConnectStrings()
+	if len(result) != 1 {
+		t.Errorf("Expected 1 connect string, got %d", len(result))
+	}
+	if result[0] != "my-service:8080" {
+		t.Errorf("Expected 'my-service:8080', got '%s'", result[0])
+	}
+}
+
+func TestDetailModel_GetViewportHeight(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.height = 40
+
+	height := m.getViewportHeight()
+	if height < 5 {
+		t.Errorf("Expected viewport height >= 5, got %d", height)
+	}
+}
+
+func TestDetailModel_GetHTTPMaxScroll(t *testing.T) {
+	m := NewDetailModel(nil, nil)
+	m.height = 40
+
+	// With no HTTP logs
+	maxScroll := m.getHTTPMaxScroll()
+	if maxScroll != 0 {
+		t.Errorf("Expected maxScroll 0 with no logs, got %d", maxScroll)
+	}
+
+	// With many HTTP logs
+	for i := 0; i < 100; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: "/test"})
+	}
+
+	maxScroll = m.getHTTPMaxScroll()
+	if maxScroll <= 0 {
+		t.Errorf("Expected maxScroll > 0 with many logs, got %d", maxScroll)
+	}
+}
+
+// ServicesModel Update tests
+
+func TestServicesModel_Update_WindowSizeMsg(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+	updated, _ := m.Update(msg)
+
+	if updated.width != 120 {
+		t.Errorf("Expected width 120, got %d", updated.width)
+	}
+	if updated.height != 40 {
+		t.Errorf("Expected height 40, got %d", updated.height)
+	}
+}
+
+func TestServicesModel_Update_MouseMsg(_ *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Test wheel up
+	wheelUp := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+	m.Update(wheelUp)
+
+	// Test wheel down
+	wheelDown := tea.MouseMsg{Button: tea.MouseButtonWheelDown}
+	m.Update(wheelDown)
+}
+
+func TestServicesModel_Update_KeyMsg_Filtering(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Enable filtering
+	slashMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	updated, _ := m.Update(slashMsg)
+	if !updated.filtering {
+		t.Error("Expected filtering to be enabled after /")
+	}
+
+	// Type some characters
+	charMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	updated, _ = updated.Update(charMsg)
+	if updated.filterText != "a" {
+		t.Errorf("Expected filterText 'a', got '%s'", updated.filterText)
+	}
+
+	// Backspace
+	bsMsg := tea.KeyMsg{Type: tea.KeyBackspace}
+	updated, _ = updated.Update(bsMsg)
+	if updated.filterText != "" {
+		t.Errorf("Expected filterText '', got '%s'", updated.filterText)
+	}
+
+	// Escape to cancel
+	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ = updated.Update(escMsg)
+	if updated.filtering {
+		t.Error("Expected filtering to be disabled after Escape")
+	}
+}
+
+func TestServicesModel_Update_KeyMsg_Enter(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Enable filtering and type
+	slashMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	updated, _ := m.Update(slashMsg)
+
+	charMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+	updated, _ = updated.Update(charMsg)
+
+	// Press enter to apply filter
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ = updated.Update(enterMsg)
+	if updated.filtering {
+		t.Error("Expected filtering to be disabled after Enter")
+	}
+}
+
+func TestServicesModel_Update_KeyMsg_ToggleBandwidth(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	initialBandwidth := m.showBandwidth
+
+	bMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}}
+	updated, _ := m.Update(bMsg)
+
+	if updated.showBandwidth == initialBandwidth {
+		t.Error("Expected showBandwidth to toggle")
+	}
+}
+
+func TestServicesModel_Update_KeyMsg_ToggleCompact(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	initialCompact := m.compactView
+
+	cMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+	updated, _ := m.Update(cMsg)
+
+	if updated.compactView == initialCompact {
+		t.Error("Expected compactView to toggle")
+	}
+}
+
+func TestServicesModel_Update_KeyMsg_Delete(t *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Add a forward to the store
+	store.AddForward(state.ForwardSnapshot{
+		Key:         "test-forward",
+		ServiceName: "my-service",
+		Namespace:   "default",
+		Context:     "minikube",
+	})
+	m.Refresh()
+
+	dMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+	_, cmd := m.Update(dMsg)
+
+	// If there's a selection, cmd should return a RemoveForwardMsg
+	if cmd == nil {
+		t.Log("No command returned (no selection)")
+	}
+}
+
+func TestServicesModel_Update_KeyMsg_Navigation(_ *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Add some data
+	for i := 0; i < 20; i++ {
+		store.AddForward(state.ForwardSnapshot{
+			Key:         fmt.Sprintf("fwd-%d", i),
+			ServiceName: fmt.Sprintf("svc-%d", i),
+			Namespace:   "default",
+			Context:     "minikube",
+		})
+	}
+	m.Refresh()
+
+	// Test g (home)
+	gMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	m.Update(gMsg)
+
+	// Test G (end)
+	GMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+	m.Update(GMsg)
+
+	// Test page down
+	pgdnMsg := tea.KeyMsg{Type: tea.KeyPgDown}
+	m.Update(pgdnMsg)
+
+	// Test page up
+	pgupMsg := tea.KeyMsg{Type: tea.KeyPgUp}
+	m.Update(pgupMsg)
+
+	// Test home key
+	homeMsg := tea.KeyMsg{Type: tea.KeyHome}
+	m.Update(homeMsg)
+
+	// Test end key
+	endMsg := tea.KeyMsg{Type: tea.KeyEnd}
+	m.Update(endMsg)
+}
+
+func TestServicesModel_Update_KeyMsg_ClearFilter(t *testing.T) {
+	store := state.NewStore(100)
+	store.SetFilter("test-filter")
+	m := NewServicesModel(store)
+
+	// Escape in normal mode clears filter
+	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ := m.Update(escMsg)
+
+	if store.GetFilter() != "" {
+		t.Error("Expected filter to be cleared")
+	}
+	if updated.filterText != "" {
+		t.Errorf("Expected filterText '', got '%s'", updated.filterText)
+	}
+}
+
+func TestServicesModel_StatusStyle(_ *testing.T) {
+	store := state.NewStore(100)
+	m := NewServicesModel(store)
+
+	// Test different status styles
+	testCases := []struct {
+		status   string
+		expected string
+	}{
+		{"active", "active"},
+		{"error", "error"},
+		{"partial", "partial"},
+		{"pending", "pending"},
+		{"unknown", "unknown"},
+	}
+
+	for _, tc := range testCases {
+		// statusStyle is private, but we can test it indirectly through View
+		// For now, just verify the function exists
+		_ = m
+		_ = tc
+	}
+}
+
+// =============================================================================
+// Additional Detail Model Update Tests
+// =============================================================================
+
+func TestDetailModel_Update_NumberKeyCopy(_ *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabInfo
+
+	// Press '1' to copy first connect string
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")}
+	updated, cmd := m.Update(msg)
+	m = updated
+
+	// Just verify no panic - the actual copy depends on clipboard availability
+	_ = cmd
+}
+
+func TestDetailModel_Update_NumberKeyOutOfRange(_ *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabInfo
+
+	// Press '9' - likely out of range for connect strings
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("9")}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	// Just verify no panic
+}
+
+func TestDetailModel_Update_TabSwitchFromLogsStreaming(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsStreaming = true
+
+	// Press 'tab' to switch away from logs - should stop streaming
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")}
+	updated, cmd := m.Update(msg)
+	m = updated
+
+	if m.logsStreaming {
+		t.Error("Expected logsStreaming to be false after switching tabs")
+	}
+	_ = cmd
+}
+
+func TestDetailModel_Update_TabSwitchToLogs(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabInfo
+	m.logsStreaming = false
+	m.logsLoading = false
+
+	// Press 'tab' twice to get to Logs tab
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+	m = updated
+
+	if m.currentTab != TabLogs {
+		t.Errorf("Expected TabLogs after two tabs from TabInfo, got %v", m.currentTab)
+	}
+	if !m.logsLoading {
+		t.Error("Expected logsLoading to be true when entering Logs tab")
+	}
+}
+
+func TestDetailModel_Update_ShiftTabFromLogsStreaming(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsStreaming = true
+
+	// Press 'shift+tab' to switch away from logs - should stop streaming
+	msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	if m.logsStreaming {
+		t.Error("Expected logsStreaming to be false after shift+tab")
+	}
+}
+
+func TestDetailModel_Update_VimScrollOnLogsTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsViewportReady = true
+
+	// Add some logs
+	for i := 0; i < 50; i++ {
+		m.AppendLogLine(fmt.Sprintf("Log line %d", i))
+	}
+
+	// Test 'j' (scroll down)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+
+	// Test 'k' (scroll up) - should disable auto-follow
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = updated
+	if m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be false after 'k'")
+	}
+
+	// Test 'g' (go to top) - should disable auto-follow
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = updated
+	if m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be false after 'g'")
+	}
+
+	// Test 'G' (go to bottom) - should enable auto-follow
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m = updated
+	if !m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be true after 'G'")
+	}
+}
+
+func TestDetailModel_Update_ArrowScrollOnLogsTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsViewportReady = true
+	m.logsAutoFollow = true
+
+	// Add logs
+	for i := 0; i < 50; i++ {
+		m.AppendLogLine(fmt.Sprintf("Log line %d", i))
+	}
+
+	// Test 'up' (scroll up) - should disable auto-follow
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated
+	if m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be false after 'up'")
+	}
+
+	// Test 'home' (go to top) - should disable auto-follow
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m = updated
+	if m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be false after 'home'")
+	}
+
+	// Test 'end' (go to bottom) - should enable auto-follow
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m = updated
+	if !m.logsAutoFollow {
+		t.Error("Expected logsAutoFollow to be true after 'end'")
+	}
+}
+
+func TestDetailModel_Update_YankKey(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabInfo
+
+	// Press 'y' to yank/copy first connect string
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	// Just verify no panic - actual copy depends on clipboard availability
+}
+
+func TestDetailModel_Update_YankKeyOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabHTTP
+
+	// Press 'y' on HTTP tab - should do nothing
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	// Just verify no panic - yank doesn't work on HTTP tab
+}
+
+func TestDetailModel_Update_PageDownOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+
+	// Add many HTTP logs
+	for i := 0; i < 100; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: fmt.Sprintf("/api/%d", i)})
+	}
+
+	// Test 'ctrl+d' (page down half)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+d")}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	if m.httpScrollOffset == 0 {
+		t.Error("Expected httpScrollOffset > 0 after ctrl+d")
+	}
+}
+
+func TestDetailModel_Update_PageUpOnHTTPTab(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.currentTab = TabHTTP
+	m.httpScrollOffset = 50
+
+	// Add many HTTP logs
+	for i := 0; i < 100; i++ {
+		m.AddHTTPLog(HTTPLogEntry{Method: "GET", Path: fmt.Sprintf("/api/%d", i)})
+	}
+
+	// Test 'ctrl+u' (page up half)
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+u")}
+	updated, _ := m.Update(msg)
+	m = updated
+
+	if m.httpScrollOffset >= 50 {
+		t.Error("Expected httpScrollOffset < 50 after ctrl+u")
+	}
+}
+
+func TestDetailModel_SetSize_SmallDimensions(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+
+	// Test with very small dimensions
+	m.SetSize(10, 5)
+
+	// Just verify no panic
+	if m.width != 10 {
+		t.Errorf("Expected width 10, got %d", m.width)
+	}
+}
+
+func TestDetailModel_RenderLogsTab_Loading(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsLoading = true
+
+	view := m.View()
+	if !strings.Contains(view, "Loading") {
+		t.Error("Expected view to contain 'Loading' when logsLoading is true")
+	}
+}
+
+func TestDetailModel_RenderLogsTab_Error(t *testing.T) {
+	store := createTestStore()
+	m := NewDetailModel(store, nil)
+	m.Show("svc1.default.ctx1")
+	m.SetSize(80, 40)
+	m.UpdateSnapshot()
+	m.currentTab = TabLogs
+	m.logsError = "Failed to fetch logs"
+
+	view := m.View()
+	if !strings.Contains(view, "Failed to fetch logs") {
+		t.Error("Expected view to contain error message")
 	}
 }

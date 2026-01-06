@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	log "github.com/sirupsen/logrus"
+	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/components"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -1794,6 +1795,169 @@ func TestHandleMetricsUpdate_DetailViewHTTPLogs(t *testing.T) {
 	// Should not panic, HTTP logs should be set on detail view
 }
 
+func TestHandleMetricsUpdate_MetricsAggregation(t *testing.T) {
+	m := createTestRootModel()
+
+	// Add a forward
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	// Send metrics update with multiple snapshots for the same key
+	// This tests the aggregation logic where podTotals[key] already exists
+	msg := MetricsUpdateMsg{
+		Snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc",
+				Namespace:   "ns",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName:   "pod",
+						LocalPort: "8080",
+						BytesIn:   1000,
+						BytesOut:  2000,
+						RateIn:    50.0,
+						RateOut:   100.0,
+					},
+				},
+			},
+			// Second snapshot for the same service (e.g., from different collectors)
+			{
+				ServiceName: "svc",
+				Namespace:   "ns",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName:   "pod",
+						LocalPort: "8080",
+						BytesIn:   500,
+						BytesOut:  750,
+						RateIn:    25.0,
+						RateOut:   50.0,
+					},
+				},
+			},
+		},
+	}
+
+	m.handleMetricsUpdate(msg)
+
+	// Verify the metrics were aggregated
+	forwards := m.store.GetFiltered()
+	if len(forwards) != 1 {
+		t.Fatalf("Expected 1 forward, got %d", len(forwards))
+	}
+
+	// Aggregated: 1000 + 500 = 1500
+	if forwards[0].BytesIn != 1500 {
+		t.Errorf("Expected BytesIn 1500, got %d", forwards[0].BytesIn)
+	}
+	// Aggregated: 2000 + 750 = 2750
+	if forwards[0].BytesOut != 2750 {
+		t.Errorf("Expected BytesOut 2750, got %d", forwards[0].BytesOut)
+	}
+}
+
+func TestHandleMetricsUpdate_NilRateHistory(t *testing.T) {
+	m := createTestRootModel()
+	m.rateHistory = nil // Set to nil to test the nil check
+
+	// Add a forward
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	msg := MetricsUpdateMsg{
+		Snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc",
+				Namespace:   "ns",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName:   "pod",
+						LocalPort: "8080",
+						RateIn:    100.0,
+						RateOut:   200.0,
+					},
+				},
+			},
+		},
+	}
+
+	// Should not panic even with nil rateHistory
+	m.handleMetricsUpdate(msg)
+}
+
+func TestHandleMetricsUpdate_DetailNotVisible(t *testing.T) {
+	m := createTestRootModel()
+
+	// Add a forward but don't show detail
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	// Detail is not visible by default
+	msg := MetricsUpdateMsg{
+		Snapshots: []fwdmetrics.ServiceSnapshot{
+			{
+				ServiceName: "svc",
+				Namespace:   "ns",
+				Context:     "ctx",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName:   "pod",
+						LocalPort: "8080",
+						BytesIn:   1000,
+						BytesOut:  2000,
+						HTTPLogs: []fwdmetrics.HTTPLogEntry{
+							{
+								Method:     "GET",
+								Path:       "/test",
+								StatusCode: 200,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Should update metrics without updating detail view
+	m.handleMetricsUpdate(msg)
+
+	// Verify metrics were still updated
+	forwards := m.store.GetFiltered()
+	if len(forwards) != 1 {
+		t.Fatalf("Expected 1 forward, got %d", len(forwards))
+	}
+	if forwards[0].BytesIn != 1000 {
+		t.Errorf("Expected BytesIn 1000, got %d", forwards[0].BytesIn)
+	}
+}
+
 // =============================================================================
 // tuiLogHook Tests
 // =============================================================================
@@ -2148,4 +2312,474 @@ func TestManager_SetCallbacks_NilModel(t *testing.T) {
 	manager.SetBrowseServiceCRUD(nil)
 	manager.SetHeaderContext("test")
 	manager.SetRemoveForwardCallback(nil)
+}
+
+func TestManager_SetCallbacks_WithModel(t *testing.T) {
+	model := createTestRootModel()
+	manager := &Manager{model: model}
+
+	// Should set callbacks without panic (nil values are acceptable)
+	manager.SetBrowseDiscovery(nil)
+	manager.SetBrowseNamespaceController(nil)
+	manager.SetBrowseServiceCRUD(nil)
+	manager.SetHeaderContext("test-context")
+
+	// Test with non-nil callbacks
+	manager.SetErroredServicesReconnector(func() int { return 0 })
+	manager.SetRemoveForwardCallback(func(key string) error { return nil })
+}
+
+// =============================================================================
+// Additional Update Path Tests
+// =============================================================================
+
+func TestRootModel_Update_ServiceForwardedMsg_WithError(t *testing.T) {
+	m := createTestRootModel()
+
+	msg := components.ServiceForwardedMsg{
+		ServiceName: "myservice",
+		LocalIP:     "127.1.0.1",
+		Error:       fmt.Errorf("failed to forward"),
+	}
+	updated, _ := m.Update(msg)
+
+	// With error, model should still be returned (browse modal updates)
+	if updated == nil {
+		t.Error("Expected non-nil model even with error")
+	}
+}
+
+func TestRootModel_Update_NamespaceForwardedMsg_WithError(t *testing.T) {
+	m := createTestRootModel()
+
+	msg := components.NamespaceForwardedMsg{
+		Namespace:    "default",
+		ServiceCount: 0,
+		Error:        fmt.Errorf("failed to forward namespace"),
+	}
+	updated, _ := m.Update(msg)
+
+	// With error, model should still be returned (browse modal updates)
+	if updated == nil {
+		t.Error("Expected non-nil model even with error")
+	}
+}
+
+func TestRootModel_Update_BrowseContextsLoadedMsg(t *testing.T) {
+	m := createTestRootModel()
+
+	msg := components.BrowseContextsLoadedMsg{
+		Contexts:       []types.K8sContext{{Name: "ctx1"}, {Name: "ctx2"}},
+		CurrentContext: "ctx1",
+	}
+	updated, _ := m.Update(msg)
+
+	if updated == nil {
+		t.Error("Expected non-nil model after BrowseContextsLoadedMsg")
+	}
+
+	// Header should be updated with current context
+	rootModel := updated.(*RootModel)
+	if rootModel.header.GetContext() != "ctx1" {
+		t.Errorf("Expected header context 'ctx1', got '%s'", rootModel.header.GetContext())
+	}
+}
+
+func TestRootModel_Update_BrowseNamespacesLoadedMsg_Forwarding(t *testing.T) {
+	m := createTestRootModel()
+
+	msg := components.BrowseNamespacesLoadedMsg{
+		Namespaces: []types.K8sNamespace{
+			{Name: "default", Status: "Active"},
+			{Name: "kube-system", Status: "Active"},
+		},
+	}
+	updated, _ := m.Update(msg)
+
+	if updated == nil {
+		t.Error("Expected non-nil model after BrowseNamespacesLoadedMsg")
+	}
+}
+
+func TestRootModel_Update_BrowseServicesLoadedMsg_Forwarding(t *testing.T) {
+	m := createTestRootModel()
+
+	msg := components.BrowseServicesLoadedMsg{
+		Services: []types.K8sService{
+			{Name: "api", Namespace: "default", Type: "ClusterIP"},
+			{Name: "db", Namespace: "default", Type: "ClusterIP"},
+		},
+	}
+	updated, _ := m.Update(msg)
+
+	if updated == nil {
+		t.Error("Expected non-nil model after BrowseServicesLoadedMsg")
+	}
+}
+
+func TestRootModel_Update_PodLogLineMsg_WithErrorMarker(t *testing.T) {
+	m := createTestRootModel()
+
+	// Show detail first
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+	m.detail.Show("svc.ns.ctx.pod.8080")
+	m.detail.SetLogsStreaming(true)
+
+	// Send error marker
+	msg := components.PodLogLineMsg{Line: "\x00ERROR:connection refused"}
+	m.Update(msg)
+
+	// Should have set error and stopped streaming
+	if m.detail.IsLogsStreaming() {
+		t.Error("Expected streaming to stop after error marker")
+	}
+}
+
+func TestRootModel_Update_PodLogLineMsg_NormalLine(t *testing.T) {
+	m := createTestRootModel()
+
+	// Show detail first
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+	m.detail.Show("svc.ns.ctx.pod.8080")
+	m.detail.SetLogsStreaming(true)
+
+	// Create a log stream channel
+	m.logStreamCh = make(chan string, 10)
+
+	// Send normal log line
+	msg := components.PodLogLineMsg{Line: "2024-01-15 INFO: Server started"}
+	updated, cmd := m.Update(msg)
+
+	if updated == nil {
+		t.Error("Expected non-nil model")
+	}
+	if m.detail.IsLogsStreaming() && cmd == nil {
+		t.Error("Expected command to continue listening when streaming")
+	}
+}
+
+func TestRootModel_Update_PodLogsRequestMsg_NilStreamer(t *testing.T) {
+	m := createTestRootModel()
+
+	// Ensure streamPodLogs is nil
+	m.streamPodLogs = nil
+
+	msg := components.PodLogsRequestMsg{
+		Namespace:     "default",
+		PodName:       "my-pod",
+		ContainerName: "main",
+		Context:       "ctx",
+		TailLines:     100,
+	}
+	m.Update(msg)
+
+	// Should have set error when no streamer available
+	// We can't easily check the error message, but it shouldn't panic
+}
+
+func TestRootModel_Update_MouseClick_InLogsArea(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up sizes first
+	m.width = 100
+	m.height = 30
+	m.updateSizes()
+
+	// Start with services focused
+	m.focus = FocusServices
+	m.services.SetFocus(true)
+	m.logs.SetFocus(false)
+
+	// Simulate click in logs area
+	msg := tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Y:      m.logsStartY + 1, // Click inside logs area
+	}
+	m.Update(msg)
+
+	// Focus should switch to logs
+	if m.focus != FocusLogs {
+		t.Errorf("Expected FocusLogs, got %v", m.focus)
+	}
+}
+
+func TestRootModel_Update_MouseWheel_InLogs(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up sizes first
+	m.width = 100
+	m.height = 30
+	m.updateSizes()
+
+	// Focus on logs
+	m.focus = FocusLogs
+	m.logs.SetFocus(true)
+
+	// Simulate wheel scroll
+	msg := tea.MouseMsg{
+		Button: tea.MouseButtonWheelDown,
+	}
+	_, cmd := m.Update(msg)
+
+	// Should have processed the event (cmd may be nil for wheel events in logs)
+	_ = cmd // wheel scroll in logs shouldn't error
+}
+
+func TestRootModel_Update_KeyMsg_R_NoReconnector(t *testing.T) {
+	m := createTestRootModel()
+	m.reconnectErrored = nil
+
+	// Press 'r' with no reconnector set
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	_, cmd := m.Update(msg)
+
+	// Should return nil cmd when no reconnector
+	if cmd != nil {
+		t.Error("Expected nil command when reconnector not set")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_Tab_CycleFocus(t *testing.T) {
+	m := createTestRootModel()
+	m.focus = FocusServices
+
+	// Press tab to cycle focus
+	msg := tea.KeyMsg{Type: tea.KeyTab}
+	m.Update(msg)
+
+	// Focus should change
+	if m.focus != FocusLogs {
+		t.Errorf("Expected FocusLogs after tab, got %v", m.focus)
+	}
+}
+
+func TestRootModel_Update_KeyMsg_HelpToggle(t *testing.T) {
+	m := createTestRootModel()
+
+	// Press '?' to toggle help
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}
+	m.Update(msg)
+
+	if !m.help.IsVisible() {
+		t.Error("Help should be visible after '?' press")
+	}
+
+	// Press '?' again to hide
+	m.Update(msg)
+	if m.help.IsVisible() {
+		t.Error("Help should be hidden after second '?' press")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_Enter_DetailView_NoSelection(t *testing.T) {
+	m := createTestRootModel()
+	m.focus = FocusServices
+
+	// No forwards added, so no selection
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	m.Update(msg)
+
+	// Detail should not be visible
+	if m.detail.IsVisible() {
+		t.Error("Detail should not be visible when no selection")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_BrowseVisible(t *testing.T) {
+	m := createTestRootModel()
+
+	// Make browse visible
+	m.browse.SetSize(100, 30)
+	// We can't easily show browse, but we can test the path where it's visible
+
+	// Just verify the code path works without error
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	_, _ = m.Update(msg)
+}
+
+func TestRootModel_Update_KeyMsg_InLogsPanel(t *testing.T) {
+	m := createTestRootModel()
+	m.focus = FocusLogs
+	m.logs.SetFocus(true)
+	m.logs.SetSize(100, 10)
+
+	// Send key to logs panel
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	updated, _ := m.Update(msg)
+
+	if updated == nil {
+		t.Error("Expected non-nil model")
+	}
+}
+
+func TestRootModel_Update_ReconnectErroredMsg_WithCount(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up reconnect function that returns count > 0
+	m.reconnectErrored = func() int { return 3 }
+
+	msg := components.ReconnectErroredMsg{}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command
+	if cmd == nil {
+		t.Error("Expected non-nil command for reconnect with count > 0")
+	}
+}
+
+func TestRootModel_Update_ReconnectErroredMsg_NoErrors(t *testing.T) {
+	m := createTestRootModel()
+
+	// Set up reconnect function that returns 0
+	m.reconnectErrored = func() int { return 0 }
+
+	msg := components.ReconnectErroredMsg{}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating no errors
+	if cmd == nil {
+		t.Error("Expected non-nil command for reconnect with 0 count")
+	}
+}
+
+func TestRootModel_Update_OpenDetailMsg_ValidKey(t *testing.T) {
+	m := createTestRootModel()
+
+	// Add a forward so the key is valid
+	m.store.AddForward(state.ForwardSnapshot{
+		Key:         "svc.ns.ctx.pod.8080",
+		ServiceKey:  "svc.ns.ctx",
+		ServiceName: "svc",
+		Namespace:   "ns",
+		Context:     "ctx",
+		PodName:     "pod",
+		LocalPort:   "8080",
+		Status:      state.StatusActive,
+	})
+
+	msg := components.OpenDetailMsg{Key: "svc.ns.ctx.pod.8080"}
+	m.Update(msg)
+
+	if !m.detail.IsVisible() {
+		t.Error("Expected detail to be visible after OpenDetailMsg")
+	}
+	if m.focus != FocusDetail {
+		t.Errorf("Expected focus to be FocusDetail, got %v", m.focus)
+	}
+}
+
+func TestRootModel_Update_OpenDetailMsg_EmptyKey(t *testing.T) {
+	m := createTestRootModel()
+
+	// Empty key should not open detail
+	msg := components.OpenDetailMsg{Key: ""}
+	m.Update(msg)
+
+	if m.detail.IsVisible() {
+		t.Error("Detail should not be visible for empty key")
+	}
+}
+
+func TestRootModel_Update_RemoveForwardMsg_NoCallback(t *testing.T) {
+	m := createTestRootModel()
+	m.removeForward = nil
+
+	msg := components.RemoveForwardMsg{RegistryKey: "svc.ns.ctx"}
+	_, cmd := m.Update(msg)
+
+	// Should return nil cmd when no callback
+	if cmd != nil {
+		t.Error("Expected nil command when removeForward not set")
+	}
+}
+
+func TestRootModel_Update_RemoveForwardMsg_EmptyKey(t *testing.T) {
+	m := createTestRootModel()
+
+	removeCalled := false
+	m.removeForward = func(key string) error {
+		removeCalled = true
+		return nil
+	}
+
+	// Empty key should not call callback
+	msg := components.RemoveForwardMsg{RegistryKey: ""}
+	_, _ = m.Update(msg)
+
+	if removeCalled {
+		t.Error("removeForward should not be called for empty key")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_R_WithReconnector_CountZero(t *testing.T) {
+	m := createTestRootModel()
+	m.reconnectErrored = func() int { return 0 }
+
+	// Press 'r' when no services have errors
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating no errors
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' with no errors")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_R_WithReconnector_CountPositive(t *testing.T) {
+	m := createTestRootModel()
+	m.reconnectErrored = func() int { return 5 }
+
+	// Press 'r' when services have errors
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	_, cmd := m.Update(msg)
+
+	// Should return a log command indicating reconnection
+	if cmd == nil {
+		t.Error("Expected non-nil command for 'r' with errors")
+	}
+}
+
+func TestRootModel_Update_KeyMsg_Q_WhileFiltering(t *testing.T) {
+	m := createTestRootModel()
+	m.services.SetSize(100, 20)
+
+	// Enter filter mode by simulating '/'
+	filterMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
+	m.Update(filterMsg)
+
+	// Now press 'q' - should NOT quit because we're filtering
+	qMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}
+	_, cmd := m.Update(qMsg)
+
+	// Should not be quitting
+	if m.quitting {
+		t.Error("Should not quit while filtering")
+	}
+
+	// cmd should not be tea.Quit
+	if cmd != nil {
+		// Execute the cmd to see if it's tea.Quit
+		result := cmd()
+		if _, ok := result.(tea.QuitMsg); ok {
+			t.Error("Should not return tea.Quit while filtering")
+		}
+	}
 }

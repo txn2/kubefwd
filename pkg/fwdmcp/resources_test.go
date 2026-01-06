@@ -2,11 +2,13 @@ package fwdmcp
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
 
@@ -292,6 +294,65 @@ func TestHandleErrorsResource(t *testing.T) {
 	// Should contain 2 errors from svc1
 }
 
+// mockK8sDiscoveryResource implements KubernetesDiscovery for resource tests
+type mockK8sDiscoveryResource struct {
+	contextsResp *types.K8sContextsResponse
+	contextsErr  error
+}
+
+func (m *mockK8sDiscoveryResource) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) ListContexts() (*types.K8sContextsResponse, error) {
+	return m.contextsResp, m.contextsErr
+}
+func (m *mockK8sDiscoveryResource) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+	return nil, nil
+}
+func (m *mockK8sDiscoveryResource) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+	return nil, nil
+}
+
+// mockMetricsProviderWithSnapshots extends mockMetricsProvider to support GetServiceSnapshot
+type mockMetricsProviderWithSnapshots struct {
+	snapshots      []fwdmetrics.ServiceSnapshot
+	snapshotsByKey map[string]*fwdmetrics.ServiceSnapshot
+	bytesIn        uint64
+	bytesOut       uint64
+	rateIn         float64
+	rateOut        float64
+}
+
+func (m *mockMetricsProviderWithSnapshots) GetAllSnapshots() []fwdmetrics.ServiceSnapshot {
+	return m.snapshots
+}
+func (m *mockMetricsProviderWithSnapshots) GetServiceSnapshot(key string) *fwdmetrics.ServiceSnapshot {
+	if m.snapshotsByKey != nil {
+		return m.snapshotsByKey[key]
+	}
+	return nil
+}
+func (m *mockMetricsProviderWithSnapshots) GetTotals() (uint64, uint64, float64, float64) {
+	return m.bytesIn, m.bytesOut, m.rateIn, m.rateOut
+}
+func (m *mockMetricsProviderWithSnapshots) ServiceCount() int     { return len(m.snapshots) }
+func (m *mockMetricsProviderWithSnapshots) PortForwardCount() int { return 0 }
+
 func TestResourcesMIMEType(t *testing.T) {
 	resetGlobalState()
 	server := Init("1.0.0")
@@ -337,5 +398,209 @@ func TestResourcesMIMEType(t *testing.T) {
 				t.Errorf("Expected URI %s, got %s", tc.uri, result.Contents[0].URI)
 			}
 		})
+	}
+}
+
+func TestHandleStatusResource(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	req := &mcp.ReadResourceRequest{
+		Params: &mcp.ReadResourceParams{
+			URI: "kubefwd://status",
+		},
+	}
+
+	// Test with no state or analysis provider - should fail
+	_, err := server.handleStatusResource(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error when both analysis and state are nil")
+	}
+
+	// Test with state-based fallback (no analysis provider)
+	// Test healthy state
+	mock := &mockStateReader{
+		summary: state.SummaryStats{
+			TotalServices:  5,
+			ActiveServices: 5,
+			ErrorCount:     0,
+		},
+	}
+	server.SetStateReader(mock)
+
+	result, err := server.handleStatusResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if result.Contents[0].MIMEType != "application/json" {
+		t.Errorf("Expected application/json MIME type, got %s", result.Contents[0].MIMEType)
+	}
+
+	// Test state with issues (some errors, but not all)
+	mock.summary.ErrorCount = 2
+	result, err = server.handleStatusResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Test state with errors (errors >= active)
+	mock.summary.ErrorCount = 6
+	result, err = server.handleStatusResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Test state with no services
+	mock.summary = state.SummaryStats{
+		TotalServices:  0,
+		ActiveServices: 0,
+		ErrorCount:     0,
+	}
+	result, err = server.handleStatusResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+}
+
+func TestHandleHTTPTrafficResource(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	req := &mcp.ReadResourceRequest{
+		Params: &mcp.ReadResourceParams{
+			URI: "kubefwd://http-traffic",
+		},
+	}
+
+	// Test with no state or metrics - should fail
+	_, err := server.handleHTTPTrafficResource(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error when state or metrics is nil")
+	}
+
+	// Set up state reader
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx1", ServiceName: "svc1", Namespace: "default", Context: "ctx1"},
+			{Key: "svc2.default.ctx1", ServiceName: "svc2", Namespace: "default", Context: "ctx1"},
+		},
+	}
+	server.SetStateReader(mock)
+
+	// Still no metrics - should fail
+	_, err = server.handleHTTPTrafficResource(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error when metrics is nil")
+	}
+
+	// Set up metrics provider with HTTP logs
+	metricsProvider := &mockMetricsProviderWithSnapshots{
+		snapshotsByKey: map[string]*fwdmetrics.ServiceSnapshot{
+			"svc1.default.ctx1": {
+				ServiceName: "svc1",
+				Namespace:   "default",
+				Context:     "ctx1",
+				PortForwards: []fwdmetrics.PortForwardSnapshot{
+					{
+						PodName:   "pod1",
+						LocalIP:   "127.1.0.1",
+						LocalPort: "80",
+						HTTPLogs: []fwdmetrics.HTTPLogEntry{
+							{Timestamp: time.Now(), Method: "GET", Path: "/api/health", StatusCode: 200, Duration: 10 * time.Millisecond},
+							{Timestamp: time.Now(), Method: "POST", Path: "/api/data", StatusCode: 201, Duration: 50 * time.Millisecond},
+						},
+					},
+				},
+			},
+		},
+	}
+	server.SetMetricsProvider(metricsProvider)
+
+	result, err := server.handleHTTPTrafficResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if result.Contents[0].MIMEType != "application/json" {
+		t.Errorf("Expected application/json MIME type, got %s", result.Contents[0].MIMEType)
+	}
+
+	// Test with no HTTP traffic (nil snapshot)
+	metricsProvider.snapshotsByKey = nil
+	result, err = server.handleHTTPTrafficResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+}
+
+func TestHandleContextsResource(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	req := &mcp.ReadResourceRequest{
+		Params: &mcp.ReadResourceParams{
+			URI: "kubefwd://contexts",
+		},
+	}
+
+	// Test with no K8s discovery - should fail
+	_, err := server.handleContextsResource(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error when K8s discovery is nil")
+	}
+
+	// Set up K8s discovery mock with error
+	mockK8s := &mockK8sDiscoveryResource{
+		contextsErr: errors.New("failed to get contexts"),
+	}
+	server.SetKubernetesDiscovery(mockK8s)
+
+	_, err = server.handleContextsResource(context.Background(), req)
+	if err == nil {
+		t.Error("Expected error when ListContexts fails")
+	}
+
+	// Set up K8s discovery mock with success
+	mockK8s = &mockK8sDiscoveryResource{
+		contextsResp: &types.K8sContextsResponse{
+			CurrentContext: "minikube",
+			Contexts: []types.K8sContext{
+				{Name: "minikube", Cluster: "minikube", Active: true},
+				{Name: "docker-desktop", Cluster: "docker-desktop", Active: false},
+				{Name: "kind-kind", Cluster: "kind-kind", Active: false},
+			},
+		},
+	}
+	server.SetKubernetesDiscovery(mockK8s)
+
+	result, err := server.handleContextsResource(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if result.Contents[0].MIMEType != "application/json" {
+		t.Errorf("Expected application/json MIME type, got %s", result.Contents[0].MIMEType)
+	}
+	if result.Contents[0].URI != req.Params.URI {
+		t.Errorf("Expected URI %s, got %s", req.Params.URI, result.Contents[0].URI)
 	}
 }

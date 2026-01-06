@@ -177,3 +177,27 @@ func TestNewMockRootChecker(t *testing.T) {
 		}
 	}
 }
+
+// TestDefaultRootChecker_CheckRoot tests the actual system check
+func TestDefaultRootChecker_CheckRoot(t *testing.T) {
+	// Create a new default checker instance directly
+	checker := &defaultRootChecker{}
+
+	// Call the actual CheckRoot method
+	isRoot, err := checker.CheckRoot()
+
+	// The test should not error (unless id command is not available)
+	if err != nil {
+		t.Logf("CheckRoot returned error (may be expected on some systems): %v", err)
+	}
+
+	// On most test runs, we're not root
+	if isRoot {
+		t.Log("Running as root user")
+	} else {
+		t.Log("Running as non-root user")
+	}
+
+	// The important thing is that it returns without panicking
+	// and returns a valid boolean
+}

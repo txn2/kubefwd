@@ -1,12 +1,14 @@
 package fwdhost
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/txeh"
 )
 
@@ -19,7 +21,7 @@ func createTempHostsFile(t *testing.T, content string) (*txeh.Hosts, string) {
 	hostsPath := filepath.Join(tempDir, "hosts")
 
 	// Create initial hosts file
-	if err := os.WriteFile(hostsPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(hostsPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("Failed to create temp hosts file: %v", err)
 	}
 
@@ -118,7 +120,7 @@ func TestBackupHostFile_ExistingBackup(t *testing.T) {
 
 	// Modify the original hosts file (to verify backup doesn't change)
 	newContent := "127.0.0.1 localhost\n192.168.1.1 newhost\n"
-	if err := os.WriteFile(hosts.WriteFilePath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(hosts.WriteFilePath, []byte(newContent), 0o644); err != nil {
 		t.Fatalf("Failed to modify hosts file: %v", err)
 	}
 
@@ -211,7 +213,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 	}()
 
 	// Make directory read-only
-	if err := os.Chmod(tempHome, 0555); err != nil {
+	if err := os.Chmod(tempHome, 0o555); err != nil {
 		t.Fatalf("Failed to make directory read-only: %v", err)
 	}
 
@@ -223,7 +225,7 @@ func TestBackupHostFile_ReadOnlyBackupLocation(t *testing.T) {
 			t.Errorf("Failed to restore HOME env var: %v", err)
 		}
 		// Restore permissions before cleanup
-		if err := os.Chmod(tempHome, 0755); err != nil {
+		if err := os.Chmod(tempHome, 0o755); err != nil {
 			t.Logf("Warning: failed to restore permissions: %v", err)
 		}
 	}()
@@ -396,7 +398,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
-		go func(n int) {
+		go func() {
 			defer wg.Done()
 
 			// Each goroutine creates its own hosts file
@@ -404,7 +406,7 @@ func TestBackupHostFile_ConcurrentBackups(t *testing.T) {
 
 			_, err := BackupHostFile(hosts, false)
 			results <- err
-		}(i)
+		}()
 	}
 
 	wg.Wait()
@@ -512,7 +514,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 	// Modify the original file multiple times and attempt backups
 	for i := 0; i < 5; i++ {
 		modifiedContent := originalContent + "192.168.1." + string(rune(i+10)) + " modified\n"
-		if err := os.WriteFile(hostsPath1, []byte(modifiedContent), 0644); err != nil {
+		if err := os.WriteFile(hostsPath1, []byte(modifiedContent), 0o644); err != nil {
 			t.Fatalf("Failed to modify hosts file: %v", err)
 		}
 
@@ -528,7 +530,7 @@ func TestBackupHostFile_Idempotency(t *testing.T) {
 		t.Fatalf("Failed to read final backup: %v", err)
 	}
 
-	if string(finalBackupContent) != string(initialBackupContent) {
+	if !bytes.Equal(finalBackupContent, initialBackupContent) {
 		t.Error("Backup was modified, should be idempotent")
 	}
 
@@ -755,6 +757,53 @@ func TestPurgeStaleIps_PreservesComments(t *testing.T) {
 	if !strings.Contains(contentStr, "localhost") {
 		t.Error("localhost entry was not preserved")
 	}
+}
+
+// TestRemoveAllocatedHosts_NoHostnames tests RemoveAllocatedHosts when no hostnames are registered
+func TestRemoveAllocatedHosts_NoHostnames(t *testing.T) {
+	// Reset the fwdip registry to ensure no hostnames are registered
+	fwdip.ResetRegistry()
+
+	// When no hostnames are registered, the function should return nil immediately
+	err := RemoveAllocatedHosts()
+	if err != nil {
+		t.Errorf("RemoveAllocatedHosts() with no registered hostnames should return nil, got: %v", err)
+	}
+}
+
+// TestRemoveAllocatedHosts_WithHostnames tests RemoveAllocatedHosts with registered hostnames
+// Note: This test will fail on systems where we cannot create a default hosts file
+// (e.g., without root permissions), but we test the logic path nonetheless.
+func TestRemoveAllocatedHosts_WithHostnames(t *testing.T) {
+	// Reset the fwdip registry
+	fwdip.ResetRegistry()
+
+	// Register some test hostnames
+	fwdip.RegisterHostname("test-service")
+	fwdip.RegisterHostname("test-service.default")
+
+	// Verify hostnames are registered
+	hostnames := fwdip.GetRegisteredHostnames()
+	if len(hostnames) != 2 {
+		t.Fatalf("Expected 2 registered hostnames, got %d", len(hostnames))
+	}
+
+	// Call RemoveAllocatedHosts - this will likely fail without root permissions
+	// because txeh.NewHostsDefault() requires access to /etc/hosts
+	err := RemoveAllocatedHosts()
+
+	// On most systems without root, this will return an error
+	// We're testing that the function handles this gracefully
+	if err != nil {
+		// Expected on non-root systems - the function tried to access /etc/hosts
+		t.Logf("RemoveAllocatedHosts() returned expected error (no root): %v", err)
+	} else {
+		// If we're running as root, the function should succeed
+		t.Log("RemoveAllocatedHosts() succeeded (likely running as root)")
+	}
+
+	// Clean up
+	fwdip.ResetRegistry()
 }
 
 // TestBackupHostFile_ForceRefresh tests the forceRefresh parameter

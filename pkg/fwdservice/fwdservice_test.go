@@ -1474,6 +1474,95 @@ func TestStopAllPortForwards(t *testing.T) {
 	}
 }
 
+// TestIsPodReady tests the isPodReady function
+func TestIsPodReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *v1.Pod
+		expected bool
+	}{
+		{
+			name: "pending pod is ready",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase: v1.PodPending,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "running pod with ready container",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					ContainerStatuses: []v1.ContainerStatus{
+						{Ready: true},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "running pod with no ready containers",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					ContainerStatuses: []v1.ContainerStatus{
+						{Ready: false},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "running pod with empty container statuses",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase:             v1.PodRunning,
+					ContainerStatuses: []v1.ContainerStatus{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "running pod with multiple containers one ready",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					ContainerStatuses: []v1.ContainerStatus{
+						{Ready: false},
+						{Ready: true},
+						{Ready: false},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "running pod with multiple containers none ready",
+			pod: &v1.Pod{
+				Status: v1.PodStatus{
+					Phase: v1.PodRunning,
+					ContainerStatuses: []v1.ContainerStatus{
+						{Ready: false},
+						{Ready: false},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isPodReady(tt.pod)
+			if result != tt.expected {
+				t.Errorf("isPodReady() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
 // TestCloseIdleHTTPConnections tests that the method doesn't panic
 func TestCloseIdleHTTPConnections(t *testing.T) {
 	svc := createTestService("test-svc", "default", []v1.ServicePort{
@@ -1485,6 +1574,67 @@ func TestCloseIdleHTTPConnections(t *testing.T) {
 	}
 
 	// Should not panic even with nil transport
+	svcFwd.CloseIdleHTTPConnections()
+}
+
+// mockTransportWithIdleCloser implements http.RoundTripper and CloseIdleConnections
+type mockTransportWithIdleCloser struct {
+	closeIdleCalled bool
+}
+
+func (m *mockTransportWithIdleCloser) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, nil
+}
+
+func (m *mockTransportWithIdleCloser) CloseIdleConnections() {
+	m.closeIdleCalled = true
+}
+
+// mockTransportWithoutIdleCloser only implements http.RoundTripper
+type mockTransportWithoutIdleCloser struct{}
+
+func (m *mockTransportWithoutIdleCloser) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, nil
+}
+
+// TestCloseIdleHTTPConnections_WithIdleCloser tests that CloseIdleConnections is called
+func TestCloseIdleHTTPConnections_WithIdleCloser(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	mockTransport := &mockTransportWithIdleCloser{}
+
+	svcFwd := &ServiceFWD{
+		Svc: svc,
+		ClientConfig: restclient.Config{
+			Transport: mockTransport,
+		},
+	}
+
+	svcFwd.CloseIdleHTTPConnections()
+
+	if !mockTransport.closeIdleCalled {
+		t.Error("Expected CloseIdleConnections to be called on transport")
+	}
+}
+
+// TestCloseIdleHTTPConnections_WithoutIdleCloser tests transport without CloseIdleConnections
+func TestCloseIdleHTTPConnections_WithoutIdleCloser(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80},
+	}, false)
+
+	mockTransport := &mockTransportWithoutIdleCloser{}
+
+	svcFwd := &ServiceFWD{
+		Svc: svc,
+		ClientConfig: restclient.Config{
+			Transport: mockTransport,
+		},
+	}
+
+	// Should not panic when transport doesn't implement CloseIdleConnections
 	svcFwd.CloseIdleHTTPConnections()
 }
 

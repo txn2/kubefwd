@@ -6,6 +6,7 @@ import (
 
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdns"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
@@ -311,28 +312,28 @@ func TestManager_RunWithoutStateReader(t *testing.T) {
 
 type mockStateReader struct{}
 
-func (m *mockStateReader) GetServices() []state.ServiceSnapshot         { return nil }
-func (m *mockStateReader) GetService(key string) *state.ServiceSnapshot { return nil }
-func (m *mockStateReader) GetSummary() state.SummaryStats               { return state.SummaryStats{} }
-func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot         { return nil }
-func (m *mockStateReader) GetForward(key string) *state.ForwardSnapshot { return nil }
-func (m *mockStateReader) GetLogs(count int) []state.LogEntry           { return nil }
-func (m *mockStateReader) Count() int                                   { return 0 }
-func (m *mockStateReader) ServiceCount() int                            { return 0 }
+func (m *mockStateReader) GetServices() []state.ServiceSnapshot       { return nil }
+func (m *mockStateReader) GetService(_ string) *state.ServiceSnapshot { return nil }
+func (m *mockStateReader) GetSummary() state.SummaryStats             { return state.SummaryStats{} }
+func (m *mockStateReader) GetFiltered() []state.ForwardSnapshot       { return nil }
+func (m *mockStateReader) GetForward(_ string) *state.ForwardSnapshot { return nil }
+func (m *mockStateReader) GetLogs(_ int) []state.LogEntry             { return nil }
+func (m *mockStateReader) Count() int                                 { return 0 }
+func (m *mockStateReader) ServiceCount() int                          { return 0 }
 
 type mockMetricsProvider struct{}
 
-func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot             { return nil }
-func (m *mockMetricsProvider) GetServiceSnapshot(key string) *fwdmetrics.ServiceSnapshot { return nil }
-func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)             { return 0, 0, 0, 0 }
-func (m *mockMetricsProvider) ServiceCount() int                                         { return 0 }
-func (m *mockMetricsProvider) PortForwardCount() int                                     { return 0 }
+func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot           { return nil }
+func (m *mockMetricsProvider) GetServiceSnapshot(_ string) *fwdmetrics.ServiceSnapshot { return nil }
+func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64)           { return 0, 0, 0, 0 }
+func (m *mockMetricsProvider) ServiceCount() int                                       { return 0 }
+func (m *mockMetricsProvider) PortForwardCount() int                                   { return 0 }
 
 type mockServiceController struct{}
 
-func (m *mockServiceController) Reconnect(key string) error        { return nil }
-func (m *mockServiceController) ReconnectAll() int                 { return 0 }
-func (m *mockServiceController) Sync(key string, force bool) error { return nil }
+func (m *mockServiceController) Reconnect(_ string) error    { return nil }
+func (m *mockServiceController) ReconnectAll() int           { return 0 }
+func (m *mockServiceController) Sync(_ string, _ bool) error { return nil }
 
 type mockEventStreamer struct{}
 
@@ -340,7 +341,7 @@ func (m *mockEventStreamer) Subscribe() (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
 }
-func (m *mockEventStreamer) SubscribeType(eventType events.EventType) (<-chan events.Event, func()) {
+func (m *mockEventStreamer) SubscribeType(_ events.EventType) (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
 }
@@ -352,22 +353,22 @@ type mockDiagnosticsProvider struct{}
 func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return types.DiagnosticSummary{}
 }
-func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetServiceDiagnostic(_ string) (*types.ServiceDiagnostic, error) {
 	return nil, nil
 }
-func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
+func (m *mockDiagnosticsProvider) GetForwardDiagnostic(_ string) (*types.ForwardDiagnostic, error) {
 	return nil, nil
 }
 func (m *mockDiagnosticsProvider) GetNetworkStatus() types.NetworkStatus {
 	return types.NetworkStatus{}
 }
-func (m *mockDiagnosticsProvider) GetErrors(count int) []types.ErrorDetail { return nil }
+func (m *mockDiagnosticsProvider) GetErrors(_ int) []types.ErrorDetail { return nil }
 
 type mockNamespaceController struct {
 	namespaces []types.NamespaceInfoResponse
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	info := types.NamespaceInfoResponse{
 		Key:       namespace + "." + ctx,
 		Namespace: namespace,
@@ -377,7 +378,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	return &info, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return nil
 }
 
@@ -407,17 +408,17 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return nil
 }
 
 type mockKubernetesDiscovery struct{}
 
-func (m *mockKubernetesDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockKubernetesDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	return []types.K8sNamespace{{Name: "default"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockKubernetesDiscovery) ListServices(_, namespace string) ([]types.K8sService, error) {
 	return []types.K8sService{{Name: "test-svc", Namespace: namespace}}, nil
 }
 
@@ -428,7 +429,7 @@ func (m *mockKubernetesDiscovery) ListContexts() (*types.K8sContextsResponse, er
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockKubernetesDiscovery) GetService(_, namespace, name string) (*types.K8sService, error) {
 	return &types.K8sService{Name: name, Namespace: namespace}, nil
 }
 
@@ -444,19 +445,19 @@ func (m *mockKubernetesDiscovery) GetPodLogs(ctx, namespace, podName string, opt
 	}, nil
 }
 
-func (m *mockKubernetesDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockKubernetesDiscovery) ListPods(_, namespace string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return []types.K8sPod{{Name: "test-pod", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
+func (m *mockKubernetesDiscovery) GetPod(_, namespace, podName string) (*types.K8sPodDetail, error) {
 	return &types.K8sPodDetail{Name: podName, Namespace: namespace, Phase: "Running"}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockKubernetesDiscovery) GetEvents(_, namespace string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{{Type: "Normal", Reason: "Scheduled"}}, nil
 }
 
-func (m *mockKubernetesDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+func (m *mockKubernetesDiscovery) GetEndpoints(_, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return &types.K8sEndpoints{Name: serviceName, Namespace: namespace}, nil
 }
 
@@ -632,3 +633,273 @@ var (
 	_ types.ServiceCRUD         = (*mockServiceCRUD)(nil)
 	_ types.KubernetesDiscovery = (*mockKubernetesDiscovery)(nil)
 )
+
+// TestNewNamespaceManagerAdapter tests the lazy namespace manager adapter creation
+func TestNewNamespaceManagerAdapter(t *testing.T) {
+	// Test with nil getter
+	adapter := NewNamespaceManagerAdapter(nil)
+	if adapter == nil {
+		t.Error("Expected non-nil adapter even with nil getter")
+	}
+
+	// Test with getter that returns nil
+	adapter = NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+	if adapter == nil {
+		t.Error("Expected non-nil adapter")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_AddNamespace tests AddNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_AddNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	_, err := adapter.AddNamespace("minikube", "default", types.AddNamespaceOpts{})
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_RemoveNamespace tests RemoveNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_RemoveNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	err := adapter.RemoveNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_ListNamespaces tests ListNamespaces with nil manager
+func TestLazyNamespaceManagerAdapter_ListNamespaces(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	result := adapter.ListNamespaces()
+	if result != nil {
+		t.Error("Expected nil when namespace manager is nil")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_GetNamespace tests GetNamespace with nil manager
+func TestLazyNamespaceManagerAdapter_GetNamespace(t *testing.T) {
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return nil })
+
+	_, err := adapter.GetNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error when namespace manager is nil")
+	}
+	if err.Error() != "namespace manager not available" {
+		t.Errorf("Expected 'namespace manager not available', got '%s'", err.Error())
+	}
+}
+
+// TestManager_SetNamespaceManager tests setting the namespace manager
+func TestManager_SetNamespaceManager(t *testing.T) {
+	manager := &Manager{}
+
+	// Setting nil manager should work (initial state)
+	manager.SetNamespaceManager(nil)
+	if manager.nsManager != nil {
+		t.Error("Expected nsManager to be nil")
+	}
+	if manager.namespaceController == nil {
+		t.Error("Expected namespaceController to be set even with nil manager")
+	}
+}
+
+// TestInit_ShutdownHandling tests the shutdown signal handling
+func TestInit_ShutdownHandling(t *testing.T) {
+	resetGlobalState()
+
+	shutdownChan := make(chan struct{})
+	triggerShutdown := func() {}
+
+	manager := Init(shutdownChan, triggerShutdown, "1.0.0")
+	if manager == nil {
+		t.Fatal("Expected non-nil manager")
+	}
+
+	// Close shutdown channel to trigger the goroutine
+	close(shutdownChan)
+
+	// Give the goroutine time to run
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify stop channel is closed
+	select {
+	case <-manager.stopChan:
+		// Expected
+	default:
+		t.Error("Expected stopChan to be closed after shutdown signal")
+	}
+}
+
+// TestManager_RunWithDependencies tests Run() with all dependencies set
+func TestManager_RunWithDependencies(t *testing.T) {
+	manager := &Manager{
+		stopChan:            make(chan struct{}),
+		doneChan:            make(chan struct{}),
+		startTime:           time.Now(),
+		version:             "1.0.0",
+		stateReader:         &mockStateReader{},
+		metricsProvider:     &mockMetricsProvider{},
+		serviceController:   &mockServiceController{},
+		eventStreamer:       &mockEventStreamer{},
+		diagnosticsProvider: &mockDiagnosticsProvider{},
+		namespaceController: &mockNamespaceController{},
+		serviceCRUD:         &mockServiceCRUD{},
+		k8sDiscovery:        &mockKubernetesDiscovery{},
+	}
+
+	// Start Run in goroutine and stop it immediately
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- manager.Run()
+	}()
+
+	// Give the server time to start, then stop it
+	time.Sleep(50 * time.Millisecond)
+	manager.Stop()
+
+	// Wait for Run to complete
+	select {
+	case err := <-errCh:
+		// Run should return nil on graceful shutdown
+		if err != nil {
+			t.Logf("Run returned error (may be expected if port in use): %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Run did not complete in time")
+	}
+}
+
+// TestGetKubernetesDiscoveryPodMethods tests the pod-related discovery methods
+func TestGetKubernetesDiscoveryPodMethods(t *testing.T) {
+	mock := &mockKubernetesDiscovery{}
+
+	// GetPodLogs
+	logs, err := mock.GetPodLogs("minikube", "default", "test-pod", types.PodLogsOptions{
+		Container: "main",
+		TailLines: 100,
+	})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if logs.PodName != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", logs.PodName)
+	}
+	if logs.ContainerName != "main" {
+		t.Errorf("Expected container 'main', got '%s'", logs.ContainerName)
+	}
+
+	// ListPods
+	pods, err := mock.ListPods("minikube", "default", types.ListPodsOptions{})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(pods) != 1 {
+		t.Errorf("Expected 1 pod, got %d", len(pods))
+	}
+
+	// GetPod
+	pod, err := mock.GetPod("minikube", "default", "test-pod")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if pod.Name != "test-pod" {
+		t.Errorf("Expected pod name 'test-pod', got '%s'", pod.Name)
+	}
+
+	// GetEvents
+	eventList, err := mock.GetEvents("minikube", "default", types.GetEventsOptions{})
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(eventList) != 1 {
+		t.Errorf("Expected 1 event, got %d", len(eventList))
+	}
+
+	// GetEndpoints
+	endpoints, err := mock.GetEndpoints("minikube", "default", "test-svc")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if endpoints.Name != "test-svc" {
+		t.Errorf("Expected endpoints name 'test-svc', got '%s'", endpoints.Name)
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_WithRealManager tests the adapter with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_ListNamespaces(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// ListNamespaces should return empty list initially
+	result := adapter.ListNamespaces()
+	if result == nil {
+		t.Error("Expected non-nil result")
+	}
+	if len(result) != 0 {
+		t.Errorf("Expected 0 namespaces initially, got %d", len(result))
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_WithRealManager_GetNamespace tests GetNamespace with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_GetNamespace(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// GetNamespace should return error for non-existent namespace
+	_, err := adapter.GetNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestLazyNamespaceManagerAdapter_WithRealManager_RemoveNamespace tests RemoveNamespace with a real manager
+func TestLazyNamespaceManagerAdapter_WithRealManager_RemoveNamespace(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+
+	adapter := NewNamespaceManagerAdapter(func() *fwdns.NamespaceManager { return mgr })
+
+	// RemoveNamespace should return error for non-existent namespace
+	err := adapter.RemoveNamespace("minikube", "default")
+	if err == nil {
+		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+// TestManager_RunWithMissingStateReader tests Run() without stateReader set
+func TestManager_RunWithMissingStateReader(t *testing.T) {
+	manager := &Manager{
+		stopChan:  make(chan struct{}),
+		doneChan:  make(chan struct{}),
+		startTime: time.Now(),
+		version:   "1.0.0",
+		// stateReader is nil
+	}
+
+	err := manager.Run()
+	if err == nil {
+		t.Error("Expected error when stateReader is nil")
+	}
+	if err.Error() != "state reader not configured" {
+		t.Errorf("Expected 'state reader not configured', got '%s'", err.Error())
+	}
+}

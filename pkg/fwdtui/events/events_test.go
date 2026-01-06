@@ -44,7 +44,7 @@ func TestSubscribe(t *testing.T) {
 	bus := NewBus(100)
 
 	var received int32
-	bus.Subscribe(PodAdded, func(e Event) {
+	bus.Subscribe(PodAdded, func(_ Event) {
 		atomic.StoreInt32(&received, 1)
 	})
 
@@ -66,12 +66,12 @@ func TestSubscribe_OnlyReceivesSubscribedType(t *testing.T) {
 	bus := NewBus(100)
 
 	var podAddedCount int32
-	bus.Subscribe(PodAdded, func(e Event) {
+	bus.Subscribe(PodAdded, func(_ Event) {
 		atomic.AddInt32(&podAddedCount, 1)
 	})
 
 	var podRemovedCount int32
-	bus.Subscribe(PodRemoved, func(e Event) {
+	bus.Subscribe(PodRemoved, func(_ Event) {
 		atomic.AddInt32(&podRemovedCount, 1)
 	})
 
@@ -97,8 +97,8 @@ func TestSubscribe_OnlyReceivesSubscribedType(t *testing.T) {
 func TestSubscribeAll(t *testing.T) {
 	bus := NewBus(100)
 
-	var count int32 = 0
-	bus.SubscribeAll(func(e Event) {
+	var count int32
+	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})
 
@@ -168,8 +168,8 @@ func TestStop(t *testing.T) {
 func TestStop_DrainsEvents(t *testing.T) {
 	bus := NewBus(100)
 
-	var count int32 = 0
-	bus.SubscribeAll(func(e Event) {
+	var count int32
+	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})
 
@@ -193,13 +193,13 @@ func TestHandlerPanicRecovery(t *testing.T) {
 	bus := NewBus(100)
 
 	var panicHandlerCalled int32
-	bus.Subscribe(PodAdded, func(e Event) {
+	bus.Subscribe(PodAdded, func(_ Event) {
 		atomic.StoreInt32(&panicHandlerCalled, 1)
 		panic("test panic")
 	})
 
 	var normalHandlerCalled int32
-	bus.Subscribe(PodAdded, func(e Event) {
+	bus.Subscribe(PodAdded, func(_ Event) {
 		atomic.StoreInt32(&normalHandlerCalled, 1)
 	})
 
@@ -230,7 +230,7 @@ func TestConcurrentSubscribe(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			bus.Subscribe(PodAdded, func(e Event) {})
+			bus.Subscribe(PodAdded, func(_ Event) {})
 		}()
 	}
 
@@ -250,8 +250,8 @@ func TestConcurrentSubscribe(t *testing.T) {
 func TestConcurrentPublish(t *testing.T) {
 	bus := NewBus(1000)
 
-	var count int32 = 0
-	bus.SubscribeAll(func(e Event) {
+	var count int32
+	bus.SubscribeAll(func(_ Event) {
 		atomic.AddInt32(&count, 1)
 	})
 
@@ -506,7 +506,7 @@ func TestUnsubscribe(t *testing.T) {
 
 	var callCount int32
 
-	unsubscribe := bus.Subscribe(PodAdded, func(e Event) {
+	unsubscribe := bus.Subscribe(PodAdded, func(_ Event) {
 		atomic.AddInt32(&callCount, 1)
 	})
 

@@ -132,7 +132,7 @@ func TestPublisher_ZeroValue(t *testing.T) {
 	}
 }
 
-func TestPublisher_ImplementsWriter(t *testing.T) {
+func TestPublisher_ImplementsWriter(_ *testing.T) {
 	var _ interface {
 		Write([]byte) (int, error)
 	} = &Publisher{}

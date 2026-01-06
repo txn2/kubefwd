@@ -30,9 +30,8 @@ func (m *HeaderModel) Init() tea.Cmd {
 
 // Update handles messages for the header
 func (m *HeaderModel) Update(msg tea.Msg) (HeaderModel, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
 	}
 	return *m, nil
 }

@@ -14,14 +14,14 @@ func setupRouter() *gin.Engine {
 }
 
 func performRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequest(method, path, http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
 }
 
 func performRequestWithOrigin(r *gin.Engine, method, path, origin string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequest(method, path, http.NoBody)
 	req.Header.Set("Origin", origin)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -242,7 +242,7 @@ func TestRequestLogger_WithQueryString(t *testing.T) {
 	})
 
 	// Perform request with query string
-	req := httptest.NewRequest("GET", "/test?foo=bar&baz=qux", nil)
+	req := httptest.NewRequest("GET", "/test?foo=bar&baz=qux", http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

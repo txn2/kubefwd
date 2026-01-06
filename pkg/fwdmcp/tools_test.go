@@ -2,7 +2,10 @@ package fwdmcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -882,6 +885,104 @@ func TestHandleGetConnectionInfo(t *testing.T) {
 	}
 }
 
+func TestHandleGetConnectionInfo_StateFallback(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Set up state reader (no connection info provider)
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{
+				Key:         "postgres.staging.ctx1",
+				ServiceName: "postgres",
+				Namespace:   "staging",
+				Context:     "ctx1",
+				PortForwards: []state.ForwardSnapshot{
+					{
+						LocalIP:   "127.1.2.3",
+						LocalPort: "5432",
+						PodPort:   "5432",
+						Hostnames: []string{"postgres", "postgres.staging"},
+					},
+				},
+			},
+			{
+				Key:         "mysql.production.ctx1",
+				ServiceName: "mysql",
+				Namespace:   "production",
+				Context:     "ctx1",
+				PortForwards: []state.ForwardSnapshot{
+					{
+						LocalIP:   "127.1.2.4",
+						LocalPort: "3306",
+						PodPort:   "3306",
+						Hostnames: []string{"mysql", "mysql.production"},
+					},
+				},
+			},
+		},
+	}
+	server.SetStateReader(mock)
+
+	// Test successful get via state fallback
+	_, data, err := server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+		ServiceName: "postgres",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	result := data.(map[string]interface{})
+	if result["service"] != "postgres" {
+		t.Errorf("Expected service 'postgres', got '%v'", result["service"])
+	}
+	if result["localIP"] != "127.1.2.3" {
+		t.Errorf("Expected localIP '127.1.2.3', got '%v'", result["localIP"])
+	}
+
+	// Test with namespace filter
+	_, data, err = server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+		ServiceName: "postgres",
+		Namespace:   "staging",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	result = data.(map[string]interface{})
+	if result["namespace"] != "staging" {
+		t.Errorf("Expected namespace 'staging', got '%v'", result["namespace"])
+	}
+
+	// Test with wrong namespace filter - should not find
+	_, _, err = server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+		ServiceName: "postgres",
+		Namespace:   "nonexistent",
+	})
+	if err == nil {
+		t.Error("Expected error when service not found with namespace filter")
+	}
+
+	// Test with context filter
+	_, data, err = server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+		ServiceName: "mysql",
+		Context:     "ctx1",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	result = data.(map[string]interface{})
+	if result["context"] != "ctx1" {
+		t.Errorf("Expected context 'ctx1', got '%v'", result["context"])
+	}
+
+	// Test service not found
+	_, _, err = server.handleGetConnectionInfo(context.Background(), nil, GetConnectionInfoInput{
+		ServiceName: "nonexistent",
+	})
+	if err == nil {
+		t.Error("Expected error when service not found")
+	}
+}
+
 func TestHandleListK8sNamespaces(t *testing.T) {
 	resetGlobalState()
 	server := Init("1.0.0")
@@ -1058,7 +1159,7 @@ func TestHandleFindServices(t *testing.T) {
 	}
 	server.SetStateReader(mockState)
 
-	// Test successful find
+	// Test successful find by query
 	_, data, err := server.handleFindServices(context.Background(), nil, FindServicesInput{Query: "postgres"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1067,6 +1168,56 @@ func TestHandleFindServices(t *testing.T) {
 	dataMap := data.(map[string]interface{})
 	if dataMap["count"].(int) != 1 { // Should find only postgres
 		t.Errorf("Expected 1 service, got %d", dataMap["count"])
+	}
+
+	// Test namespace filter
+	_, data, err = server.handleFindServices(context.Background(), nil, FindServicesInput{Namespace: "staging"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 2 { // Should find both services in staging
+		t.Errorf("Expected 2 services in staging namespace, got %d", dataMap["count"])
+	}
+
+	// Test namespace filter with non-matching namespace
+	_, data, err = server.handleFindServices(context.Background(), nil, FindServicesInput{Namespace: "nonexistent"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 0 { // Should find nothing
+		t.Errorf("Expected 0 services in nonexistent namespace, got %d", dataMap["count"])
+	}
+
+	// Test port filter
+	_, data, err = server.handleFindServices(context.Background(), nil, FindServicesInput{Port: 5432})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 1 { // Should find only postgres on port 5432
+		t.Errorf("Expected 1 service on port 5432, got %d", dataMap["count"])
+	}
+
+	// Test port filter with no match
+	_, data, err = server.handleFindServices(context.Background(), nil, FindServicesInput{Port: 9999})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 0 { // Should find nothing on port 9999
+		t.Errorf("Expected 0 services on port 9999, got %d", dataMap["count"])
+	}
+
+	// Test combined filters (query + namespace)
+	_, data, err = server.handleFindServices(context.Background(), nil, FindServicesInput{Query: "sql", Namespace: "staging"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["count"].(int) != 1 { // Should find only mysql
+		t.Errorf("Expected 1 service with 'sql' in staging, got %d", dataMap["count"])
 	}
 }
 
@@ -1429,5 +1580,265 @@ func TestHandleGetHistory(t *testing.T) {
 	_, _, err := server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "events"})
 	if err == nil {
 		t.Error("Expected error when history provider is nil")
+	}
+}
+
+func TestHandleGetHTTPTraffic(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Test nil HTTP traffic provider
+	_, _, err := server.handleGetHTTPTraffic(context.Background(), nil, GetHTTPTrafficInput{})
+	if err == nil {
+		t.Error("Expected error when HTTP traffic provider is nil")
+	}
+
+	// Test missing keys
+	_, _, err = server.handleGetHTTPTraffic(context.Background(), nil, GetHTTPTrafficInput{
+		ServiceKey: "",
+		ForwardKey: "",
+	})
+	if err == nil {
+		t.Error("Expected error when both service_key and forward_key are missing")
+	}
+}
+
+func TestHandleGetAnalysis_WithProvider(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Create mock HTTP server that returns analysis data
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"status":          "healthy",
+			"services":        10,
+			"errors":          0,
+			"issues":          []interface{}{},
+			"recommendations": []interface{}{},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockServer.Close()
+
+	// Create real provider with mock server
+	provider := NewAnalysisProviderHTTP(mockServer.URL)
+	server.SetAnalysisProvider(provider)
+
+	// Test successful analysis
+	_, data, err := server.handleGetAnalysis(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data")
+	}
+}
+
+func TestHandleGetQuickStatus_WithProvider(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Create mock HTTP server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"status":   "ok",
+			"message":  "All services healthy",
+			"errors":   0,
+			"services": 5,
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockServer.Close()
+
+	provider := NewAnalysisProviderHTTP(mockServer.URL)
+	server.SetAnalysisProvider(provider)
+
+	// Test successful status
+	_, data, err := server.handleGetQuickStatus(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data")
+	}
+}
+
+func TestHandleGetHistory_WithProvider(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Create mock HTTP server that handles different history types with proper response format
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Check URL path to determine response - must use /v1/ path prefix
+		switch r.URL.Path {
+		case "/v1/history/events":
+			response := map[string]interface{}{
+				"success": true,
+				"data": []map[string]interface{}{
+					{"id": 1, "type": "service_added", "service_key": "svc1.ns1.ctx1", "timestamp": time.Now().Format(time.RFC3339)},
+					{"id": 2, "type": "forward_started", "service_key": "svc1.ns1.ctx1", "timestamp": time.Now().Format(time.RFC3339)},
+				},
+			}
+			json.NewEncoder(w).Encode(response)
+
+		case "/v1/history/errors":
+			response := map[string]interface{}{
+				"success": true,
+				"data": []map[string]interface{}{
+					{"id": 1, "error_type": "connection_refused", "service_key": "svc1.ns1.ctx1", "timestamp": time.Now().Format(time.RFC3339)},
+				},
+			}
+			json.NewEncoder(w).Encode(response)
+
+		case "/v1/history/reconnections":
+			response := map[string]interface{}{
+				"success": true,
+				"data": []map[string]interface{}{
+					{"id": 1, "trigger": "auto", "service_key": "svc1.ns1.ctx1", "success": true, "timestamp": time.Now().Format(time.RFC3339)},
+				},
+			}
+			json.NewEncoder(w).Encode(response)
+
+		default:
+			response := map[string]interface{}{
+				"success": true,
+				"data":    []interface{}{},
+			}
+			json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer mockServer.Close()
+
+	provider := NewHistoryProviderHTTP(mockServer.URL)
+	server.SetHistoryProvider(provider)
+
+	// Test events history
+	_, data, err := server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "events", Count: 10})
+	if err != nil {
+		t.Fatalf("Unexpected error for events: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data for events")
+	}
+	dataMap := data.(map[string]interface{})
+	if dataMap["type"].(string) != "events" {
+		t.Errorf("Expected type 'events', got %v", dataMap["type"])
+	}
+
+	// Test errors history
+	_, data, err = server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "errors", Count: 10})
+	if err != nil {
+		t.Fatalf("Unexpected error for errors: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["type"].(string) != "errors" {
+		t.Errorf("Expected type 'errors', got %v", dataMap["type"])
+	}
+
+	// Test reconnections history
+	_, data, err = server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "reconnections", Count: 10})
+	if err != nil {
+		t.Fatalf("Unexpected error for reconnections: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["type"].(string) != "reconnections" {
+		t.Errorf("Expected type 'reconnections', got %v", dataMap["type"])
+	}
+
+	// Test with empty type (should default to events)
+	_, data, err = server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "", Count: 10})
+	if err != nil {
+		t.Fatalf("Unexpected error for empty type: %v", err)
+	}
+	dataMap = data.(map[string]interface{})
+	if dataMap["type"].(string) != "events" {
+		t.Errorf("Expected default type 'events', got %v", dataMap["type"])
+	}
+
+	// Test with default count (zero count)
+	_, data, err = server.handleGetHistory(context.Background(), nil, GetHistoryInput{Type: "errors", Count: 0})
+	if err != nil {
+		t.Fatalf("Unexpected error with zero count: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data with zero count")
+	}
+}
+
+func TestHandleGetHTTPTraffic_WithProvider(t *testing.T) {
+	resetGlobalState()
+	server := Init("1.0.0")
+
+	// Create mock HTTP server with proper response format
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// All traffic endpoints return the same format - wrapped response
+		response := map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"forward_key": "test-fwd",
+				"requests": []map[string]interface{}{
+					{
+						"method":      "GET",
+						"path":        "/api/health",
+						"status_code": 200,
+						"duration_ms": 15,
+						"timestamp":   time.Now().Format(time.RFC3339),
+					},
+					{
+						"method":      "POST",
+						"path":        "/api/users",
+						"status_code": 201,
+						"duration_ms": 45,
+						"timestamp":   time.Now().Format(time.RFC3339),
+					},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer mockServer.Close()
+
+	provider := NewHTTPTrafficProviderHTTP(mockServer.URL)
+	server.SetHTTPTrafficProvider(provider)
+
+	// Test with service_key
+	_, data, err := server.handleGetHTTPTraffic(context.Background(), nil, GetHTTPTrafficInput{
+		ServiceKey: "svc1.ns1.ctx1",
+		Count:      10,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error with service_key: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data with service_key")
+	}
+
+	// Test with forward_key
+	_, data, err = server.handleGetHTTPTraffic(context.Background(), nil, GetHTTPTrafficInput{
+		ForwardKey: "fwd-key",
+		Count:      10,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error with forward_key: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data with forward_key")
+	}
+
+	// Test with default count
+	_, data, err = server.handleGetHTTPTraffic(context.Background(), nil, GetHTTPTrafficInput{
+		ServiceKey: "svc1.ns1.ctx1",
+		Count:      0,
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error with zero count: %v", err)
+	}
+	if data == nil {
+		t.Fatal("Expected non-nil data with zero count")
 	}
 }
