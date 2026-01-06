@@ -1080,83 +1080,89 @@ func (m *RootModel) handleRemoveForward(msg components.RemoveForwardMsg) (tea.Mo
 	return m, nil
 }
 
+// buildForwardKey creates a forward key from event data
+func buildForwardKey(e events.Event) string {
+	return e.ServiceKey + "." + e.PodName + "." + e.LocalPort
+}
+
+// parseStatusString converts a status string to ForwardStatus
+func parseStatusString(status string) state.ForwardStatus {
+	switch status {
+	case "connecting":
+		return state.StatusConnecting
+	case "active":
+		return state.StatusActive
+	case "error":
+		return state.StatusError
+	case "stopping":
+		return state.StatusStopping
+	default:
+		return state.StatusPending
+	}
+}
+
+// handlePodAddedEvent processes a PodAdded event
+func (m *RootModel) handlePodAddedEvent(e events.Event) {
+	key := buildForwardKey(e)
+	snapshot := state.ForwardSnapshot{
+		Key:           key,
+		ServiceKey:    e.ServiceKey,
+		RegistryKey:   e.RegistryKey,
+		ServiceName:   e.Service,
+		Namespace:     e.Namespace,
+		Context:       e.Context,
+		PodName:       e.PodName,
+		ContainerName: e.ContainerName,
+		LocalIP:       e.LocalIP,
+		LocalPort:     e.LocalPort,
+		PodPort:       e.PodPort,
+		Hostnames:     e.Hostnames,
+		Status:        state.StatusConnecting,
+		StartedAt:     e.Timestamp,
+	}
+	m.store.AddForward(snapshot)
+}
+
+// handlePodStatusChangedEvent processes a PodStatusChanged event
+func (m *RootModel) handlePodStatusChangedEvent(e events.Event) {
+	key := buildForwardKey(e)
+	status := parseStatusString(e.Status)
+	errorMsg := ""
+	if e.Error != nil {
+		errorMsg = e.Error.Error()
+	}
+	m.store.UpdateStatus(key, status, errorMsg)
+
+	if e.Status == "active" && len(e.Hostnames) > 0 {
+		m.store.UpdateHostnames(key, e.Hostnames)
+	}
+}
+
+// handleServiceRemovedEvent processes a ServiceRemoved event
+func (m *RootModel) handleServiceRemovedEvent(e events.Event) {
+	forwards := m.store.GetFiltered()
+	for _, fwd := range forwards {
+		if fwd.ServiceKey == e.ServiceKey {
+			m.store.RemoveForward(fwd.Key)
+		}
+	}
+}
+
 // handleKubefwdEvent processes kubefwd events
 func (m *RootModel) handleKubefwdEvent(e events.Event) {
 	switch e.Type {
 	case events.PodAdded:
-		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
-		snapshot := state.ForwardSnapshot{
-			Key:           key,
-			ServiceKey:    e.ServiceKey,
-			RegistryKey:   e.RegistryKey, // for reconnection lookup
-			ServiceName:   e.Service,
-			Namespace:     e.Namespace,
-			Context:       e.Context,
-			PodName:       e.PodName,
-			ContainerName: e.ContainerName,
-			LocalIP:       e.LocalIP,
-			LocalPort:     e.LocalPort,
-			PodPort:       e.PodPort,
-			Hostnames:     e.Hostnames,
-			Status:        state.StatusConnecting,
-			StartedAt:     e.Timestamp,
-		}
-		m.store.AddForward(snapshot)
-
+		m.handlePodAddedEvent(e)
 	case events.PodRemoved:
-		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
-		m.store.RemoveForward(key)
-
+		m.store.RemoveForward(buildForwardKey(e))
 	case events.PodStatusChanged:
-		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
-		var status state.ForwardStatus
-		switch e.Status {
-		case "connecting":
-			status = state.StatusConnecting
-		case "active":
-			status = state.StatusActive
-		case "error":
-			status = state.StatusError
-		case "stopping":
-			status = state.StatusStopping
-		default:
-			status = state.StatusPending
-		}
-		errorMsg := ""
-		if e.Error != nil {
-			errorMsg = e.Error.Error()
-		}
-		m.store.UpdateStatus(key, status, errorMsg)
-
-		// Update hostnames when "active" status arrives with populated hostnames
-		// (hostnames are only available after AddHosts() runs in PortForward)
-		if e.Status == "active" && len(e.Hostnames) > 0 {
-			m.store.UpdateHostnames(key, e.Hostnames)
-		}
-
+		m.handlePodStatusChangedEvent(e)
 	case events.ServiceRemoved:
-		forwards := m.store.GetFiltered()
-		for _, fwd := range forwards {
-			if fwd.ServiceKey == e.ServiceKey {
-				m.store.RemoveForward(fwd.Key)
-			}
-		}
-
+		m.handleServiceRemovedEvent(e)
 	case events.NamespaceRemoved:
-		// Remove all services and forwards for this namespace/context
 		m.store.RemoveByNamespace(e.Namespace, e.Context)
-
-	case events.ServiceAdded, events.ServiceUpdated:
-		// Service lifecycle events - pods are tracked individually via PodAdded/PodRemoved
-
-	case events.BandwidthUpdate:
-		// Bandwidth updates are handled via MetricsUpdateMsg, not events
-
-	case events.LogMessage:
-		// Log messages are handled via tuiLogHook, not through events
-
-	case events.ShutdownStarted, events.ShutdownComplete:
-		// Shutdown events are handled via ShutdownMsg in the main Update loop
+	case events.ServiceAdded, events.ServiceUpdated, events.BandwidthUpdate, events.LogMessage, events.ShutdownStarted, events.ShutdownComplete:
+		// These events are handled elsewhere or ignored
 	}
 }
 
