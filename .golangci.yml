@@ -24,6 +24,7 @@ linters:
       enable-all: true
       disable:
         - fieldalignment  # Too noisy for existing codebase
+        - shadow          # err shadowing is standard Go idiom
     misspell:
       locale: US
     gocritic:
@@ -39,6 +40,10 @@ linters:
         - paramTypeCombine  # Style preference
         - emptyStringTest   # Style preference (len(s) vs s == "")
         - commentedOutCode  # Too noisy, especially in tests
+        - nestingReduce     # Style suggestion, not a bug
+        - evalOrder         # False positive for intentional order
+        - deferUnlambda     # False positive when variable assigned later
+        - exposedSyncMutex  # Intentional for thread-safe exported types
     revive:
       enable-all-rules: false
       rules:
@@ -58,6 +63,7 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - nilnil  # Test mocks often return nil, nil
       # Ignore unused writes in test struct initializations
       - path: _test\.go
         text: "unusedwrite"
@@ -66,6 +72,21 @@ linters:
         linters:
           - revive
         text: "unused-parameter"
+      # MCP handlers must match interface signature (ctx, req required but unused)
+      - path: pkg/fwdmcp/
+        linters:
+          - revive
+        text: "unused-parameter"
+      # Watch channel closure returns nil, nil intentionally (not an error)
+      - path: pkg/fwdport/fwdport\.go
+        linters:
+          - nilnil
+        text: "return both a `nil` error"
+      # Test code uses deprecated K8s APIs to match production code being tested
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA1019.*deprecated"
 
 issues:
   max-issues-per-linter: 100
