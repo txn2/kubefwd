@@ -117,6 +117,82 @@ func (m *ServicesModel) Init() tea.Cmd {
 	return nil
 }
 
+// handleFilterKeyMsg handles key messages while in filtering mode
+func (m *ServicesModel) handleFilterKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "esc":
+		m.filtering = false
+		if msg.String() == "enter" {
+			m.store.SetFilter(m.filterText)
+		} else {
+			m.filterText = m.store.GetFilter()
+		}
+		m.Refresh()
+	case "backspace":
+		if len(m.filterText) > 0 {
+			m.filterText = m.filterText[:len(m.filterText)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.filterText += msg.String()
+		}
+	}
+	return *m, nil
+}
+
+// handleNormalKeyMsg handles key messages in normal (non-filtering) mode
+// Returns the updated model, command, and whether the key was fully handled
+func (m *ServicesModel) handleNormalKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.Cmd, bool) {
+	switch msg.String() {
+	case "/":
+		m.filtering = true
+		m.filterText = m.store.GetFilter()
+		return *m, nil, true
+	case "esc":
+		m.store.SetFilter("")
+		m.filterText = ""
+		m.Refresh()
+		return *m, nil, true
+	case "b":
+		m.showBandwidth = !m.showBandwidth
+		m.rebuildColumns()
+		return *m, nil, true
+	case "c":
+		m.compactView = !m.compactView
+		m.rebuildColumns()
+		return *m, nil, true
+	case "d":
+		registryKey := m.GetSelectedRegistryKey()
+		if registryKey != "" {
+			return *m, func() tea.Msg { return RemoveForwardMsg{RegistryKey: registryKey} }, true
+		}
+		return *m, nil, true
+	case "g", "home":
+		m.table = m.table.PageFirst()
+	case "G", "end":
+		m.table = m.table.PageLast()
+	case "pgdown":
+		m.table = m.table.PageDown()
+	case "pgup":
+		m.table = m.table.PageUp()
+	}
+	return *m, nil, false
+}
+
+// handleMouseMsg handles mouse messages for scrolling
+func (m *ServicesModel) handleMouseMsg(msg tea.MouseMsg) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		for range 3 {
+			m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() - 1)
+		}
+	case tea.MouseButtonWheelDown:
+		for range 3 {
+			m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
+		}
+	}
+}
+
 // Update handles messages for the services table
 func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 	var cmd tea.Cmd
@@ -125,84 +201,18 @@ func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.table = m.table.WithTargetWidth(m.width - 2) // Account for borders
+		m.table = m.table.WithTargetWidth(m.width - 2)
 
 	case tea.MouseMsg:
-		// Handle mouse wheel scrolling
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			for range 3 {
-				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() - 1)
-			}
-		case tea.MouseButtonWheelDown:
-			for range 3 {
-				m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
-			}
-		}
-		// Click events are not handled - use keyboard for selection
+		m.handleMouseMsg(msg)
 
 	case tea.KeyMsg:
 		if m.filtering {
-			// Handle filter input
-			switch msg.String() {
-			case "enter", "esc":
-				m.filtering = false
-				if msg.String() == "enter" {
-					m.store.SetFilter(m.filterText)
-				} else {
-					m.filterText = m.store.GetFilter()
-				}
-				m.Refresh()
-			case "backspace":
-				if len(m.filterText) > 0 {
-					m.filterText = m.filterText[:len(m.filterText)-1]
-				}
-			default:
-				if len(msg.String()) == 1 {
-					m.filterText += msg.String()
-				}
-			}
-			return *m, nil
+			return m.handleFilterKeyMsg(msg)
 		}
-
-		// Normal mode key handling
-		switch msg.String() {
-		case "/":
-			m.filtering = true
-			m.filterText = m.store.GetFilter()
-			return *m, nil
-		case "esc":
-			m.store.SetFilter("")
-			m.filterText = ""
-			m.Refresh()
-			return *m, nil
-		case "b":
-			m.showBandwidth = !m.showBandwidth
-			m.rebuildColumns()
-			return *m, nil
-		case "c":
-			m.compactView = !m.compactView
-			m.rebuildColumns()
-			return *m, nil
-		case "d":
-			// Remove the selected forward
-			registryKey := m.GetSelectedRegistryKey()
-			if registryKey != "" {
-				return *m, func() tea.Msg {
-					return RemoveForwardMsg{RegistryKey: registryKey}
-				}
-			}
-			return *m, nil
-		case "g", "home":
-			m.table = m.table.PageFirst()
-		case "G", "end":
-			m.table = m.table.PageLast()
-		case "pgdown":
-			m.table = m.table.PageDown()
-		case "pgup":
-			m.table = m.table.PageUp()
+		if result, resultCmd, handled := m.handleNormalKeyMsg(msg); handled {
+			return result, resultCmd
 		}
-		// Note: j/k/up/down are handled by the table's built-in KeyMap
 	}
 
 	m.table, cmd = m.table.Update(msg)
