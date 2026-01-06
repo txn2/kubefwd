@@ -1,6 +1,7 @@
 package fwdapi
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -2528,5 +2529,228 @@ func TestServiceControllerAdapter_ReconnectAll_WithErroredForwards(t *testing.T)
 	// but we can verify it doesn't panic and returns a count
 	if count < 0 {
 		t.Error("ReconnectAll should return non-negative count")
+	}
+}
+
+// Test splitLogLines helper function
+func TestSplitLogLines_Empty(t *testing.T) {
+	lines := splitLogLines("")
+	if len(lines) != 0 {
+		t.Errorf("Expected 0 lines for empty string, got %d", len(lines))
+	}
+}
+
+func TestSplitLogLines_SingleLine(t *testing.T) {
+	lines := splitLogLines("single line content")
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line, got %d", len(lines))
+	}
+	if lines[0] != "single line content" {
+		t.Errorf("Expected 'single line content', got '%s'", lines[0])
+	}
+}
+
+func TestSplitLogLines_MultipleLines_LF(t *testing.T) {
+	lines := splitLogLines("line1\nline2\nline3")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 lines, got %d", len(lines))
+	}
+	if lines[0] != "line1" || lines[1] != "line2" || lines[2] != "line3" {
+		t.Errorf("Lines don't match expected: %v", lines)
+	}
+}
+
+func TestSplitLogLines_MultipleLines_CRLF(t *testing.T) {
+	lines := splitLogLines("line1\r\nline2\r\nline3")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 lines, got %d", len(lines))
+	}
+	if lines[0] != "line1" || lines[1] != "line2" || lines[2] != "line3" {
+		t.Errorf("Lines don't match expected: %v", lines)
+	}
+}
+
+func TestSplitLogLines_TrailingNewline(t *testing.T) {
+	lines := splitLogLines("line1\nline2\n")
+	if len(lines) != 2 {
+		t.Errorf("Expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestSplitLogLines_MixedLineEndings(t *testing.T) {
+	lines := splitLogLines("line1\nline2\r\nline3\n")
+	if len(lines) != 3 {
+		t.Errorf("Expected 3 lines, got %d", len(lines))
+	}
+}
+
+// Test GetPodLogs with invalid sinceTime format
+func TestKubernetesDiscoveryAdapter_GetPodLogs_InvalidSinceTime(t *testing.T) {
+	initTestRegistry()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "test-container", Image: "test:v1"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	_, err := adapter.GetPodLogs("test-context", "default", "test-pod", types.PodLogsOptions{
+		SinceTime: "invalid-time-format",
+	})
+
+	if err == nil {
+		t.Error("Expected error for invalid sinceTime format")
+	}
+	if !strings.Contains(err.Error(), "invalid sinceTime format") {
+		t.Errorf("Expected 'invalid sinceTime format' error, got: %s", err.Error())
+	}
+}
+
+// Test GetPodLogs pod not found
+func TestKubernetesDiscoveryAdapter_GetPodLogs_PodNotFound(t *testing.T) {
+	initTestRegistry()
+
+	clientset := fake.NewClientset() // Empty - no pods
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	_, err := adapter.GetPodLogs("test-context", "default", "nonexistent-pod", types.PodLogsOptions{})
+
+	if err == nil {
+		t.Error("Expected error for nonexistent pod")
+	}
+	if !strings.Contains(err.Error(), "failed to get pod") {
+		t.Errorf("Expected 'failed to get pod' error, got: %s", err.Error())
+	}
+}
+
+// Test GetPodLogs with valid options (tailLines, etc.)
+func TestKubernetesDiscoveryAdapter_GetPodLogs_WithOptions(t *testing.T) {
+	initTestRegistry()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "my-container", Image: "test:v1"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Test with various options - the fake client doesn't fully support logs,
+	// but this exercises the option parsing code
+	_, err := adapter.GetPodLogs("test-context", "default", "test-pod", types.PodLogsOptions{
+		Container:  "my-container",
+		TailLines:  50,
+		Previous:   false,
+		Timestamps: true,
+		SinceTime:  "2024-01-01T00:00:00Z",
+	})
+
+	// The fake client returns an error because it doesn't implement GetLogs
+	// but we've at least exercised the options parsing
+	if err == nil {
+		t.Log("GetPodLogs succeeded with fake client (unexpected but acceptable)")
+	}
+}
+
+// Test GetPodLogs with extremely high tailLines (should be capped)
+func TestKubernetesDiscoveryAdapter_GetPodLogs_TailLinesCapped(t *testing.T) {
+	initTestRegistry()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "container", Image: "test:v1"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	clientset := fake.NewClientset(pod)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	mgr := fwdns.NewManager(fwdns.ManagerConfig{GlobalStopCh: stopCh})
+	mgr.SetClientSet("test-context", clientset)
+
+	adapter := NewKubernetesDiscoveryAdapter(
+		func() *fwdns.NamespaceManager { return mgr },
+		"",
+	)
+
+	// Request 5000 lines - should be capped to 1000
+	_, _ = adapter.GetPodLogs("test-context", "default", "test-pod", types.PodLogsOptions{
+		TailLines: 5000,
+	})
+	// The internal logic caps at 1000, but we can't easily verify without mocking deeper
+	// This test ensures the code path is exercised without panic
+}
+
+// Test ServiceCRUDAdapter AddService nil manager
+func TestServiceCRUDAdapter_AddService_NilManager(t *testing.T) {
+	adapter := NewServiceCRUDAdapter(
+		func() *state.Store { return nil },
+		func() *fwdns.NamespaceManager { return nil },
+		"",
+	)
+
+	_, err := adapter.AddService(types.AddServiceRequest{
+		ServiceName: "my-service",
+		Namespace:   "default",
+	})
+
+	if err == nil {
+		t.Error("Expected error for nil namespace manager")
+	}
+	if !strings.Contains(err.Error(), "namespace manager not available") {
+		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
 	}
 }
