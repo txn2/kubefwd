@@ -994,7 +994,7 @@ func appendServiceSelector(listOpts *metav1.ListOptions, selector map[string]str
 
 // ListPods returns pods in a namespace
 func (a *KubernetesDiscoveryAdapter) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
-	ctx, clientSet, err := a.resolveContextAndClient(ctx)
+	_, clientSet, err := a.resolveContextAndClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1349,12 +1349,12 @@ func (a *KubernetesDiscoveryAdapter) GetEvents(ctx, namespace string, opts types
 }
 
 // sortAndLimitEvents sorts events by last timestamp (most recent first) and applies limit
-func sortAndLimitEvents(events []corev1.Event, limit int) []corev1.Event {
+func sortAndLimitEvents(eventList []corev1.Event, limit int) []corev1.Event {
 	// Sort by last timestamp (most recent first) using bubble sort
-	for i := 0; i < len(events)-1; i++ {
-		for j := i + 1; j < len(events); j++ {
-			if events[j].LastTimestamp.After(events[i].LastTimestamp.Time) {
-				events[i], events[j] = events[j], events[i]
+	for i := 0; i < len(eventList)-1; i++ {
+		for j := i + 1; j < len(eventList); j++ {
+			if eventList[j].LastTimestamp.After(eventList[i].LastTimestamp.Time) {
+				eventList[i], eventList[j] = eventList[j], eventList[i]
 			}
 		}
 	}
@@ -1363,16 +1363,16 @@ func sortAndLimitEvents(events []corev1.Event, limit int) []corev1.Event {
 	if limit <= 0 {
 		limit = 50
 	}
-	if len(events) > limit {
-		events = events[:limit]
+	if len(eventList) > limit {
+		eventList = eventList[:limit]
 	}
-	return events
+	return eventList
 }
 
 // convertEventsToK8sEvents converts corev1.Event slice to types.K8sEvent slice
-func convertEventsToK8sEvents(events []corev1.Event) []types.K8sEvent {
-	result := make([]types.K8sEvent, len(events))
-	for i, e := range events {
+func convertEventsToK8sEvents(eventList []corev1.Event) []types.K8sEvent {
+	result := make([]types.K8sEvent, len(eventList))
+	for i, e := range eventList {
 		result[i] = types.K8sEvent{
 			Type:           e.Type,
 			Reason:         e.Reason,
@@ -1404,6 +1404,7 @@ func convertEndpointAddress(addr corev1.EndpointAddress) types.K8sEndpointAddres
 }
 
 // convertEndpointSubset converts a k8s EndpointSubset to our type
+// nolint:staticcheck // EndpointSubset is deprecated in k8s v1.33+ but we support older versions
 func convertEndpointSubset(subset corev1.EndpointSubset) types.K8sEndpointSubset {
 	result := types.K8sEndpointSubset{
 		Addresses:         make([]types.K8sEndpointAddress, len(subset.Addresses)),
@@ -1428,7 +1429,7 @@ func convertEndpointSubset(subset corev1.EndpointSubset) types.K8sEndpointSubset
 
 // GetEndpoints returns endpoints for a service
 func (a *KubernetesDiscoveryAdapter) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
-	ctx, clientSet, err := a.resolveContextAndClient(ctx)
+	_, clientSet, err := a.resolveContextAndClient(ctx)
 	if err != nil {
 		return nil, err
 	}

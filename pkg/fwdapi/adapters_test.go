@@ -2823,11 +2823,12 @@ func TestSetupPodAddedSubscription_WithEventBus(t *testing.T) {
 	// Create and start an event bus
 	bus := events.NewBus(100)
 	bus.Start()
-	defer bus.Stop()
 
 	// Store original and set test bus
 	// Note: This test verifies the function works with a bus
 	// In practice, the global bus would need to be set
+
+	bus.Stop()
 }
 
 func TestWaitForPodAdded_NilUnsubscribe(t *testing.T) {
@@ -2943,14 +2944,14 @@ func TestSortAndLimitEvents(t *testing.T) {
 	past := metav1.NewTime(now.Add(-1 * time.Hour))
 	future := metav1.NewTime(now.Add(1 * time.Hour))
 
-	events := []corev1.Event{
+	eventList := []corev1.Event{
 		{ObjectMeta: metav1.ObjectMeta{Name: "past"}, LastTimestamp: past},
 		{ObjectMeta: metav1.ObjectMeta{Name: "now"}, LastTimestamp: now},
 		{ObjectMeta: metav1.ObjectMeta{Name: "future"}, LastTimestamp: future},
 	}
 
 	// Test sorting (most recent first)
-	sorted := sortAndLimitEvents(events, 10)
+	sorted := sortAndLimitEvents(eventList, 10)
 	if len(sorted) != 3 {
 		t.Fatalf("Expected 3 events, got %d", len(sorted))
 	}
@@ -2959,18 +2960,18 @@ func TestSortAndLimitEvents(t *testing.T) {
 	}
 
 	// Test limiting
-	events2 := []corev1.Event{
+	eventList2 := []corev1.Event{
 		{ObjectMeta: metav1.ObjectMeta{Name: "1"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "2"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "3"}},
 	}
-	limited := sortAndLimitEvents(events2, 2)
+	limited := sortAndLimitEvents(eventList2, 2)
 	if len(limited) != 2 {
 		t.Errorf("Expected 2 events with limit, got %d", len(limited))
 	}
 
 	// Test default limit
-	defaultLimited := sortAndLimitEvents(events2, 0)
+	defaultLimited := sortAndLimitEvents(eventList2, 0)
 	if len(defaultLimited) != 3 {
 		t.Errorf("Expected 3 events with default limit, got %d", len(defaultLimited))
 	}
@@ -2978,7 +2979,7 @@ func TestSortAndLimitEvents(t *testing.T) {
 
 func TestConvertEventsToK8sEvents(t *testing.T) {
 	now := metav1.Now()
-	events := []corev1.Event{
+	eventList := []corev1.Event{
 		{
 			Type:           "Normal",
 			Reason:         "Scheduled",
@@ -2991,7 +2992,7 @@ func TestConvertEventsToK8sEvents(t *testing.T) {
 		},
 	}
 
-	result := convertEventsToK8sEvents(events)
+	result := convertEventsToK8sEvents(eventList)
 	if len(result) != 1 {
 		t.Fatalf("Expected 1 event, got %d", len(result))
 	}

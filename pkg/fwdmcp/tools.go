@@ -336,13 +336,13 @@ func calculateMCPServiceStatus(activeCount, errorCount int) string {
 }
 
 func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolRequest, input ListServicesInput) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
-	services := state.GetServices()
-	summary := state.GetSummary()
+	services := stateReader.GetServices()
+	summary := stateReader.GetSummary()
 
 	// Apply filters
 	var filtered []map[string]interface{}
@@ -408,12 +408,12 @@ func (s *Server) handleListServices(ctx context.Context, req *mcp.CallToolReques
 }
 
 func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest, input GetServiceInput) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
-	svc := state.GetService(input.Key)
+	svc := stateReader.GetService(input.Key)
 	if svc == nil {
 		return nil, nil, NewServiceNotFoundError(input.Key)
 	}
@@ -471,13 +471,13 @@ func (s *Server) handleGetService(ctx context.Context, req *mcp.CallToolRequest,
 }
 
 func (s *Server) handleDiagnoseErrors(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
-	services := state.GetServices()
-	logs := state.GetLogs(20)
+	services := stateReader.GetServices()
+	logs := stateReader.GetLogs(20)
 
 	var errors []map[string]interface{}
 	for _, svc := range services {
@@ -597,15 +597,15 @@ func buildServiceKey(serviceName, namespace, ctx string) string {
 
 func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest, input GetMetricsInput) (*mcp.CallToolResult, any, error) {
 	metrics := s.getMetrics()
-	state := s.getState()
+	stateReader := s.getState()
 	manager := s.getManager()
 
-	if metrics == nil || state == nil {
+	if metrics == nil || stateReader == nil {
 		return nil, nil, fmt.Errorf("metrics or state not available")
 	}
 
 	bytesIn, bytesOut, rateIn, rateOut := metrics.GetTotals()
-	summary := state.GetSummary()
+	summary := stateReader.GetSummary()
 
 	uptime := ""
 	if manager != nil {
@@ -648,8 +648,8 @@ func (s *Server) handleGetMetrics(ctx context.Context, req *mcp.CallToolRequest,
 }
 
 func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, input GetLogsInput) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
@@ -661,7 +661,7 @@ func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, in
 		count = 500
 	}
 
-	logs := state.GetLogs(count)
+	logs := stateReader.GetLogs(count)
 
 	// Apply filters
 	var filtered []map[string]interface{}
@@ -693,14 +693,14 @@ func (s *Server) handleGetLogs(ctx context.Context, req *mcp.CallToolRequest, in
 }
 
 func (s *Server) handleGetHealth(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
+	stateReader := s.getState()
 	manager := s.getManager()
 
-	if state == nil {
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
-	summary := state.GetSummary()
+	summary := stateReader.GetSummary()
 
 	// Determine health status
 	status := "healthy"
@@ -951,7 +951,7 @@ func buildConnectionInfoFromService(svc *state.ServiceSnapshot) map[string]inter
 }
 
 // findServiceInState searches for a service in the state store
-func findServiceInState(stateReader types.StateReader, serviceName, namespace, context string) (*state.ServiceSnapshot, error) {
+func findServiceInState(stateReader types.StateReader, serviceName, namespace, ctx string) (*state.ServiceSnapshot, error) {
 	services := stateReader.GetServices()
 	for i := range services {
 		svc := &services[i]
@@ -961,7 +961,7 @@ func findServiceInState(stateReader types.StateReader, serviceName, namespace, c
 		if namespace != "" && svc.Namespace != namespace {
 			continue
 		}
-		if context != "" && svc.Context != context {
+		if ctx != "" && svc.Context != ctx {
 			continue
 		}
 		return svc, nil
@@ -1310,12 +1310,12 @@ func (s *Server) handleGetEndpoints(ctx context.Context, req *mcp.CallToolReques
 }
 
 func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolRequest, input FindServicesInput) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
-	services := state.GetServices()
+	services := stateReader.GetServices()
 	var matches []map[string]interface{}
 
 	for _, svc := range services {
@@ -1371,13 +1371,13 @@ func (s *Server) handleFindServices(ctx context.Context, req *mcp.CallToolReques
 }
 
 func (s *Server) handleListHostnames(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
-	state := s.getState()
-	if state == nil {
+	stateReader := s.getState()
+	if stateReader == nil {
 		return nil, nil, fmt.Errorf("state reader not available")
 	}
 
 	// Collect all hostnames from forwards
-	services := state.GetServices()
+	services := stateReader.GetServices()
 	var hostnames []map[string]interface{}
 
 	for _, svc := range services {

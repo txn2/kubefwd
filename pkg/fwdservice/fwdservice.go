@@ -466,13 +466,13 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 }
 
 // buildServiceHostname constructs the service hostname based on cluster/namespace indices
-func buildServiceHostname(baseName, namespace, context string, namespaceN, clusterN int) string {
+func buildServiceHostname(baseName, namespace, ctx string, namespaceN, clusterN int) string {
 	hostname := baseName
 	if namespaceN > 0 {
 		hostname = hostname + "." + namespace
 	}
 	if clusterN > 0 {
-		hostname = hostname + "." + context
+		hostname = hostname + "." + ctx
 	}
 	return hostname
 }
