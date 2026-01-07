@@ -45,77 +45,72 @@ func (m *LogsModel) Init() tea.Cmd {
 	return nil
 }
 
+// handleWindowSizeMsg handles window resize messages
+func (m *LogsModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) {
+	m.width = msg.Width
+	m.height = msg.Height
+	viewportHeight := m.height - 1
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	if !m.ready {
+		m.viewport = viewport.New(m.width, viewportHeight)
+		m.viewport.Style = lipgloss.NewStyle()
+		m.ready = true
+	} else {
+		m.viewport.Width = m.width
+		m.viewport.Height = viewportHeight
+	}
+	m.updateContent()
+}
+
+// handleKeyMsg handles keyboard navigation messages
+func (m *LogsModel) handleKeyMsg(msg tea.KeyMsg) {
+	if !m.focused || !m.ready {
+		return
+	}
+	switch msg.String() {
+	case "j":
+		m.viewport.ScrollDown(1)
+	case "k":
+		m.viewport.ScrollUp(1)
+		m.autoFollow = false
+	case "g":
+		m.viewport.GotoTop()
+		m.autoFollow = false
+	case "G":
+		m.viewport.GotoBottom()
+		m.autoFollow = true
+	case "up", "pgup", "home":
+		m.autoFollow = false
+	case "end":
+		m.autoFollow = true
+	}
+}
+
+// handleMouseMsg handles mouse scroll messages
+func (m *LogsModel) handleMouseMsg(msg tea.MouseMsg) {
+	if m.focused && m.ready && msg.Button == tea.MouseButtonWheelUp {
+		m.autoFollow = false
+	}
+}
+
 // Update handles messages for the logs viewport
 func (m *LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 	var cmd tea.Cmd
-
-	// Capture position BEFORE any scrolling to track user intent
 	wasAtBottom := m.ready && m.viewport.AtBottom()
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		// Viewport height is 1 less to accommodate status line
-		viewportHeight := m.height - 1
-		if viewportHeight < 1 {
-			viewportHeight = 1
-		}
-		if !m.ready {
-			m.viewport = viewport.New(m.width, viewportHeight)
-			m.viewport.Style = lipgloss.NewStyle()
-			m.ready = true
-		} else {
-			m.viewport.Width = m.width
-			m.viewport.Height = viewportHeight
-		}
-		m.updateContent()
-
+		m.handleWindowSizeMsg(msg)
 	case tea.KeyMsg:
-		if m.focused && m.ready {
-			switch msg.String() {
-			case "j":
-				// Vim-style scroll down - viewport doesn't handle 'j'
-				m.viewport.ScrollDown(1)
-			case "k":
-				// Vim-style scroll up - viewport doesn't handle 'k'
-				m.viewport.ScrollUp(1)
-				m.autoFollow = false // User is pausing
-			case "g":
-				// Vim-style go to top - viewport doesn't handle 'g'
-				m.viewport.GotoTop()
-				m.autoFollow = false // User is pausing
-			case "G":
-				// Vim-style go to bottom - viewport doesn't handle 'G'
-				m.viewport.GotoBottom()
-				m.autoFollow = true // User explicitly resumed
-			case "up", "pgup", "home":
-				// Scrolling up = pausing (viewport handles the actual scroll)
-				m.autoFollow = false
-			case "end":
-				// Going to bottom = resuming (viewport handles the actual scroll)
-				m.autoFollow = true
-			}
-			// Note: "down" and "pgdown" fall through - let viewport handle them
-			// and use the wasAtBottom check below to resume if scrolled to bottom
-		}
-
+		m.handleKeyMsg(msg)
 	case tea.MouseMsg:
-		// Track scroll direction for autoFollow
-		if m.focused && m.ready {
-			if msg.Button == tea.MouseButtonWheelUp {
-				m.autoFollow = false // User scrolling up = pausing
-			}
-			// Scroll down is handled by viewport + wasAtBottom check below
-		}
+		m.handleMouseMsg(msg)
 	}
 
 	if m.ready {
-		// Let viewport handle scrolling (arrows, page up/down, mouse wheel)
 		m.viewport, cmd = m.viewport.Update(msg)
-
-		// Resume autoFollow if user scrolled TO the bottom
-		// (they were not at bottom before, but are now)
 		if !wasAtBottom && m.viewport.AtBottom() {
 			m.autoFollow = true
 		}

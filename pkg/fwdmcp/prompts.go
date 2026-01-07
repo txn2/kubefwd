@@ -162,7 +162,7 @@ func (s *Server) registerPrompts() {
 
 // === Developer-focused prompt handlers ===
 
-func (s *Server) handleSetupLocalDevPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleSetupLocalDevPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	namespace := ""
 	k8sContext := ""
 
@@ -235,7 +235,7 @@ Be friendly and helpful. Remember the user may not be familiar with Kubernetes i
 	}, nil
 }
 
-func (s *Server) handleConnectionGuidePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleConnectionGuidePrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	serviceName := ""
 	language := ""
 
@@ -319,7 +319,7 @@ Be specific to the service type and programming language requested.`
 	}, nil
 }
 
-func (s *Server) handleForwardNamespacePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleForwardNamespacePrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	namespace := ""
 	selector := ""
 
@@ -402,7 +402,7 @@ Be concise and focus on actionable information the developer needs.`
 
 // === Utility prompt handlers ===
 
-func (s *Server) handleTroubleshootPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleTroubleshootPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	serviceName := ""
 	symptom := ""
 
@@ -467,7 +467,7 @@ Always explain what you find and suggest concrete next steps.`
 	}, nil
 }
 
-func (s *Server) handleExplainStatusPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleExplainStatusPrompt(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	content := `You are explaining the current state of kubefwd to someone who may not be familiar with Kubernetes or port forwarding.
 
 First, use 'get_health' and 'list_services' to understand the current state.
@@ -507,7 +507,7 @@ Keep your explanation friendly and accessible to non-developers.`
 	}, nil
 }
 
-func (s *Server) handleFixErrorsPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleFixErrorsPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	autoReconnect := false
 	if req.Params.Arguments != nil {
 		if v, ok := req.Params.Arguments["auto_reconnect"]; ok && v == "true" {
@@ -584,7 +584,7 @@ Follow this step-by-step approach:
 	}, nil
 }
 
-func (s *Server) handleMonitorPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleMonitorPrompt(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	content := `You are helping to monitor kubefwd traffic and health.
 
 Use these tools to provide monitoring insights:
@@ -631,7 +631,7 @@ Format your response as a monitoring dashboard summary, easy to scan quickly.`
 
 // === Debugging and quick access prompt handlers ===
 
-func (s *Server) handleDebugServicePrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleDebugServicePrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	serviceName := ""
 	symptom := ""
 
@@ -715,7 +715,7 @@ Be methodical and report findings at each step. Provide actionable recommendatio
 	}, nil
 }
 
-func (s *Server) handleQuickConnectPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleQuickConnectPrompt(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	serviceName := ""
 	namespace := ""
 
@@ -812,7 +812,7 @@ The user should be able to copy-paste something and immediately connect. Be conc
 	}, nil
 }
 
-func (s *Server) handleAnalyzeIssuesPrompt(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func (s *Server) handleAnalyzeIssuesPrompt(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	content := `You are performing a comprehensive analysis of all kubefwd issues with prioritized resolution.
 
 ## Analysis Workflow

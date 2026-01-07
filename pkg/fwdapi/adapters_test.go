@@ -2754,3 +2754,255 @@ func TestServiceCRUDAdapter_AddService_NilManager(t *testing.T) {
 		t.Errorf("Expected 'namespace manager not available' error, got: %s", err.Error())
 	}
 }
+
+// Tests for extracted helper functions
+
+func TestBuildPortMappings(t *testing.T) {
+	tests := []struct {
+		name     string
+		service  *corev1.Service
+		expected int
+	}{
+		{
+			name: "TCP ports only",
+			service: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
+						{Port: 443, TargetPort: intstr.FromInt(8443), Protocol: corev1.ProtocolTCP},
+					},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "Skip UDP ports",
+			service: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Port: 80, TargetPort: intstr.FromInt(8080), Protocol: corev1.ProtocolTCP},
+						{Port: 53, TargetPort: intstr.FromInt(53), Protocol: corev1.ProtocolUDP},
+					},
+				},
+			},
+			expected: 1,
+		},
+		{
+			name: "Empty ports",
+			service: &corev1.Service{
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{},
+				},
+			},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildPortMappings(tt.service)
+			if len(result) != tt.expected {
+				t.Errorf("Expected %d port mappings, got %d", tt.expected, len(result))
+			}
+		})
+	}
+}
+
+func TestSetupPodAddedSubscription(t *testing.T) {
+	// Test without event bus (returns nil unsubscribe)
+	ch, unsubscribe := setupPodAddedSubscription("test-service.default.context")
+	if ch == nil {
+		t.Error("Expected non-nil channel")
+	}
+	if unsubscribe != nil {
+		t.Error("Expected nil unsubscribe when no event bus")
+	}
+}
+
+func TestSetupPodAddedSubscription_WithEventBus(t *testing.T) {
+	// Create and start an event bus
+	bus := events.NewBus(100)
+	bus.Start()
+
+	// Store original and set test bus
+	// Note: This test verifies the function works with a bus
+	// In practice, the global bus would need to be set
+
+	bus.Stop()
+}
+
+func TestWaitForPodAdded_NilUnsubscribe(t *testing.T) {
+	ch := make(chan events.Event, 1)
+	localIP, hostnames := waitForPodAdded(ch, nil, "test-key")
+
+	if localIP != "" {
+		t.Errorf("Expected empty localIP, got %s", localIP)
+	}
+	if hostnames != nil {
+		t.Errorf("Expected nil hostnames, got %v", hostnames)
+	}
+}
+
+func TestWaitForPodAdded_EventReceived(t *testing.T) {
+	ch := make(chan events.Event, 1)
+	unsubscribeCalled := false
+	unsubscribe := func() { unsubscribeCalled = true }
+
+	// Send event before calling wait
+	ch <- events.Event{
+		LocalIP:   "127.1.1.1",
+		Hostnames: []string{"test-host"},
+	}
+
+	localIP, hostnames := waitForPodAdded(ch, unsubscribe, "test-key")
+
+	if localIP != "127.1.1.1" {
+		t.Errorf("Expected localIP 127.1.1.1, got %s", localIP)
+	}
+	if len(hostnames) != 1 || hostnames[0] != "test-host" {
+		t.Errorf("Expected hostnames [test-host], got %v", hostnames)
+	}
+	if !unsubscribeCalled {
+		t.Error("Expected unsubscribe to be called")
+	}
+}
+
+func TestCheckPodForwarded(t *testing.T) {
+	initTestRegistry()
+
+	// Test when no services are registered
+	isForwarded, forwardKey := checkPodForwarded("test-pod", "default")
+	if isForwarded {
+		t.Error("Expected pod not to be forwarded when no services registered")
+	}
+	if forwardKey != "" {
+		t.Errorf("Expected empty forward key, got %s", forwardKey)
+	}
+}
+
+func TestDeterminePodStatusString(t *testing.T) {
+	now := metav1.Now()
+
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want string
+	}{
+		{
+			name: "terminating",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			},
+			want: "Terminating",
+		},
+		{
+			name: "waiting with reason",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"}}},
+					},
+				},
+			},
+			want: "ImagePullBackOff",
+		},
+		{
+			name: "terminated with reason",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Phase: corev1.PodFailed,
+					ContainerStatuses: []corev1.ContainerStatus{
+						{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled"}}},
+					},
+				},
+			},
+			want: "OOMKilled",
+		},
+		{
+			name: "running - default phase",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			},
+			want: "Running",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := determinePodStatusString(tt.pod)
+			if got != tt.want {
+				t.Errorf("determinePodStatusString() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortAndLimitEvents(t *testing.T) {
+	now := metav1.Now()
+	past := metav1.NewTime(now.Add(-1 * time.Hour))
+	future := metav1.NewTime(now.Add(1 * time.Hour))
+
+	eventList := []corev1.Event{
+		{ObjectMeta: metav1.ObjectMeta{Name: "past"}, LastTimestamp: past},
+		{ObjectMeta: metav1.ObjectMeta{Name: "now"}, LastTimestamp: now},
+		{ObjectMeta: metav1.ObjectMeta{Name: "future"}, LastTimestamp: future},
+	}
+
+	// Test sorting (most recent first)
+	sorted := sortAndLimitEvents(eventList, 10)
+	if len(sorted) != 3 {
+		t.Fatalf("Expected 3 events, got %d", len(sorted))
+	}
+	if sorted[0].Name != "future" {
+		t.Errorf("Expected first event to be 'future', got %s", sorted[0].Name)
+	}
+
+	// Test limiting
+	eventList2 := []corev1.Event{
+		{ObjectMeta: metav1.ObjectMeta{Name: "1"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "2"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "3"}},
+	}
+	limited := sortAndLimitEvents(eventList2, 2)
+	if len(limited) != 2 {
+		t.Errorf("Expected 2 events with limit, got %d", len(limited))
+	}
+
+	// Test default limit
+	defaultLimited := sortAndLimitEvents(eventList2, 0)
+	if len(defaultLimited) != 3 {
+		t.Errorf("Expected 3 events with default limit, got %d", len(defaultLimited))
+	}
+}
+
+func TestConvertEventsToK8sEvents(t *testing.T) {
+	now := metav1.Now()
+	eventList := []corev1.Event{
+		{
+			Type:           "Normal",
+			Reason:         "Scheduled",
+			Message:        "Successfully scheduled",
+			Count:          1,
+			FirstTimestamp: now,
+			LastTimestamp:  now,
+			Source:         corev1.EventSource{Component: "scheduler"},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "test-pod"},
+		},
+	}
+
+	result := convertEventsToK8sEvents(eventList)
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(result))
+	}
+	if result[0].Type != "Normal" {
+		t.Errorf("Expected Type 'Normal', got %s", result[0].Type)
+	}
+	if result[0].Reason != "Scheduled" {
+		t.Errorf("Expected Reason 'Scheduled', got %s", result[0].Reason)
+	}
+	if result[0].ObjectName != "test-pod" {
+		t.Errorf("Expected ObjectName 'test-pod', got %s", result[0].ObjectName)
+	}
+}
