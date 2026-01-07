@@ -80,7 +80,7 @@ func (s *Server) registerResources() {
 
 // Resource handlers
 
-func (s *Server) handleServicesResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleServicesResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	state := s.getState()
 	if state == nil {
 		return nil, fmt.Errorf("state reader not available")
@@ -130,7 +130,7 @@ func (s *Server) handleServicesResource(ctx context.Context, req *mcp.ReadResour
 	}, nil
 }
 
-func (s *Server) handleForwardsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleForwardsResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	state := s.getState()
 	if state == nil {
 		return nil, fmt.Errorf("state reader not available")
@@ -175,7 +175,7 @@ func (s *Server) handleForwardsResource(ctx context.Context, req *mcp.ReadResour
 	}, nil
 }
 
-func (s *Server) handleMetricsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleMetricsResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	metrics := s.getMetrics()
 	state := s.getState()
 	manager := s.getManager()
@@ -220,7 +220,7 @@ func (s *Server) handleMetricsResource(ctx context.Context, req *mcp.ReadResourc
 	}, nil
 }
 
-func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleSummaryResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	state := s.getState()
 	manager := s.getManager()
 
@@ -273,7 +273,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 	}, nil
 }
 
-func (s *Server) handleErrorsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleErrorsResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	state := s.getState()
 	if state == nil {
 		return nil, fmt.Errorf("state reader not available")
@@ -328,7 +328,7 @@ func (s *Server) handleErrorsResource(ctx context.Context, req *mcp.ReadResource
 
 // === Quick access resource handlers ===
 
-func (s *Server) handleStatusResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleStatusResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	analysis := s.getAnalysisProvider()
 	if analysis == nil {
 		// Fallback to state-based status if analysis provider not available
@@ -401,7 +401,7 @@ func (s *Server) handleStatusResource(ctx context.Context, req *mcp.ReadResource
 	}, nil
 }
 
-func (s *Server) handleHTTPTrafficResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleHTTPTrafficResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	state := s.getState()
 	metrics := s.getMetrics()
 
@@ -461,7 +461,7 @@ func (s *Server) handleHTTPTrafficResource(ctx context.Context, req *mcp.ReadRes
 	}, nil
 }
 
-func (s *Server) handleContextsResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func (s *Server) handleContextsResource(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	k8s := s.getK8sDiscovery()
 	if k8s == nil {
 		return nil, fmt.Errorf("kubernetes discovery not available")

@@ -86,6 +86,45 @@ func (h *ServicesHandler) List(c *gin.Context) {
 	})
 }
 
+// calculateServiceStatus determines the status string for a service
+func calculateServiceStatus(svc *state.ServiceSnapshot) string {
+	switch {
+	case svc.ActiveCount > 0 && svc.ErrorCount == 0:
+		return "active"
+	case svc.ErrorCount > 0 && svc.ActiveCount == 0:
+		return "error"
+	case svc.ErrorCount > 0 && svc.ActiveCount > 0:
+		return "partial"
+	default:
+		return "pending"
+	}
+}
+
+// matchesSearch checks if a service matches the search term (case-insensitive)
+func matchesSearch(svc *state.ServiceSnapshot, search string) bool {
+	searchLower := strings.ToLower(search)
+	return strings.Contains(strings.ToLower(svc.ServiceName), searchLower) ||
+		strings.Contains(strings.ToLower(svc.Namespace), searchLower) ||
+		strings.Contains(strings.ToLower(svc.Context), searchLower)
+}
+
+// serviceMatchesFilters checks if a service matches all filter criteria
+func serviceMatchesFilters(svc *state.ServiceSnapshot, params types.ListParams) bool {
+	if params.Status != "" && calculateServiceStatus(svc) != params.Status {
+		return false
+	}
+	if params.Namespace != "" && svc.Namespace != params.Namespace {
+		return false
+	}
+	if params.Context != "" && svc.Context != params.Context {
+		return false
+	}
+	if params.Search != "" && !matchesSearch(svc, params.Search) {
+		return false
+	}
+	return true
+}
+
 // filterServices applies query parameter filters to services
 func filterServices(services []state.ServiceSnapshot, params types.ListParams) []state.ServiceSnapshot {
 	if params.Status == "" && params.Namespace == "" && params.Context == "" && params.Search == "" {
@@ -93,46 +132,10 @@ func filterServices(services []state.ServiceSnapshot, params types.ListParams) [
 	}
 
 	result := make([]state.ServiceSnapshot, 0, len(services))
-	for _, svc := range services {
-		// Calculate status for filtering
-		var status string
-		switch {
-		case svc.ActiveCount > 0 && svc.ErrorCount == 0:
-			status = "active"
-		case svc.ErrorCount > 0 && svc.ActiveCount == 0:
-			status = "error"
-		case svc.ErrorCount > 0 && svc.ActiveCount > 0:
-			status = "partial"
-		default:
-			status = "pending"
+	for i := range services {
+		if serviceMatchesFilters(&services[i], params) {
+			result = append(result, services[i])
 		}
-
-		// Apply status filter
-		if params.Status != "" && status != params.Status {
-			continue
-		}
-
-		// Apply namespace filter
-		if params.Namespace != "" && svc.Namespace != params.Namespace {
-			continue
-		}
-
-		// Apply context filter
-		if params.Context != "" && svc.Context != params.Context {
-			continue
-		}
-
-		// Apply search filter (case-insensitive)
-		if params.Search != "" {
-			search := strings.ToLower(params.Search)
-			if !strings.Contains(strings.ToLower(svc.ServiceName), search) &&
-				!strings.Contains(strings.ToLower(svc.Namespace), search) &&
-				!strings.Contains(strings.ToLower(svc.Context), search) {
-				continue
-			}
-		}
-
-		result = append(result, svc)
 	}
 	return result
 }

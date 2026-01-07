@@ -1951,3 +1951,61 @@ func TestStopAllPortForwards_EmitsPodRemoved(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildServiceHostname(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseName   string
+		namespace  string
+		context    string
+		namespaceN int
+		clusterN   int
+		want       string
+	}{
+		{
+			name:       "first namespace first cluster",
+			baseName:   "my-service",
+			namespace:  "default",
+			context:    "minikube",
+			namespaceN: 0,
+			clusterN:   0,
+			want:       "my-service",
+		},
+		{
+			name:       "second namespace first cluster",
+			baseName:   "my-service",
+			namespace:  "kube-system",
+			context:    "minikube",
+			namespaceN: 1,
+			clusterN:   0,
+			want:       "my-service.kube-system",
+		},
+		{
+			name:       "first namespace second cluster",
+			baseName:   "my-service",
+			namespace:  "default",
+			context:    "production",
+			namespaceN: 0,
+			clusterN:   1,
+			want:       "my-service.production",
+		},
+		{
+			name:       "second namespace second cluster",
+			baseName:   "my-service",
+			namespace:  "staging",
+			context:    "prod-cluster",
+			namespaceN: 1,
+			clusterN:   1,
+			want:       "my-service.staging.prod-cluster",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildServiceHostname(tt.baseName, tt.namespace, tt.context, tt.namespaceN, tt.clusterN)
+			if got != tt.want {
+				t.Errorf("buildServiceHostname() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
