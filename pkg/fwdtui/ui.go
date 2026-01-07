@@ -175,30 +175,7 @@ func handleEventForStore(store *state.Store, e events.Event) {
 		store.RemoveForward(key)
 
 	case events.PodStatusChanged:
-		key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
-		var status state.ForwardStatus
-		switch e.Status {
-		case "connecting":
-			status = state.StatusConnecting
-		case "active":
-			status = state.StatusActive
-		case "error":
-			status = state.StatusError
-		case "stopping":
-			status = state.StatusStopping
-		default:
-			status = state.StatusPending
-		}
-		errorMsg := ""
-		if e.Error != nil {
-			errorMsg = e.Error.Error()
-		}
-		store.UpdateStatus(key, status, errorMsg)
-
-		// Update hostnames when "active" status arrives with populated hostnames
-		if e.Status == "active" && len(e.Hostnames) > 0 {
-			store.UpdateHostnames(key, e.Hostnames)
-		}
+		handlePodStatusChanged(store, e)
 
 	case events.ServiceRemoved:
 		forwards := store.GetFiltered()
@@ -211,6 +188,37 @@ func handleEventForStore(store *state.Store, e events.Event) {
 	case events.NamespaceRemoved:
 		// Remove all services and forwards for this namespace/context
 		store.RemoveByNamespace(e.Namespace, e.Context)
+	case events.ServiceAdded, events.ServiceUpdated, events.BandwidthUpdate,
+		events.LogMessage, events.ShutdownStarted, events.ShutdownComplete:
+		// These events don't require store updates
+	}
+}
+
+// handlePodStatusChanged processes pod status change events and updates the store
+func handlePodStatusChanged(store *state.Store, e events.Event) {
+	key := e.ServiceKey + "." + e.PodName + "." + e.LocalPort
+	var status state.ForwardStatus
+	switch e.Status {
+	case "connecting":
+		status = state.StatusConnecting
+	case "active":
+		status = state.StatusActive
+	case "error":
+		status = state.StatusError
+	case "stopping":
+		status = state.StatusStopping
+	default:
+		status = state.StatusPending
+	}
+	errorMsg := ""
+	if e.Error != nil {
+		errorMsg = e.Error.Error()
+	}
+	store.UpdateStatus(key, status, errorMsg)
+
+	// Update hostnames when "active" status arrives with populated hostnames
+	if e.Status == "active" && len(e.Hostnames) > 0 {
+		store.UpdateHostnames(key, e.Hostnames)
 	}
 }
 
@@ -800,6 +808,8 @@ func (m *RootModel) handleFocusedComponentKey(msg tea.KeyMsg) (tea.Model, tea.Cm
 		m.services, cmd = m.services.Update(msg)
 	case FocusLogs:
 		m.logs, cmd = m.logs.Update(msg)
+	case FocusDetail:
+		// Detail view handles its own keys in handleKeyMsg before reaching here
 	}
 	return m, cmd
 }
@@ -822,6 +832,8 @@ func (m *RootModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			case FocusLogs:
 				m.logs, cmd = m.logs.Update(msg)
 				cmds = append(cmds, cmd)
+			case FocusDetail:
+				// Detail visible case handled above
 			}
 		}
 	}

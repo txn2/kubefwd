@@ -190,6 +190,8 @@ func (m *ServicesModel) handleMouseMsg(msg tea.MouseMsg) {
 		for range 3 {
 			m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
 		}
+	default:
+		// Other mouse buttons not handled
 	}
 }
 
