@@ -67,13 +67,8 @@ linters:
       # Ignore unused writes in test struct initializations
       - path: _test\.go
         text: "unusedwrite"
-      # Allow unused params in test helper functions
+      # Test mocks and HTTP handlers commonly have unused params for interface conformance
       - path: _test\.go
-        linters:
-          - revive
-        text: "unused-parameter"
-      # MCP handlers must match interface signature (ctx, req required but unused)
-      - path: pkg/fwdmcp/
         linters:
           - revive
         text: "unused-parameter"
