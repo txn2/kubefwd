@@ -513,7 +513,7 @@ type mockNamespaceController struct {
 	removeErr  error
 }
 
-func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) AddNamespace(ctx, namespace string, _ types.AddNamespaceOpts) (*types.NamespaceInfoResponse, error) {
 	if m.addErr != nil {
 		return nil, m.addErr
 	}
@@ -525,7 +525,7 @@ func (m *mockNamespaceController) AddNamespace(ctx, namespace string, opts types
 	}, nil
 }
 
-func (m *mockNamespaceController) RemoveNamespace(ctx, namespace string) error {
+func (m *mockNamespaceController) RemoveNamespace(_, _ string) error {
 	return m.removeErr
 }
 
@@ -533,7 +533,7 @@ func (m *mockNamespaceController) ListNamespaces() []types.NamespaceInfoResponse
 	return m.namespaces
 }
 
-func (m *mockNamespaceController) GetNamespace(ctx, namespace string) (*types.NamespaceInfoResponse, error) {
+func (m *mockNamespaceController) GetNamespace(_, namespace string) (*types.NamespaceInfoResponse, error) {
 	for _, ns := range m.namespaces {
 		if ns.Namespace == namespace {
 			return &ns, nil
@@ -563,7 +563,7 @@ func (m *mockServiceCRUD) AddService(req types.AddServiceRequest) (*types.AddSer
 	}, nil
 }
 
-func (m *mockServiceCRUD) RemoveService(key string) error {
+func (m *mockServiceCRUD) RemoveService(_ string) error {
 	return m.removeErr
 }
 
@@ -576,14 +576,14 @@ type mockK8sDiscovery struct {
 	listSvcErr error
 }
 
-func (m *mockK8sDiscovery) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
+func (m *mockK8sDiscovery) ListNamespaces(_ string) ([]types.K8sNamespace, error) {
 	if m.listNsErr != nil {
 		return nil, m.listNsErr
 	}
 	return m.namespaces, nil
 }
 
-func (m *mockK8sDiscovery) ListServices(ctx, namespace string) ([]types.K8sService, error) {
+func (m *mockK8sDiscovery) ListServices(_, namespace string) ([]types.K8sService, error) {
 	if m.listSvcErr != nil {
 		return nil, m.listSvcErr
 	}
@@ -600,7 +600,7 @@ func (m *mockK8sDiscovery) ListContexts() (*types.K8sContextsResponse, error) {
 	return m.contexts, nil
 }
 
-func (m *mockK8sDiscovery) GetService(ctx, namespace, name string) (*types.K8sService, error) {
+func (m *mockK8sDiscovery) GetService(_, namespace, name string) (*types.K8sService, error) {
 	for _, svc := range m.services {
 		if svc.Name == name && svc.Namespace == namespace {
 			return &svc, nil
@@ -622,7 +622,7 @@ func (m *mockK8sDiscovery) GetPodLogs(ctx, namespace, podName string, opts types
 	}, nil
 }
 
-func (m *mockK8sDiscovery) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
+func (m *mockK8sDiscovery) ListPods(_, namespace string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return []types.K8sPod{
 		{Name: "pod-1", Namespace: namespace, Phase: "Running", Status: "Running", Ready: "1/1"},
 		{Name: "pod-2", Namespace: namespace, Phase: "Running", Status: "Running", Ready: "1/1"},
@@ -642,14 +642,14 @@ func (m *mockK8sDiscovery) GetPod(ctx, namespace, podName string) (*types.K8sPod
 	}, nil
 }
 
-func (m *mockK8sDiscovery) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
+func (m *mockK8sDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return []types.K8sEvent{
 		{Type: "Normal", Reason: "Scheduled", Message: "Successfully assigned pod"},
 		{Type: "Normal", Reason: "Pulled", Message: "Container image already present"},
 	}, nil
 }
 
-func (m *mockK8sDiscovery) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
+func (m *mockK8sDiscovery) GetEndpoints(_, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return &types.K8sEndpoints{
 		Name:      serviceName,
 		Namespace: namespace,
@@ -691,7 +691,7 @@ func (m *mockConnectionInfoProvider) ListHostnames() (*types.HostnameListRespons
 	return &types.HostnameListResponse{Hostnames: entries, Total: len(entries)}, nil
 }
 
-func (m *mockConnectionInfoProvider) FindServices(query string, port int, namespace string) ([]types.ConnectionInfoResponse, error) {
+func (m *mockConnectionInfoProvider) FindServices(_ string, _ int, _ string) ([]types.ConnectionInfoResponse, error) {
 	return m.services, nil
 }
 
@@ -1608,7 +1608,7 @@ func TestHandleGetAnalysis_WithProvider(t *testing.T) {
 	server := Init("1.0.0")
 
 	// Create mock HTTP server that returns analysis data
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		response := map[string]interface{}{
 			"status":          "healthy",
@@ -1617,7 +1617,7 @@ func TestHandleGetAnalysis_WithProvider(t *testing.T) {
 			"issues":          []interface{}{},
 			"recommendations": []interface{}{},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer mockServer.Close()
 
@@ -1640,7 +1640,7 @@ func TestHandleGetQuickStatus_WithProvider(t *testing.T) {
 	server := Init("1.0.0")
 
 	// Create mock HTTP server
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		response := map[string]interface{}{
 			"status":   "ok",
@@ -1648,7 +1648,7 @@ func TestHandleGetQuickStatus_WithProvider(t *testing.T) {
 			"errors":   0,
 			"services": 5,
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer mockServer.Close()
 
@@ -1683,7 +1683,7 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 					{"id": 2, "type": "forward_started", "service_key": "svc1.ns1.ctx1", "timestamp": time.Now().Format(time.RFC3339)},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 
 		case "/v1/history/errors":
 			response := map[string]interface{}{
@@ -1692,7 +1692,7 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 					{"id": 1, "error_type": "connection_refused", "service_key": "svc1.ns1.ctx1", "timestamp": time.Now().Format(time.RFC3339)},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 
 		case "/v1/history/reconnections":
 			response := map[string]interface{}{
@@ -1701,14 +1701,14 @@ func TestHandleGetHistory_WithProvider(t *testing.T) {
 					{"id": 1, "trigger": "auto", "service_key": "svc1.ns1.ctx1", "success": true, "timestamp": time.Now().Format(time.RFC3339)},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 
 		default:
 			response := map[string]interface{}{
 				"success": true,
 				"data":    []interface{}{},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer mockServer.Close()
@@ -1774,7 +1774,7 @@ func TestHandleGetHTTPTraffic_WithProvider(t *testing.T) {
 	server := Init("1.0.0")
 
 	// Create mock HTTP server with proper response format
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// All traffic endpoints return the same format - wrapped response
 		response := map[string]interface{}{
@@ -1799,7 +1799,7 @@ func TestHandleGetHTTPTraffic_WithProvider(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer mockServer.Close()
 
@@ -1840,5 +1840,135 @@ func TestHandleGetHTTPTraffic_WithProvider(t *testing.T) {
 	}
 	if data == nil {
 		t.Fatal("Expected non-nil data with zero count")
+	}
+}
+
+// Tests for extracted helper functions
+
+func TestBuildConnectionInfoFromService(t *testing.T) {
+	svc := &state.ServiceSnapshot{
+		ServiceName: "test-service",
+		Namespace:   "default",
+		Context:     "test-context",
+		PortForwards: []state.ForwardSnapshot{
+			{LocalIP: "127.1.1.1", LocalPort: "8080", PodPort: "80", Hostnames: []string{"test-host"}},
+		},
+	}
+
+	result := buildConnectionInfoFromService(svc)
+
+	if result["service"] != "test-service" {
+		t.Errorf("Expected service name 'test-service', got %v", result["service"])
+	}
+	if result["namespace"] != "default" {
+		t.Errorf("Expected namespace 'default', got %v", result["namespace"])
+	}
+	if result["localIP"] != "127.1.1.1" {
+		t.Errorf("Expected localIP '127.1.1.1', got %v", result["localIP"])
+	}
+}
+
+func TestFindServiceInState(t *testing.T) {
+	mock := &mockStateReader{
+		services: []state.ServiceSnapshot{
+			{Key: "svc1.default.ctx1", ServiceName: "svc1", Namespace: "default", Context: "ctx1"},
+			{Key: "svc2.kube-system.ctx1", ServiceName: "svc2", Namespace: "kube-system", Context: "ctx1"},
+		},
+	}
+
+	// Test finding existing service
+	svc, err := findServiceInState(mock, "svc1", "", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if svc.ServiceName != "svc1" {
+		t.Errorf("Expected svc1, got %s", svc.ServiceName)
+	}
+
+	// Test with namespace filter
+	svc, err = findServiceInState(mock, "svc1", "default", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if svc.ServiceName != "svc1" {
+		t.Errorf("Expected svc1, got %s", svc.ServiceName)
+	}
+
+	// Test service not found
+	_, err = findServiceInState(mock, "nonexistent", "", "")
+	if err == nil {
+		t.Error("Expected error for nonexistent service")
+	}
+
+	// Test namespace mismatch
+	_, err = findServiceInState(mock, "svc1", "kube-system", "")
+	if err == nil {
+		t.Error("Expected error for namespace mismatch")
+	}
+}
+
+// mockSearchProvider implements ConnectionInfoProvider for searchServicesByName tests
+type mockSearchProvider struct {
+	findResult []types.ConnectionInfoResponse
+	findErr    error
+}
+
+func (m *mockSearchProvider) GetConnectionInfo(_ string) (*types.ConnectionInfoResponse, error) {
+	return nil, nil
+}
+
+func (m *mockSearchProvider) FindServices(_ string, _ int, _ string) ([]types.ConnectionInfoResponse, error) {
+	return m.findResult, m.findErr
+}
+
+func (m *mockSearchProvider) ListHostnames() (*types.HostnameListResponse, error) {
+	return &types.HostnameListResponse{}, nil
+}
+
+func TestSearchServicesByName(t *testing.T) {
+	// Test with exact match
+	mock := &mockSearchProvider{
+		findResult: []types.ConnectionInfoResponse{
+			{Service: "my-service", Namespace: "default"},
+			{Service: "my-service-extra", Namespace: "default"},
+		},
+	}
+
+	results, err := searchServicesByName(mock, "my-service", 0)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 exact match, got %d", len(results))
+	}
+
+	// Test with error
+	mock.findErr = errors.New("test error")
+	_, err = searchServicesByName(mock, "my-service", 0)
+	if err == nil {
+		t.Error("Expected error")
+	}
+}
+
+func TestCalculateMCPServiceStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		activeCount int
+		errorCount  int
+		want        string
+	}{
+		{"active only", 2, 0, "active"},
+		{"error only", 0, 2, "error"},
+		{"partial", 1, 1, "partial"},
+		{"pending", 0, 0, "pending"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculateMCPServiceStatus(tt.activeCount, tt.errorCount)
+			if got != tt.want {
+				t.Errorf("calculateMCPServiceStatus(%d, %d) = %q, want %q", tt.activeCount, tt.errorCount, got, tt.want)
+			}
+		})
 	}
 }

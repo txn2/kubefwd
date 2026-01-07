@@ -348,6 +348,31 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 	return streamConn, streamProtocolVersion, dialErr
 }
 
+// wrapWithMetricsDialer wraps a dialer with metrics collection if TUI is enabled
+func (pfo *PortForwardOpts) wrapWithMetricsDialer(dialer httpstream.Dialer) (httpstream.Dialer, *fwdmetrics.PortForwardMetrics) {
+	if !fwdtui.EventsEnabled() {
+		return dialer, nil
+	}
+	localIPStr := ""
+	if pfo.LocalIP != nil {
+		localIPStr = pfo.LocalIP.String()
+	}
+	pfMetrics := fwdmetrics.NewPortForwardMetrics(
+		pfo.Service,
+		pfo.Namespace,
+		pfo.Context,
+		pfo.PodName,
+		localIPStr,
+		pfo.LocalPort,
+		pfo.PodPort,
+	)
+	pfMetrics.EnableHTTPSniffing(50)
+	metricsDialer := fwdmetrics.NewMetricsDialer(dialer, pfMetrics)
+	serviceKey := pfo.Service + "." + pfo.Namespace + "." + pfo.Context
+	fwdmetrics.GetRegistry().RegisterPortForward(serviceKey, pfMetrics)
+	return metricsDialer, pfMetrics
+}
+
 // PortForward does the port-forward for a single pod.
 // It is a blocking call and will return when an error occurred
 // or after a cancellation signal has been received.
@@ -438,31 +463,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 	}
 
 	// Wrap with metrics dialer if TUI is enabled
-	var finalDialer httpstream.Dialer = dialerWithPing
-	var pfMetrics *fwdmetrics.PortForwardMetrics
-	if fwdtui.EventsEnabled() {
-		localIPStr := ""
-		if pfo.LocalIP != nil {
-			localIPStr = pfo.LocalIP.String()
-		}
-		pfMetrics = fwdmetrics.NewPortForwardMetrics(
-			pfo.Service,
-			pfo.Namespace,
-			pfo.Context,
-			pfo.PodName,
-			localIPStr,
-			pfo.LocalPort,
-			pfo.PodPort,
-		)
-		// Enable HTTP sniffing for request/response logging
-		pfMetrics.EnableHTTPSniffing(50)
-
-		finalDialer = fwdmetrics.NewMetricsDialer(dialerWithPing, pfMetrics)
-
-		// Register with metrics registry
-		serviceKey := pfo.Service + "." + pfo.Namespace + "." + pfo.Context
-		fwdmetrics.GetRegistry().RegisterPortForward(serviceKey, pfMetrics)
-	}
+	finalDialer, _ := pfo.wrapWithMetricsDialer(dialerWithPing)
 
 	var address []string
 	if pfo.LocalIP != nil {

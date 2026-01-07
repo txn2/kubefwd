@@ -294,63 +294,68 @@ func (s *Store) matchesFilter(fwd *ForwardSnapshot) bool {
 	return false
 }
 
+// compareStrings returns -1 if a < b, 1 if a > b, 0 if equal
+func compareStrings(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+// compareInts returns -1 if a < b, 1 if a > b, 0 if equal
+func compareInts[T ~int | ~int32 | ~int64 | ~uint32](a, b T) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+// compareFloats returns -1 if a < b, 1 if a > b, 0 if equal
+func compareFloats(a, b float64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+// compareForwardsByField compares two forwards by the given field
+func compareForwardsByField(a, b *ForwardSnapshot, field string) int {
+	switch field {
+	case "hostname":
+		return compareStrings(a.PrimaryHostname(), b.PrimaryHostname())
+	case "namespace":
+		return compareStrings(a.Namespace, b.Namespace)
+	case "service":
+		return compareStrings(a.ServiceName, b.ServiceName)
+	case "status":
+		return compareInts(a.Status, b.Status)
+	case "rateIn":
+		return compareFloats(a.RateIn, b.RateIn)
+	case "rateOut":
+		return compareFloats(a.RateOut, b.RateOut)
+	default:
+		return compareStrings(a.PrimaryHostname(), b.PrimaryHostname())
+	}
+}
+
 // sortForwards sorts forwards based on current sort settings
 // Must be called with lock held
 func (s *Store) sortForwards(forwards []ForwardSnapshot) {
 	sort.Slice(forwards, func(i, j int) bool {
-		var cmp int // -1 = i < j, 0 = equal, 1 = i > j
-		switch s.sortField {
-		case "hostname":
-			if forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname() {
-				cmp = -1
-			} else if forwards[i].PrimaryHostname() > forwards[j].PrimaryHostname() {
-				cmp = 1
-			}
-		case "namespace":
-			if forwards[i].Namespace < forwards[j].Namespace {
-				cmp = -1
-			} else if forwards[i].Namespace > forwards[j].Namespace {
-				cmp = 1
-			}
-		case "service":
-			if forwards[i].ServiceName < forwards[j].ServiceName {
-				cmp = -1
-			} else if forwards[i].ServiceName > forwards[j].ServiceName {
-				cmp = 1
-			}
-		case "status":
-			if forwards[i].Status < forwards[j].Status {
-				cmp = -1
-			} else if forwards[i].Status > forwards[j].Status {
-				cmp = 1
-			}
-		case "rateIn":
-			if forwards[i].RateIn < forwards[j].RateIn {
-				cmp = -1
-			} else if forwards[i].RateIn > forwards[j].RateIn {
-				cmp = 1
-			}
-		case "rateOut":
-			if forwards[i].RateOut < forwards[j].RateOut {
-				cmp = -1
-			} else if forwards[i].RateOut > forwards[j].RateOut {
-				cmp = 1
-			}
-		default:
-			if forwards[i].PrimaryHostname() < forwards[j].PrimaryHostname() {
-				cmp = -1
-			} else if forwards[i].PrimaryHostname() > forwards[j].PrimaryHostname() {
-				cmp = 1
-			}
-		}
+		cmp := compareForwardsByField(&forwards[i], &forwards[j], s.sortField)
 
 		// Tiebreaker: sort by port for stable ordering
 		if cmp == 0 {
-			if forwards[i].LocalPort < forwards[j].LocalPort {
-				cmp = -1
-			} else if forwards[i].LocalPort > forwards[j].LocalPort {
-				cmp = 1
-			}
+			cmp = compareStrings(forwards[i].LocalPort, forwards[j].LocalPort)
 		}
 
 		if s.sortAsc {
