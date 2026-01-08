@@ -338,7 +338,7 @@ func calculateMCPServiceStatus(activeCount, errorCount int) string {
 func (s *Server) handleListServices(_ context.Context, _ *mcp.CallToolRequest, input ListServicesInput) (*mcp.CallToolResult, any, error) {
 	stateReader := s.getState()
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	services := stateReader.GetServices()
@@ -473,7 +473,7 @@ func (s *Server) handleGetService(_ context.Context, _ *mcp.CallToolRequest, inp
 func (s *Server) handleDiagnoseErrors(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 	stateReader := s.getState()
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	services := stateReader.GetServices()
@@ -601,7 +601,7 @@ func (s *Server) handleGetMetrics(_ context.Context, _ *mcp.CallToolRequest, inp
 	manager := s.getManager()
 
 	if metrics == nil || stateReader == nil {
-		return nil, nil, fmt.Errorf("metrics or state not available")
+		return nil, nil, NewProviderUnavailableError("Metrics provider", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	bytesIn, bytesOut, rateIn, rateOut := metrics.GetTotals()
@@ -650,7 +650,7 @@ func (s *Server) handleGetMetrics(_ context.Context, _ *mcp.CallToolRequest, inp
 func (s *Server) handleGetLogs(_ context.Context, _ *mcp.CallToolRequest, input GetLogsInput) (*mcp.CallToolResult, any, error) {
 	stateReader := s.getState()
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	count := input.Count
@@ -697,7 +697,7 @@ func (s *Server) handleGetHealth(_ context.Context, _ *mcp.CallToolRequest, _ st
 	manager := s.getManager()
 
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	summary := stateReader.GetSummary()
@@ -990,7 +990,7 @@ func (s *Server) handleGetConnectionInfo(_ context.Context, _ *mcp.CallToolReque
 	if connInfo == nil {
 		stateReader := s.getState()
 		if stateReader == nil {
-			return nil, nil, fmt.Errorf("connection info not available")
+			return nil, nil, NewProviderUnavailableError("Connection info provider", "start kubefwd with: sudo -E kubefwd")
 		}
 		svc, err := findServiceInState(stateReader, input.ServiceName, input.Namespace, input.Context)
 		if err != nil {
@@ -1312,7 +1312,7 @@ func (s *Server) handleGetEndpoints(_ context.Context, _ *mcp.CallToolRequest, i
 func (s *Server) handleFindServices(_ context.Context, _ *mcp.CallToolRequest, input FindServicesInput) (*mcp.CallToolResult, any, error) {
 	stateReader := s.getState()
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	services := stateReader.GetServices()
@@ -1373,7 +1373,7 @@ func (s *Server) handleFindServices(_ context.Context, _ *mcp.CallToolRequest, i
 func (s *Server) handleListHostnames(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 	stateReader := s.getState()
 	if stateReader == nil {
-		return nil, nil, fmt.Errorf("state reader not available")
+		return nil, nil, NewProviderUnavailableError("State reader", "start kubefwd with: sudo -E kubefwd")
 	}
 
 	// Collect all hostnames from forwards
