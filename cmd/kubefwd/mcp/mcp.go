@@ -95,54 +95,61 @@ func runMCP(_ *cobra.Command, _ []string) {
 	log.Infof("Starting kubefwd MCP server (version %s)", Version)
 	log.Infof("Connecting to REST API at: %s", apiURL)
 
-	// Verify API is reachable
+	// Initialize MCP server first so tools are registered for discovery
+	// (allows Smithery and other registries to introspect capabilities)
+	server := fwdmcp.Init(Version)
+
+	// Check API connection - if unavailable, tools will return helpful errors
+	apiAvailable := false
 	if err := verifyAPIConnection(apiURL); err != nil {
-		log.Errorf("Cannot connect to kubefwd API at %s: %v", apiURL, err)
-		log.Error("Make sure kubefwd is running:")
-		log.Error("  sudo -E kubefwd")
-		os.Exit(1)
+		log.Warnf("Cannot connect to kubefwd API at %s: %v", apiURL, err)
+		log.Warn("MCP server will start but tools require kubefwd to be running.")
+		log.Warn("Start kubefwd in another terminal with: sudo -E kubefwd")
+	} else {
+		log.Info("API connection verified")
+		apiAvailable = true
 	}
 
-	log.Info("API connection verified")
+	// Only set up HTTP adapters if API is available
+	// If not available, providers stay nil and handlers return helpful instructions
+	if apiAvailable {
+		// Create HTTP-based adapters
+		stateReader := fwdmcp.NewStateReaderHTTP(apiURL)
+		metricsProvider := fwdmcp.NewMetricsProviderHTTP(apiURL)
+		serviceController := fwdmcp.NewServiceControllerHTTP(apiURL)
+		diagnosticsProvider := fwdmcp.NewDiagnosticsProviderHTTP(apiURL)
+		managerInfo := fwdmcp.NewManagerInfoHTTP(apiURL)
 
-	// Create HTTP-based adapters
-	stateReader := fwdmcp.NewStateReaderHTTP(apiURL)
-	metricsProvider := fwdmcp.NewMetricsProviderHTTP(apiURL)
-	serviceController := fwdmcp.NewServiceControllerHTTP(apiURL)
-	diagnosticsProvider := fwdmcp.NewDiagnosticsProviderHTTP(apiURL)
-	managerInfo := fwdmcp.NewManagerInfoHTTP(apiURL)
+		// Create CRUD HTTP adapters for developer-focused tools
+		namespaceController := fwdmcp.NewNamespaceControllerHTTP(apiURL)
+		serviceCRUD := fwdmcp.NewServiceCRUDHTTP(apiURL)
+		k8sDiscovery := fwdmcp.NewKubernetesDiscoveryHTTP(apiURL)
+		connectionInfo := fwdmcp.NewConnectionInfoProviderHTTP(apiURL)
 
-	// Create CRUD HTTP adapters for developer-focused tools
-	namespaceController := fwdmcp.NewNamespaceControllerHTTP(apiURL)
-	serviceCRUD := fwdmcp.NewServiceCRUDHTTP(apiURL)
-	k8sDiscovery := fwdmcp.NewKubernetesDiscoveryHTTP(apiURL)
-	connectionInfo := fwdmcp.NewConnectionInfoProviderHTTP(apiURL)
+		// Create enhanced HTTP adapters for AI-optimized tools
+		analysisProvider := fwdmcp.NewAnalysisProviderHTTP(apiURL)
+		httpTrafficProvider := fwdmcp.NewHTTPTrafficProviderHTTP(apiURL)
+		historyProvider := fwdmcp.NewHistoryProviderHTTP(apiURL)
 
-	// Create enhanced HTTP adapters for AI-optimized tools
-	analysisProvider := fwdmcp.NewAnalysisProviderHTTP(apiURL)
-	httpTrafficProvider := fwdmcp.NewHTTPTrafficProviderHTTP(apiURL)
-	historyProvider := fwdmcp.NewHistoryProviderHTTP(apiURL)
+		server.SetStateReader(stateReader)
+		server.SetMetricsProvider(metricsProvider)
+		server.SetServiceController(serviceController)
+		server.SetDiagnosticsProvider(diagnosticsProvider)
+		server.SetManagerInfo(func() types.ManagerInfo {
+			return managerInfo
+		})
 
-	// Initialize MCP server
-	server := fwdmcp.Init(Version)
-	server.SetStateReader(stateReader)
-	server.SetMetricsProvider(metricsProvider)
-	server.SetServiceController(serviceController)
-	server.SetDiagnosticsProvider(diagnosticsProvider)
-	server.SetManagerInfo(func() types.ManagerInfo {
-		return managerInfo
-	})
+		// Set CRUD controllers for developer-focused tools
+		server.SetNamespaceController(namespaceController)
+		server.SetServiceCRUD(serviceCRUD)
+		server.SetKubernetesDiscovery(k8sDiscovery)
+		server.SetConnectionInfoProvider(connectionInfo)
 
-	// Set CRUD controllers for developer-focused tools
-	server.SetNamespaceController(namespaceController)
-	server.SetServiceCRUD(serviceCRUD)
-	server.SetKubernetesDiscovery(k8sDiscovery)
-	server.SetConnectionInfoProvider(connectionInfo)
-
-	// Set enhanced providers for AI-optimized tools
-	server.SetAnalysisProvider(analysisProvider)
-	server.SetHTTPTrafficProvider(httpTrafficProvider)
-	server.SetHistoryProvider(historyProvider)
+		// Set enhanced providers for AI-optimized tools
+		server.SetAnalysisProvider(analysisProvider)
+		server.SetHTTPTrafficProvider(httpTrafficProvider)
+		server.SetHistoryProvider(historyProvider)
+	}
 
 	log.Info("MCP server initialized, starting stdio transport...")
 
