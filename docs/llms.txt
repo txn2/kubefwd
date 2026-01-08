@@ -1,0 +1,39 @@
+# kubefwd
+
+> Kubernetes bulk port forwarding for local development. Forward services from any namespace to localhost with automatic /etc/hosts entries and unique IPs per service.
+
+kubefwd enables developers to work locally while accessing services running in Kubernetes. Each service gets its own unique loopback IP (127.x.x.x), eliminating port conflicts. Access cluster services by name—exactly as in-cluster.
+
+## Documentation
+
+- [Getting Started](https://kubefwd.com/getting-started/): Installation, prerequisites, and first forward
+- [User Guide](https://kubefwd.com/user-guide/): Interactive TUI interface and keyboard shortcuts
+- [Configuration](https://kubefwd.com/configuration/): CLI flags, IP reservations, and port mapping
+- [REST API](https://kubefwd.com/api-reference/): Programmatic control via 40+ HTTP endpoints
+- [MCP Integration](https://kubefwd.com/mcp-integration/): AI assistant integration (Claude, Cursor, VS Code)
+
+## Key Features
+
+- **Unique IP per service**: Multiple databases on port 3306 work without conflicts
+- **Auto-reconnect**: Reconnects automatically when pods restart
+- **Interactive TUI**: Browse namespaces, monitor traffic, stream logs
+- **Service name resolution**: Updates /etc/hosts so apps connect by service name
+- **REST API**: Add/remove services dynamically
+- **MCP support**: Natural language control via AI assistants
+
+## Quick Start
+
+```bash
+# Install (macOS)
+brew install txn2/tap/kubefwd
+
+# Forward services with TUI
+sudo -E kubefwd svc -n my-namespace --tui
+```
+
+## Optional
+
+- [Troubleshooting](https://kubefwd.com/troubleshooting/): Common issues and solutions
+- [Architecture](https://kubefwd.com/architecture/): Technical implementation details
+- [Comparison](https://kubefwd.com/comparison/): vs kubectl port-forward, Telepresence, mirrord
+- [GitHub Repository](https://github.com/txn2/kubefwd): Source code, issues, releases
