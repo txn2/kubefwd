@@ -1,0 +1,433 @@
+# kubefwd
+
+> Kubernetes bulk port forwarding for local development. Forward services from any namespace to localhost with automatic /etc/hosts entries and unique IPs per service.
+
+kubefwd enables developers to work locally while accessing services running in Kubernetes. Each service gets its own unique loopback IP (127.x.x.x), eliminating port conflicts. Access cluster services by name—exactly as in-cluster.
+
+---
+
+# Getting Started
+
+This guide covers installation and your first steps with kubefwd. By the end, you'll have cluster services accessible locally by name.
+
+## Prerequisites
+
+- **kubectl configured** with access to a Kubernetes cluster
+- **Root/sudo access** (required for `/etc/hosts` and network interface modifications)
+
+kubefwd reads your kubeconfig (`~/.kube/config` or `KUBECONFIG` environment variable) and connects directly to the Kubernetes API.
+
+## Installation
+
+### macOS
+
+Using Homebrew:
+
+```bash
+brew install txn2/tap/kubefwd
+```
+
+### Windows
+
+Using Scoop:
+
+```powershell
+scoop install kubefwd
+```
+
+Run as Administrator for hosts file access.
+
+### Linux (Debian/Ubuntu)
+
+Download the `.deb` package from GitHub Releases:
+
+```bash
+sudo dpkg -i kubefwd_*_amd64.deb
+```
+
+### Linux (RHEL/Fedora)
+
+Download the `.rpm` package from GitHub Releases:
+
+```bash
+sudo rpm -i kubefwd_*_amd64.rpm
+```
+
+### Docker
+
+```bash
+docker run -it --rm --privileged \
+    -v "$HOME/.kube:/root/.kube:ro" \
+    txn2/kubefwd --tui
+```
+
+Verify installation:
+
+```bash
+kubefwd version
+```
+
+## Operating Modes
+
+### Idle Mode (Recommended)
+
+Start without pre-specified services and add them interactively:
+
+```bash
+sudo -E kubefwd --tui
+```
+
+In Idle Mode:
+- REST API is enabled by default
+- Auto-reconnect is enabled by default
+- Use TUI to browse namespaces, select services, forward them
+- Or use API to add services dynamically
+
+### Classic Mode
+
+Specify namespaces upfront. All services forwarded immediately:
+
+```bash
+sudo -E kubefwd svc -n default --tui
+```
+
+## Your First Forward
+
+1. Start kubefwd in Idle Mode:
+   ```bash
+   sudo -E kubefwd --tui
+   ```
+
+2. Browse namespaces: Press `f` to open the service browser, then select a namespace.
+
+3. Forward services: Select individual services or press `a` to forward all.
+
+4. Use your services:
+   ```bash
+   curl http://my-api:8080/health
+   psql -h postgres -U admin -d mydb
+   redis-cli -h redis ping
+   ```
+
+5. Quit: Press `q` to exit. kubefwd cleans up automatically.
+
+## What Happens Under the Hood
+
+When kubefwd forwards a service:
+
+1. **IP Allocation**: Each service gets a unique loopback IP (e.g., `127.1.27.1`)
+2. **Hosts File Update**: Service names added to `/etc/hosts`
+3. **Port Forwarding**: Creates port forwards to pods backing each service
+4. **Ready to Use**: Applications connect using service names
+
+### Cleanup
+
+When kubefwd exits:
+- `/etc/hosts` entries are removed
+- Network interface aliases are cleaned up
+- All port forward connections are closed
+
+Original hosts file backed up to `~/hosts.original`.
+
+## Why sudo -E?
+
+kubefwd requires root privileges for:
+- Modifying `/etc/hosts`
+- Creating loopback IP aliases
+- Binding to ports below 1024
+
+The `-E` flag preserves environment variables, especially `KUBECONFIG`:
+
+```bash
+# Correct - preserves KUBECONFIG
+sudo -E kubefwd --tui
+
+# Wrong - may fail to find cluster config
+sudo kubefwd --tui
+```
+
+## Enabling the REST API
+
+**Idle Mode** (API enabled by default):
+```bash
+sudo -E kubefwd
+sudo -E kubefwd --tui
+```
+
+**Classic Mode** (add `--api` flag):
+```bash
+sudo -E kubefwd svc -n default --api
+```
+
+API available at:
+- `http://kubefwd.internal/api` - REST endpoints
+- `http://kubefwd.internal/docs` - Interactive API documentation
+
+---
+
+# User Guide
+
+The Terminal User Interface (TUI) transforms kubefwd into an interactive development companion.
+
+## Interface Overview
+
+### Main View
+
+| Panel | Description |
+|-------|-------------|
+| **Services** | All forwarded services with status, namespace, local address, traffic |
+| **Logs** | Real-time kubefwd activity, connection events, errors |
+| **Status Bar** | Service counts, current filter, keyboard hints |
+
+### Service Status Indicators
+
+| Indicator | Meaning |
+|-----------|---------|
+| Green dot | Active and forwarding |
+| Yellow dot | Connecting or reconnecting |
+| Red dot | Error state |
+
+## Keyboard Shortcuts
+
+### Global
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit kubefwd |
+| `?` | Toggle help overlay |
+| `f` | Open namespace/service browser |
+| `x` | Switch Kubernetes context |
+| `/` | Filter services |
+| `Esc` | Clear filter / Close modal |
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `g` / `Home` | Go to first item |
+| `G` / `End` | Go to last item |
+| `Tab` | Switch focus (services ↔ logs) |
+
+### Service Actions
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Open detail view for selected service |
+| `d` | Remove forward for selected service |
+| `r` | Reconnect all errored services |
+| `R` | Force reconnect selected service |
+
+### Detail View
+
+| Key | Action |
+|-----|--------|
+| `1` - `9` | Copy connection string #N to clipboard |
+| `y` | Copy first connection string |
+| `Tab` | Next tab |
+| `Esc` / `q` | Close detail view |
+
+## Auto-Reconnect
+
+TUI enables auto-reconnect by default with exponential backoff:
+
+```
+1s → 2s → 4s → 8s → 16s → 32s → 64s → 128s → 256s → 300s (max)
+```
+
+Press `r` to force immediate reconnection of all errored services.
+
+---
+
+# Configuration
+
+Complete reference for kubefwd command line flags.
+
+## Essential Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--namespace` | `-n` | Namespace(s) to forward services from |
+| `--tui` | | Enable interactive terminal user interface |
+| `--selector` | `-l` | Label selector to filter services |
+| `--field-selector` | `-f` | Field selector to filter services |
+| `--all-namespaces` | `-A` | Forward services from all namespaces |
+
+## TUI and Behavior Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--tui` | | false | Enable interactive TUI mode |
+| `--auto-reconnect` | `-a` | true (TUI) | Automatically reconnect lost port forwards |
+| `--verbose` | `-v` | false | Enable debug logging |
+
+## Network Configuration
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--mapping` | `-m` | Port mapping (e.g., `-m 80:8080`) |
+| `--reserve` | `-r` | Reserve specific IP for service |
+| `--fwd-conf` | `-z` | Path to IP reservation config file |
+| `--domain` | `-d` | Append domain suffix to hostnames |
+
+## Examples
+
+```bash
+# Forward all services in a namespace with TUI
+sudo -E kubefwd svc -n default --tui
+
+# Multiple namespaces
+sudo -E kubefwd svc -n frontend,backend,data --tui
+
+# Filter by label
+sudo -E kubefwd svc -n default -l app=api --tui
+
+# Port mapping (80 → 8080)
+sudo -E kubefwd svc -n default -m 80:8080 --tui
+
+# IP reservation
+sudo -E kubefwd svc -n default -r my-service.default:127.3.3.1 --tui
+```
+
+---
+
+# REST API
+
+kubefwd's REST API enables programmatic control over port forwarding.
+
+## Quick Start
+
+```bash
+# Idle mode - API enabled by default
+sudo -E kubefwd
+
+# Test the API
+curl http://kubefwd.internal/api/health
+```
+
+Base URL: `http://kubefwd.internal/api`
+
+## Key Endpoints
+
+### Health & Info
+
+- `GET /api/health` - Health check
+- `GET /api/info` - Server information
+
+### Services
+
+- `GET /api/v1/services` - List forwarded services
+- `GET /api/v1/services/:key` - Get specific service
+- `POST /api/v1/services` - Add service to forward
+- `DELETE /api/v1/services/:key` - Stop forwarding
+- `POST /api/v1/services/:key/reconnect` - Reconnect service
+
+### Namespaces
+
+- `GET /api/v1/namespaces` - List namespace watchers
+- `POST /api/v1/namespaces` - Add namespace (forward all services)
+- `DELETE /api/v1/namespaces/:key` - Remove namespace
+
+### Kubernetes Discovery
+
+- `GET /api/v1/kubernetes/contexts` - List kubeconfig contexts
+- `GET /api/v1/kubernetes/namespaces` - List namespaces
+- `GET /api/v1/kubernetes/services` - List services in namespace
+- `GET /api/v1/kubernetes/pods/:namespace` - List pods
+- `GET /api/v1/kubernetes/pods/:namespace/:pod/logs` - Get pod logs
+
+### Metrics & Diagnostics
+
+- `GET /api/v1/metrics` - Summary metrics
+- `GET /api/v1/diagnostics` - Diagnostics summary
+- `GET /api/v1/diagnostics/errors` - Current errors
+
+### Events (SSE)
+
+- `GET /api/v1/events` - Real-time event stream
+
+---
+
+# MCP Integration
+
+## What is MCP?
+
+The Model Context Protocol (MCP) lets AI assistants connect to external tools. kubefwd's MCP integration gives AI assistants full access to Kubernetes port forwarding.
+
+## Platform Support
+
+| Platform | Support |
+|----------|---------|
+| Claude Code | Full |
+| Claude Desktop | Full |
+| Cursor | Full |
+| Windsurf | Full |
+| VS Code Copilot | Full |
+| Zed | Full |
+| JetBrains IDEs | Full |
+
+## Setup
+
+### 1. Start kubefwd
+
+```bash
+sudo -E kubefwd --tui
+```
+
+### 2. Configure AI Client
+
+**Claude Code:**
+```bash
+claude mcp add --transport stdio kubefwd -- kubefwd mcp
+```
+
+**Cursor/Windsurf/VS Code:**
+Add to MCP config:
+```json
+{
+  "mcpServers": {
+    "kubefwd": {
+      "command": "kubefwd",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+## What Your AI Can Do
+
+### Service Forwarding
+- Forward entire namespaces
+- Forward individual services
+- Remove forwards
+- Multi-context support
+
+### Discovery & Connection
+- List Kubernetes contexts
+- List namespaces and services
+- Get connection info (IPs, hostnames, env vars)
+- Find services by name/port
+
+### Pod Debugging
+- List pods with status
+- Get pod details and logs
+- View Kubernetes events
+- Check service endpoints
+
+### Monitoring & Troubleshooting
+- Quick status checks
+- Traffic metrics
+- Error diagnosis
+- Reconnect services
+
+## Example Conversations
+
+**You:** "I need to connect to PostgreSQL in kft1"
+**AI:** "Connected. Use: `psql -h postgres -U admin -d mydb`"
+
+**You:** "Set up my environment for the checkout service"
+**AI:** "Ready. Services available: cart-service:8080, payment-service:443, user-db:5432"
+
+**You:** "My API calls to auth-service are failing"
+**AI:** "The auth-service pod restarted. I've reconnected it. Try again."
