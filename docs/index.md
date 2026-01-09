@@ -130,6 +130,7 @@ sudo -E kubefwd --tui
 </div>
 
 <div class="home-footer">
+  <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd"><img src="https://img.shields.io/badge/CNCF%20Landscape-5699C6?logo=cncf&logoColor=fff&style=flat-square" alt="CNCF Landscape"></a>
   <a href="https://github.com/txn2/kubefwd/releases"><img src="https://img.shields.io/github/release/txn2/kubefwd.svg?style=flat-square" alt="Release"></a>
   <a href="https://github.com/txn2/kubefwd"><img src="https://img.shields.io/github/stars/txn2/kubefwd?style=flat-square" alt="Stars"></a>
   <p>Open source by <a href="https://twitter.com/cjimti">Craig Johnston</a></p>
