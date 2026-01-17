@@ -33,6 +33,8 @@ kubefwd is featured in several curated "awesome" lists of Kubernetes tools:
 | [kubetools](https://github.com/collabnix/kubetools) | Curated List of Kubernetes Tools maintained by Collabnix Community |
 | [awesome-k8s-resources](https://github.com/tomhuang12/awesome-k8s-resources) | A curated list of awesome Kubernetes tools and resources |
 | [Awesome Software Architecture](https://awesome-architecture.com/devops/kubernetes/kubernetes/) | Kubernetes section featuring essential developer tools |
+| [awesome-devops](https://github.com/wmariuss/awesome-devops) | A curated list of awesome DevOps platforms, tools, practices and resources |
+| [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) | A curated list of MCP servers for AI assistant integrations |
 
 ---
 
