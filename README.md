@@ -31,7 +31,7 @@ This is the essential use case: **reduce or eliminate environment-specific conne
 
 ```bash
 # Install (macOS)
-brew install txn2/tap/kubefwd
+brew install kubefwd
 
 # Forward all services in a namespace with the interactive TUI
 sudo -E kubefwd svc -n my-namespace --tui
@@ -68,12 +68,17 @@ redis-cli -h cache -p 6379
 
 **macOS:**
 ```bash
-brew install txn2/tap/kubefwd
+brew install kubefwd
 ```
 
 **Linux:** Download `.deb`, `.rpm`, or `.tar.gz` from [releases](https://github.com/txn2/kubefwd/releases)
 
-**Windows:** Download from [releases](https://github.com/txn2/kubefwd/releases), run as Administrator
+**Windows:**
+```powershell
+winget install txn2.kubefwd
+# or
+scoop install kubefwd
+```
 
 **Docker:**
 ```bash

@@ -118,10 +118,10 @@ hide:
 
 ```bash
 # macOS
-brew install txn2/tap/kubefwd
+brew install kubefwd
 
 # Windows
-scoop install kubefwd
+winget install txn2.kubefwd
 
 # Then start exploring
 sudo -E kubefwd --tui
