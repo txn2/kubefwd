@@ -18,18 +18,24 @@ kubefwd reads your kubeconfig (`~/.kube/config` or `KUBECONFIG` environment vari
     Using [Homebrew](https://brew.sh/):
 
     ```bash
-    brew install txn2/tap/kubefwd
+    brew install kubefwd
     ```
 
     To upgrade:
 
     ```bash
-    brew update && brew upgrade txn2/tap/kubefwd
+    brew update && brew upgrade kubefwd
     ```
 
 === "Windows"
 
-    Using [Scoop](https://scoop.sh/):
+    Using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):
+
+    ```powershell
+    winget install txn2.kubefwd
+    ```
+
+    Or using [Scoop](https://scoop.sh/):
 
     ```powershell
     scoop install kubefwd
@@ -38,6 +44,8 @@ kubefwd reads your kubeconfig (`~/.kube/config` or `KUBECONFIG` environment vari
     To upgrade:
 
     ```powershell
+    winget upgrade txn2.kubefwd
+    # or
     scoop update kubefwd
     ```
 
