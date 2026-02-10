@@ -92,6 +92,11 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" "${mcpb}.sigstore.json" --clobber
           done
 
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
       - name: Generate artifact hashes
         id: hash
         run: |

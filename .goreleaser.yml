@@ -189,6 +189,7 @@ release:
     owner: txn2
     name: kubefwd
   name_template: "{{.ProjectName}}-v{{.Version}}"
+  draft: true
 
 # Homebrew Formula - for existing users who installed via `brew install txn2/tap/kubefwd`
 brews:
