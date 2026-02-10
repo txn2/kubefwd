@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
+	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 	"github.com/txn2/kubefwd/pkg/utils"
 	"github.com/txn2/txeh"
 
@@ -54,6 +56,7 @@ var retryInterval time.Duration
 var tuiMode bool
 var apiMode bool
 var autoReconnect bool
+var themeOverride string
 
 // Version is set by the main package
 var Version string
@@ -93,6 +96,7 @@ func init() {
 	Cmd.Flags().BoolVar(&tuiMode, "tui", false, "Enable terminal user interface mode for interactive service monitoring")
 	Cmd.Flags().BoolVar(&apiMode, "api", false, "Enable REST API server on http://kubefwd.internal/api for automation and monitoring")
 	Cmd.Flags().BoolVarP(&autoReconnect, "auto-reconnect", "a", false, "Automatically reconnect when port forwards are lost (exponential backoff: 1s to 5min). Defaults to true in TUI/API mode.")
+	Cmd.Flags().StringVar(&themeOverride, "theme", "", "Color theme for TUI: 'light' or 'dark' (auto-detected if not set, env: KUBEFWD_THEME)")
 }
 
 var Cmd = &cobra.Command{
@@ -615,6 +619,29 @@ func startAPIServer(apiManager *fwdapi.Manager) {
 	}()
 }
 
+// configureTheme sets the terminal color scheme for lipgloss AdaptiveColor.
+// Priority: --theme flag > KUBEFWD_THEME env var > auto-detect.
+func configureTheme() {
+	theme := themeOverride
+	if theme == "" {
+		theme = os.Getenv("KUBEFWD_THEME")
+	}
+	theme = strings.ToLower(strings.TrimSpace(theme))
+
+	switch theme {
+	case "light":
+		styles.SetDarkTheme(false)
+		log.Printf("Theme: light (text colors optimized for light terminal backgrounds)")
+	case "dark":
+		styles.SetDarkTheme(true)
+		log.Printf("Theme: dark")
+	case "":
+		// default dark theme (no change needed)
+	default:
+		log.Warnf("Unknown theme %q, using auto-detect. Valid values: light, dark", theme)
+	}
+}
+
 func runCmd(cmd *cobra.Command, _ []string) {
 	if verbose {
 		log.SetLevel(log.DebugLevel)
@@ -623,6 +650,8 @@ func runCmd(cmd *cobra.Command, _ []string) {
 	if !validateEnvironment() {
 		return
 	}
+
+	configureTheme()
 
 	idleMode := detectAndConfigureIdleMode(cmd)
 	initializeTUIMode(cmd)
