@@ -40,16 +40,17 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Platforms to build for (Claude Desktop supports macOS and Windows)
-# Format: GOOS:GOARCH:goreleaser_dir_suffix
-# Note: goreleaser adds architecture version suffixes (v1 for amd64, v8.0 for arm64)
+# Format: GOOS:GOARCH:goreleaser_dir_suffix:goreleaser_build_id
+# Note: goreleaser prefixes dist dirs with the build ID and adds arch version suffixes
+# The Windows build uses a separate goreleaser build ID (kubefwd-windows) for CGO cross-compilation
 PLATFORMS=(
-    "darwin:amd64:darwin_amd64_v1"
-    "darwin:arm64:darwin_arm64_v8.0"
-    "windows:amd64:windows_amd64_v1"
+    "darwin:amd64:darwin_amd64_v1:kubefwd"
+    "darwin:arm64:darwin_arm64_v8.0:kubefwd"
+    "windows:amd64:windows_amd64_v1:kubefwd-windows"
 )
 
 for platform in "${PLATFORMS[@]}"; do
-    IFS=':' read -r GOOS GOARCH DIST_SUFFIX <<< "$platform"
+    IFS=':' read -r GOOS GOARCH DIST_SUFFIX BUILD_ID <<< "$platform"
 
     PLATFORM_NAME="${GOOS}-${GOARCH}"
     BUNDLE_DIR="$BUILD_DIR/kubefwd-${PLATFORM_NAME}"
@@ -68,7 +69,7 @@ for platform in "${PLATFORMS[@]}"; do
 
     if [ "$USE_DIST" = true ]; then
         # Use goreleaser's pre-built binary
-        DIST_BINARY="$PROJECT_ROOT/dist/kubefwd_${DIST_SUFFIX}/${BINARY_NAME}"
+        DIST_BINARY="$PROJECT_ROOT/dist/${BUILD_ID}_${DIST_SUFFIX}/${BINARY_NAME}"
         if [ ! -f "$DIST_BINARY" ]; then
             echo "ERROR: Binary not found at $DIST_BINARY"
             echo "Make sure goreleaser has run first, or omit --use-dist to build from source"
