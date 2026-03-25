@@ -17,7 +17,7 @@ require (
 	github.com/txn2/txeh v1.8.0
 	golang.org/x/sys v0.42.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.35.2
+	k8s.io/api v0.35.3
 	k8s.io/apimachinery v0.35.3
 	k8s.io/cli-runtime v0.35.2
 	k8s.io/client-go v0.35.2
