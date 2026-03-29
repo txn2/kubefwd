@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -650,19 +651,43 @@ func (m *DetailModel) getConnectStrings() []string {
 func copyToClipboard(text string) bool {
 	var cmd *exec.Cmd
 
+	type clipboardCmd struct {
+		name string
+		args []string
+	}
+
+	var candidates []clipboardCmd
+
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("pbcopy")
+		candidates = []clipboardCmd{{"pbcopy", nil}}
 	case "linux":
-		// Try xclip first, then xsel
-		if _, err := exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		} else if _, err := exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--clipboard", "--input")
+		// Prefer Wayland-native tool when running under Wayland,
+		// fall back to X11 tools otherwise.
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			candidates = []clipboardCmd{
+				{"wl-copy", nil},
+				{"xclip", []string{"-selection", "clipboard"}},
+				{"xsel", []string{"--clipboard", "--input"}},
+			}
 		} else {
-			return false
+			candidates = []clipboardCmd{
+				{"xclip", []string{"-selection", "clipboard"}},
+				{"xsel", []string{"--clipboard", "--input"}},
+				{"wl-copy", nil},
+			}
 		}
 	default:
+		return false
+	}
+
+	for _, c := range candidates {
+		if _, err := exec.LookPath(c.name); err == nil {
+			cmd = exec.Command(c.name, c.args...)
+			break
+		}
+	}
+	if cmd == nil {
 		return false
 	}
 
