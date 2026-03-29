@@ -27,6 +27,10 @@ This is the essential use case: **reduce or eliminate environment-specific conne
 
 ![kubefwd TUI - Main View](docs/images/tui-110-main-active.png)
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/txn2-kubefwd).
+
 ## Quick Start
 
 ```bash
