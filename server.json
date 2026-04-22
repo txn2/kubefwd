@@ -11,7 +11,7 @@
     {
       "registryType": "mcpb",
       "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-arm64.mcpb",
-      "file_sha256": "PLACEHOLDER_SHA256",
+      "fileSha256": "PLACEHOLDER_SHA256",
       "transport": {
         "type": "stdio"
       }
@@ -19,7 +19,7 @@
     {
       "registryType": "mcpb",
       "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-darwin-amd64.mcpb",
-      "file_sha256": "PLACEHOLDER_SHA256",
+      "fileSha256": "PLACEHOLDER_SHA256",
       "transport": {
         "type": "stdio"
       }
@@ -27,7 +27,7 @@
     {
       "registryType": "mcpb",
       "identifier": "https://github.com/txn2/kubefwd/releases/download/v0.0.0/kubefwd-0.0.0-windows-amd64.mcpb",
-      "file_sha256": "PLACEHOLDER_SHA256",
+      "fileSha256": "PLACEHOLDER_SHA256",
       "transport": {
         "type": "stdio"
       }

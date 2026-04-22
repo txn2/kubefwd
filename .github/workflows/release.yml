@@ -139,6 +139,38 @@ jobs:
           echo "Updated server.json:"
           cat server.json
 
+      - name: Validate server.json against MCP schema
+        run: |
+          python3 -m pip install --quiet check-jsonschema
+          # JSON Schema validation (types, formats, top-level required fields)
+          check-jsonschema \
+            --schemafile "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json" \
+            server.json
+          # MCPB contract: every mcpb package must have a real fileSha256.
+          # The base schema does not enforce this (it's documented-only), so
+          # we check explicitly. Catches wrong field name (file_sha256 vs
+          # fileSha256) and unreplaced PLACEHOLDER_SHA256 values.
+          python3 - <<'PY'
+          import json, re, sys
+          data = json.load(open('server.json'))
+          errors = []
+          for i, pkg in enumerate(data.get('packages', [])):
+              if pkg.get('registryType') != 'mcpb':
+                  continue
+              h = pkg.get('fileSha256')
+              if not h or not re.fullmatch(r'[a-f0-9]{64}', h):
+                  errors.append(
+                      f"packages[{i}] ({pkg.get('identifier','?')}): "
+                      f"missing/invalid fileSha256 (got {h!r})"
+                  )
+          if errors:
+              print('server.json MCPB validation failed:', file=sys.stderr)
+              for e in errors:
+                  print(f'  - {e}', file=sys.stderr)
+              sys.exit(1)
+          print('server.json OK: all mcpb packages have valid fileSha256')
+          PY
+
       - name: Publish to MCP Registry
         run: |
           # Login using GitHub OIDC (id-token: write permission required)
