@@ -141,9 +141,10 @@ jobs:
 
       - name: Validate server.json against MCP schema
         run: |
-          python3 -m pip install --quiet check-jsonschema
-          # JSON Schema validation (types, formats, top-level required fields)
-          check-jsonschema \
+          # JSON Schema validation (types, formats, top-level required fields).
+          # pipx is preinstalled on ubuntu-latest; `pipx run` isolates the tool
+          # in its own venv, sidestepping PEP 668 externally-managed-env issues.
+          pipx run check-jsonschema \
             --schemafile "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json" \
             server.json
           # MCPB contract: every mcpb package must have a real fileSha256.
