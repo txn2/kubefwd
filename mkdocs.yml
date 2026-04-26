@@ -1,6 +1,6 @@
 site_name: kubefwd
 site_url: https://kubefwd.com
-site_description: Kubernetes service forwarding with interactive TUI, REST API, and MCP integration. Forward multiple services to unique local IPs for seamless local development.
+site_description: Kubernetes service forwarding with interactive TUI, REST API, and MCP integration. Forward many services to unique local IPs for cluster-like local development.
 site_author: Craig Johnston
 repo_url: https://github.com/txn2/kubefwd
 repo_name: txn2/kubefwd
@@ -14,19 +14,8 @@ theme:
   logo: images/logo_icon.png
   favicon: images/logo_icon.png
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
-  font:
-    text: Inter
-    code: JetBrains Mono
+    scheme: slate
+  font: false
   icon:
     repo: fontawesome/brands/github
   features:
