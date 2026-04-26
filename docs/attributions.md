@@ -8,7 +8,7 @@ kubefwd has been featured in numerous publications, curated lists, and developer
 
 kubefwd is listed in the [CNCF Cloud Native Landscape](https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd) under **App Definition and Development > Application Definition & Image Build**.
 
-The CNCF Landscape is the authoritative map of cloud native technologies, cataloging hundreds of projects and products in the cloud native ecosystem.
+The [CNCF Landscape](https://landscape.cncf.io/) is the authoritative map of cloud native technologies, cataloging hundreds of projects and products in the cloud native ecosystem.
 
 ---
 

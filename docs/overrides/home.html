@@ -1,0 +1,373 @@
+{% extends "main.html" %}
+
+{# Mark the body so CSS can target the homepage layout. #}
+{% block htmltitle %}
+  {{ super() }}
+{% endblock %}
+
+{% block site_meta %}
+  {{ super() }}
+  <meta name="page-template" content="home">
+{% endblock %}
+
+{# Replace Material's header with the txn2 rail. #}
+{% block header %}
+<header class="rail" data-md-component="header">
+  <a class="skiplink" href="#main">skip to content</a>
+  <a href="./" class="rail__brand" aria-label="kubefwd home">
+    <span class="rail__mark" aria-hidden="true">◐</span>
+    <span class="rail__name">kubefwd</span>
+    <span class="rail__sep" aria-hidden="true">·</span>
+    <span class="rail__sub">kubernetes service forwarding</span>
+  </a>
+  <div class="rail__meta">
+    <span class="rail__rel">v1.x</span>
+    <span class="rail__dot" aria-hidden="true">●</span>
+    <span data-clock>·· UTC</span>
+    <span class="rail__dot" aria-hidden="true">●</span>
+    <a href="https://txn2.com" class="rail__org">part of <em class="serif">txn2</em>&nbsp;↗</a>
+  </div>
+  <nav class="rail__nav" aria-label="primary">
+    <a href="./" aria-current="page">home</a>
+    <a href="getting-started/">install</a>
+    <a href="user-guide/">guide</a>
+    <a href="api-reference/">api</a>
+    <a href="mcp-integration/">mcp</a>
+    <a href="https://github.com/txn2/kubefwd" class="rail__cta">github&nbsp;↗</a>
+  </nav>
+</header>
+{% endblock %}
+
+{# No nav tabs on the homepage. #}
+{% block tabs %}{% endblock %}
+
+{# No announce. #}
+{% block announce %}{% endblock %}
+
+{# Replace the entire content area with the full-bleed homepage. #}
+{% block container %}
+<main id="main" class="page page--home" data-md-component="main">
+
+  {# BLUEPRINT GRID OVERLAY #}
+  <div class="blueprint" aria-hidden="true">
+    <div class="blueprint__grid"></div>
+    <div class="blueprint__crosshair blueprint__crosshair--tl"><span></span><span></span></div>
+    <div class="blueprint__crosshair blueprint__crosshair--tr"><span></span><span></span></div>
+    <div class="blueprint__crosshair blueprint__crosshair--bl"><span></span><span></span></div>
+    <div class="blueprint__crosshair blueprint__crosshair--br"><span></span><span></span></div>
+  </div>
+
+  {# HERO #}
+  <section class="hero">
+    <div class="hero__stamp">
+      <p class="hero__stamp__line">project / kubefwd</p>
+      <p class="hero__stamp__line">org / txn2</p>
+      <p class="hero__stamp__line">est. 2017</p>
+      <p class="hero__stamp__line"><a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">cncf landscape&nbsp;↗</a></p>
+      <p class="hero__stamp__line hero__stamp__line--ok">openssf · slsa 3</p>
+    </div>
+
+    <h1 class="hero__display">
+      <span class="hero__row hero__row--1">
+        <em class="serif">kubefwd</em>
+        <span class="hero__chip">v1.x · go</span>
+      </span>
+      <span class="hero__row hero__row--2">
+        <span class="outline">kubernetes</span>
+      </span>
+      <span class="hero__row hero__row--3">
+        <em class="serif">port forwards.</em>
+      </span>
+    </h1>
+
+    <div class="hero__intro">
+      <p class="hero__lede">
+        <span class="dropcap">k</span>ubefwd makes your laptop look like a pod inside the cluster. Every service in every namespace it watches gets its own <strong>127.x.x.x</strong> loopback address, written to <code>/etc/hosts</code> under its real Kubernetes name. The in-cluster connection strings your code already uses (<code>http://api:8080</code>, <code>redis-cli -h cache</code>, <code>mysql -h db</code>) work on your laptop, unchanged. Multiple databases on port 3306, multiple gateways on 443, no conflicts, no remapping, no environment-specific config.
+      </p>
+      <p class="hero__lede hero__lede--muted">
+        Watches Kubernetes events and reconnects automatically on pod churn. Spans multiple namespaces and multiple clusters in one invocation. Supports headless services with one address per pod, label and field selectors, port remapping, and IP reservation. Drive it from an interactive TUI with live traffic and log streaming, a 40+ endpoint REST API, or an MCP server an AI assistant can connect to. Apache 2.0, on the <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">CNCF Landscape</a> since 2018.
+      </p>
+    </div>
+
+    <aside class="hero__ticker" aria-hidden="true">
+      <div class="ticker">
+        <div class="ticker__track">
+          <span>bulk port-forward</span><span>·</span>
+          <span>unique loopback ip per service</span><span>·</span>
+          <span>/etc/hosts integration</span><span>·</span>
+          <span>headless services</span><span>·</span>
+          <span>auto-reconnect</span><span>·</span>
+          <span>interactive tui</span><span>·</span>
+          <span>rest api</span><span>·</span>
+          <span>mcp server</span><span>·</span>
+          <span>multi-namespace</span><span>·</span>
+          <span>multi-cluster</span><span>·</span>
+          <span>port mapping</span><span>·</span>
+          <span>label selectors</span><span>·</span>
+          <span>bulk port-forward</span><span>·</span>
+          <span>unique loopback ip per service</span><span>·</span>
+          <span>/etc/hosts integration</span><span>·</span>
+          <span>headless services</span><span>·</span>
+          <span>auto-reconnect</span><span>·</span>
+          <span>interactive tui</span><span>·</span>
+          <span>rest api</span><span>·</span>
+          <span>mcp server</span><span>·</span>
+          <span>multi-namespace</span><span>·</span>
+          <span>multi-cluster</span><span>·</span>
+          <span>port mapping</span><span>·</span>
+          <span>label selectors</span><span>·</span>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  {# FLAGSHIP / PRIMARY DEMO #}
+  <section class="section section--flagship" id="install">
+    <header class="section__head">
+      <p class="section__index">§ 01 / install · run</p>
+      <h2 class="section__title">
+        Install. Then <em class="serif">drive it.</em>
+      </h2>
+      <p class="section__lede">
+        Install with <code>brew</code>, <code>winget</code>, <code>apt</code>, or grab a release binary. Run with <code>sudo</code> so kubefwd can write <code>/etc/hosts</code> and bind low ports. Use the interactive TUI for live cluster state, hit the REST API to script forwards, or wire the MCP server into an AI assistant.
+      </p>
+    </header>
+
+    <div class="flagship">
+      <article class="flagship__card flagship__card--kubefwd">
+        <header class="flagship__head">
+          <p class="flagship__id">CLI-001 · go · <a class="flagship__url" href="getting-started/">getting started ↗</a></p>
+          <h3 class="flagship__name">tui mode</h3>
+          <p class="flagship__tag">Browse namespaces, watch traffic, stream pod logs.</p>
+        </header>
+        <div class="flagship__body">
+          <p>Start without arguments and pick services from a list, or forward a whole namespace and let the TUI render live state. Each row shows bytes in/out, sparkline, and reconnect status. Press <code>?</code> for help, <code>r</code> to reconnect errored services, <code>q</code> to quit.</p>
+        </div>
+        <div class="flagship__demo">
+          <div class="terminal">
+            <div class="terminal__bar">
+              <span></span><span></span><span></span>
+              <em>~ / kubefwd</em>
+            </div>
+<pre class="terminal__body"><span class="t-prompt">$</span> brew install kubefwd
+<span class="t-prompt">$</span> sudo -E kubefwd svc -n my-namespace --tui
+<span class="t-mute">  press ? for help, q to quit</span>
+
+<span class="t-mute"># in another terminal, services resolve by name:</span>
+<span class="t-prompt">$</span> curl http://api-gateway:8080
+<span class="t-prompt">$</span> redis-cli -h cache -p 6379
+<span class="t-prompt">$</span> mysql -h database -P 3306</pre>
+          </div>
+        </div>
+        <footer class="flagship__foot">
+          <a class="btn btn--accent" href="getting-started/">install &amp; run →</a>
+          <a class="btn" href="user-guide/">user guide ↗</a>
+          <a class="btn" href="https://github.com/txn2/kubefwd" aria-label="kubefwd source on GitHub">source ↗</a>
+        </footer>
+      </article>
+
+      <article class="flagship__card flagship__card--txeh">
+        <header class="flagship__head">
+          <p class="flagship__id">API-002 · http · <a class="flagship__url" href="api-reference/">api reference ↗</a></p>
+          <h3 class="flagship__name">api &amp; mcp</h3>
+          <p class="flagship__tag">Programmatic control. AI-assistant integration via MCP.</p>
+        </header>
+        <div class="flagship__body">
+          <p>40+ HTTP endpoints for adding namespaces, querying metrics, streaming events. Or talk to your AI about your work, not your tools: <code>claude mcp add kubefwd</code> and ask <em class="serif">"connect me to staging redis"</em> in plain English.</p>
+        </div>
+        <div class="flagship__demo">
+          <div class="terminal">
+            <div class="terminal__bar">
+              <span></span><span></span><span></span>
+              <em>~ / api</em>
+            </div>
+<pre class="terminal__body"><span class="t-mute"># start in idle mode, api enabled by default</span>
+<span class="t-prompt">$</span> sudo -E kubefwd
+
+<span class="t-mute"># list namespaces, add one, watch services</span>
+<span class="t-prompt">$</span> curl kubefwd.internal/api/v1/namespaces
+<span class="t-prompt">$</span> curl -X POST kubefwd.internal/api/v1/namespaces \
+       -d '{"namespace":"staging"}'
+<span class="t-prompt">$</span> curl kubefwd.internal/api/v1/services
+
+<span class="t-mute"># or wire it to claude</span>
+<span class="t-prompt">$</span> claude mcp add kubefwd -- kubefwd mcp</pre>
+          </div>
+        </div>
+        <footer class="flagship__foot">
+          <a class="btn btn--accent" href="api-reference/">rest api →</a>
+          <a class="btn" href="mcp-integration/">mcp ↗</a>
+          <a class="btn" href="https://github.com/txn2/kubefwd" aria-label="kubefwd source on GitHub">source ↗</a>
+        </footer>
+      </article>
+    </div>
+  </section>
+
+  {# WHAT KUBEFWD DOES / STACK LIST #}
+  <section class="section section--stack" id="features">
+    <header class="section__head">
+      <p class="section__index">§ 02 / what it does</p>
+      <h2 class="section__title">
+        A service per <em class="serif">ip</em>. Local, exactly as in cluster.
+      </h2>
+      <p class="section__lede">
+        kubefwd reaches every service the way an in-cluster pod would. No port collisions, no environment-specific config, no docker-compose drift.
+      </p>
+    </header>
+
+    <ol class="stack">
+      <li class="stack__row">
+        <span class="stack__num">001</span>
+        <div class="stack__main">
+          <a class="stack__name" href="architecture/#ip-allocation">unique loopback ip per service</a>
+          <p class="stack__desc">Each service gets its own <code>127.x.x.x</code> address. Many databases on port 3306, many web services on port 80. No conflicts, no remapping. The local network mirrors the cluster network.</p>
+        </div>
+        <span class="stack__tag">network</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row">
+        <span class="stack__num">002</span>
+        <div class="stack__main">
+          <a class="stack__name" href="advanced-usage/#custom-hosts-file-path">/etc/hosts integration</a>
+          <p class="stack__desc">Service names resolve to the assigned loopback IPs through the host file. Any application, any language, no configuration to teach. Backup of the original hosts file is kept at <code>~/hosts.original</code>.</p>
+        </div>
+        <span class="stack__tag">dns / hosts</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row">
+        <span class="stack__num">003</span>
+        <div class="stack__main">
+          <a class="stack__name" href="user-guide/#auto-reconnect">auto-reconnect with backoff</a>
+          <p class="stack__desc">Pods restart, kubefwd re-establishes the forward. Exponential backoff from 1s to 5min ceiling. Watch events keep the local state aligned with cluster reality during rolling deploys.</p>
+        </div>
+        <span class="stack__tag">runtime</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row">
+        <span class="stack__num">004</span>
+        <div class="stack__main">
+          <a class="stack__name" href="user-guide/#interface-overview">interactive tui</a>
+          <p class="stack__desc">Bubble Tea TUI with live bandwidth sparklines, pod log streaming, and HTTP request detection. Filter, navigate, reconnect, all from the keyboard. Full help overlay on <code>?</code>.</p>
+        </div>
+        <span class="stack__tag">tui</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row">
+        <span class="stack__num">005</span>
+        <div class="stack__main">
+          <a class="stack__name" href="api-reference/">rest api · 40+ endpoints</a>
+          <p class="stack__desc">Add namespaces, register services, query metrics, stream SSE events. Drives editors, CI tooling, and any process that wants to script local cluster access.</p>
+        </div>
+        <span class="stack__tag">api</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row">
+        <span class="stack__num">006</span>
+        <div class="stack__main">
+          <a class="stack__name" href="mcp-integration/">mcp server for ai clients</a>
+          <p class="stack__desc">Drop-in MCP server. Claude, Cursor, and any MCP-capable assistant can connect, browse cluster services, and forward what your task needs. Talk about the work, not the tooling.</p>
+        </div>
+        <span class="stack__tag">mcp</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+      <li class="stack__row stack__row--more">
+        <span class="stack__num">···</span>
+        <div class="stack__main">
+          <a class="stack__name" href="advanced-usage/">multi-namespace, multi-cluster, port mapping, label selectors, headless services, ip reservation</a>
+          <p class="stack__desc">Full feature surface in advanced usage.</p>
+        </div>
+        <span class="stack__tag">+ more</span>
+        <span class="stack__year" aria-hidden="true">↗</span>
+      </li>
+    </ol>
+  </section>
+
+  {# CODA / sister projects, context #}
+  <section class="section section--coda">
+    <div class="coda">
+      <p class="coda__kicker">// open source</p>
+      <p class="coda__big">
+        kubefwd is one of several open source components by <a href="https://imti.co"><em class="serif">Craig Johnston</em></a>, sponsored by <a href="https://deasil.works"><em class="serif">Deasil Works, Inc.</em></a> and <a href="https://plexara.io"><em class="serif">Plexara</em></a>. Released under the Apache 2.0 license. Featured in the <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">CNCF Landscape</a>.
+      </p>
+      <div class="coda__cta">
+        <a class="btn btn--big" href="https://github.com/txn2/kubefwd">github.com/txn2/kubefwd →</a>
+        <a class="btn" href="https://txn2.com">txn2.com ↗</a>
+        <a class="btn" href="https://hub.docker.com/r/txn2/kubefwd">docker hub ↗</a>
+        <a class="btn" href="https://github.com/txn2/kubefwd/releases">releases ↗</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+{% endblock %}
+
+{# Custom homepage footer replaces Material's. #}
+{% block footer %}
+<footer class="footer">
+  <div class="footer__rule" aria-hidden="true"></div>
+  <div class="footer__inner">
+    <div class="footer__col">
+      <p class="footer__label">about</p>
+      <p class="footer__text">A bulk Kubernetes service port-forwarder by <a href="https://imti.co">Craig Johnston</a>, part of the <a href="https://txn2.com">txn2</a> open source organization, sponsored by <a href="https://deasil.works">Deasil Works, Inc.</a> and <a href="https://plexara.io">Plexara</a>.</p>
+    </div>
+    <div class="footer__col">
+      <p class="footer__label">docs</p>
+      <ul class="footer__links">
+        <li><a href="getting-started/">getting started</a></li>
+        <li><a href="user-guide/">user guide</a></li>
+        <li><a href="configuration/">configuration</a></li>
+        <li><a href="advanced-usage/">advanced usage</a></li>
+        <li><a href="troubleshooting/">troubleshooting</a></li>
+      </ul>
+    </div>
+    <div class="footer__col">
+      <p class="footer__label">interfaces</p>
+      <ul class="footer__links">
+        <li><a href="api-reference/">rest api</a></li>
+        <li><a href="mcp-integration/">mcp integration</a></li>
+        <li><a href="architecture/">architecture</a></li>
+        <li><a href="comparison/">comparison</a></li>
+      </ul>
+    </div>
+    <div class="footer__col">
+      <p class="footer__label">code</p>
+      <ul class="footer__links">
+        <li><a href="https://github.com/txn2/kubefwd">github.com/txn2/kubefwd</a></li>
+        <li><a href="https://github.com/txn2/kubefwd/releases">releases</a></li>
+        <li><a href="https://hub.docker.com/r/txn2/kubefwd">docker hub</a></li>
+        <li><a href="https://github.com/txn2/kubefwd/issues">issues</a></li>
+      </ul>
+    </div>
+    <div class="footer__col footer__col--meta">
+      <p class="footer__label">txn2 / org</p>
+      <p class="footer__text"><a href="https://txn2.com">txn2.com&nbsp;↗</a><br>
+      <span class="footer__links__sub">canonical home of the txn2 open source organization</span></p>
+      <p class="footer__mono">apache 2.0 license <span class="dot">·</span> <span data-clock>·· UTC</span></p>
+    </div>
+  </div>
+  <div class="footer__base">
+    <p>© 2017-2026 · <a href="https://txn2.com">txn2</a> · kubefwd released under Apache 2.0.</p>
+    <p class="footer__base__tag"><a href="https://txn2.com">design · txn2.com&nbsp;↗</a></p>
+  </div>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Live UTC clock for rail/footer.
+  (function () {
+    function tick() {
+      var now = new Date();
+      var hh = String(now.getUTCHours()).padStart(2, '0');
+      var mm = String(now.getUTCMinutes()).padStart(2, '0');
+      var stamp = hh + ':' + mm + ' UTC';
+      document.querySelectorAll('[data-clock]').forEach(function (el) {
+        el.textContent = stamp;
+      });
+    }
+    tick();
+    setInterval(tick, 30 * 1000);
+  })();
+</script>
+{% endblock %}
