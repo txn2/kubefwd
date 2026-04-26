@@ -82,10 +82,10 @@
 
     <div class="hero__intro">
       <p class="hero__lede">
-        <span class="dropcap">k</span>ubefwd makes your laptop look like a pod inside the cluster. Every service in every namespace it watches gets its own <strong>127.x.x.x</strong> loopback address, written to <code>/etc/hosts</code> under its real Kubernetes name. The in-cluster connection strings your code already uses (<code>http://api:8080</code>, <code>redis-cli -h cache</code>, <code>mysql -h db</code>) work on your laptop, unchanged. Multiple databases on port 3306, multiple gateways on 443, no conflicts, no remapping, no environment-specific config.
+        <span class="dropcap">k</span>ubefwd port-forwards Kubernetes services in bulk: a single service, a whole namespace, several namespaces at once, or several clusters at once, optionally filtered by label or field selector. Each service it touches gets its own <strong>127.x.x.x</strong> loopback address with the cluster hostname written to <code>/etc/hosts</code>. In-cluster connection strings (<code>http://api:8080</code>, <code>redis-cli -h cache</code>, <code>mysql -h db</code>) resolve and work without modification. Multiple databases on port 3306, multiple gateways on 443. No conflicts, no remapping, no environment-specific config.
       </p>
       <p class="hero__lede hero__lede--muted">
-        Watches Kubernetes events and reconnects automatically on pod churn. Spans multiple namespaces and multiple clusters in one invocation. Supports headless services with one address per pod, label and field selectors, port remapping, and IP reservation. Drive it from an interactive TUI with live traffic and log streaming, a 40+ endpoint REST API, or an MCP server an AI assistant can connect to. Apache 2.0, on the <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">CNCF Landscape</a> since 2018.
+        Watches Kubernetes events and reconnects automatically on pod churn. Handles headless services with one address per pod, port remapping, custom domain suffixes, and IP reservation. Drive it from an interactive TUI with live traffic and log streaming, a 40+ endpoint REST API, or an MCP server for AI assistants. Apache 2.0, on the <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">CNCF Landscape</a> since 2018.
       </p>
     </div>
 
