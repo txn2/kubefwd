@@ -301,18 +301,19 @@
 </main>
 {% endblock %}
 
-{# Custom homepage footer replaces Material's. #}
+{# Custom homepage footer replaces Material's. Class names prefixed
+   home-footer to avoid global collision with markdown class="footer". #}
 {% block footer %}
-<footer class="footer">
-  <div class="footer__rule" aria-hidden="true"></div>
-  <div class="footer__inner">
-    <div class="footer__col">
-      <p class="footer__label">about</p>
-      <p class="footer__text">A bulk Kubernetes service port-forwarder by <a href="https://imti.co">Craig Johnston</a>, part of the <a href="https://txn2.com">txn2</a> open source organization, sponsored by <a href="https://deasil.works">Deasil Works, Inc.</a> and <a href="https://plexara.io">Plexara</a>.</p>
+<footer class="home-footer">
+  <div class="home-footer__rule" aria-hidden="true"></div>
+  <div class="home-footer__inner">
+    <div class="home-footer__col">
+      <p class="home-footer__label">about</p>
+      <p class="home-footer__text">A bulk Kubernetes service port-forwarder by <a href="https://imti.co">Craig Johnston</a>, part of the <a href="https://txn2.com">txn2</a> open source organization, sponsored by <a href="https://deasil.works">Deasil Works, Inc.</a> and <a href="https://plexara.io">Plexara</a>.</p>
     </div>
-    <div class="footer__col">
-      <p class="footer__label">docs</p>
-      <ul class="footer__links">
+    <div class="home-footer__col">
+      <p class="home-footer__label">docs</p>
+      <ul class="home-footer__links">
         <li><a href="getting-started/">getting started</a></li>
         <li><a href="user-guide/">user guide</a></li>
         <li><a href="configuration/">configuration</a></li>
@@ -320,34 +321,34 @@
         <li><a href="troubleshooting/">troubleshooting</a></li>
       </ul>
     </div>
-    <div class="footer__col">
-      <p class="footer__label">interfaces</p>
-      <ul class="footer__links">
+    <div class="home-footer__col">
+      <p class="home-footer__label">interfaces</p>
+      <ul class="home-footer__links">
         <li><a href="api-reference/">rest api</a></li>
         <li><a href="mcp-integration/">mcp integration</a></li>
         <li><a href="architecture/">architecture</a></li>
         <li><a href="comparison/">comparison</a></li>
       </ul>
     </div>
-    <div class="footer__col">
-      <p class="footer__label">code</p>
-      <ul class="footer__links">
+    <div class="home-footer__col">
+      <p class="home-footer__label">code</p>
+      <ul class="home-footer__links">
         <li><a href="https://github.com/txn2/kubefwd">github.com/txn2/kubefwd</a></li>
         <li><a href="https://github.com/txn2/kubefwd/releases">releases</a></li>
         <li><a href="https://hub.docker.com/r/txn2/kubefwd">docker hub</a></li>
         <li><a href="https://github.com/txn2/kubefwd/issues">issues</a></li>
       </ul>
     </div>
-    <div class="footer__col footer__col--meta">
-      <p class="footer__label">txn2 / org</p>
-      <p class="footer__text"><a href="https://txn2.com">txn2.com&nbsp;↗</a><br>
-      <span class="footer__links__sub">canonical home of the txn2 open source organization</span></p>
-      <p class="footer__mono">apache 2.0 license <span class="dot">·</span> <span data-clock>·· UTC</span></p>
+    <div class="home-footer__col home-footer__col--meta">
+      <p class="home-footer__label">txn2 / org</p>
+      <p class="home-footer__text"><a href="https://txn2.com">txn2.com&nbsp;↗</a><br>
+      <span class="home-footer__links__sub">canonical home of the txn2 open source organization</span></p>
+      <p class="home-footer__mono">apache 2.0 license <span class="dot">·</span> <span data-clock>·· UTC</span></p>
     </div>
   </div>
-  <div class="footer__base">
+  <div class="home-footer__base">
     <p>© 2017-2026 · <a href="https://txn2.com">txn2</a> · kubefwd released under Apache 2.0.</p>
-    <p class="footer__base__tag"><a href="https://txn2.com">design · txn2.com&nbsp;↗</a></p>
+    <p class="home-footer__base__tag"><a href="https://txn2.com">design · txn2.com&nbsp;↗</a></p>
   </div>
 </footer>
 {% endblock %}
@@ -356,7 +357,14 @@
 {{ super() }}
 <script>
   // Live UTC clock for rail/footer.
+  // Guarded against duplicate registration: Material's instant-nav rehydrates
+  // the body on every navigation back to the homepage; without this guard a
+  // fresh setInterval handle leaks each visit.
   (function () {
+    if (window.__kubefwdClock) {
+      window.__kubefwdClock.tick();
+      return;
+    }
     function tick() {
       var now = new Date();
       var hh = String(now.getUTCHours()).padStart(2, '0');
@@ -367,7 +375,8 @@
       });
     }
     tick();
-    setInterval(tick, 30 * 1000);
+    var handle = setInterval(tick, 30 * 1000);
+    window.__kubefwdClock = { tick: tick, handle: handle };
   })();
 </script>
 {% endblock %}
