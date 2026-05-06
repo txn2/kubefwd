@@ -7,6 +7,13 @@ coverage:
     patch:
       default:
         target: 50%
+        # Patch coverage is reported but does not block PRs.
+        # Mechanical refactors of integration-only code paths (k8s SPDY
+        # dialers, port-forward construction in pkg/fwdport/fwdport.go)
+        # have no unit tests because they require a live cluster, and
+        # routinely flunk a strict 50% gate even when the PR is a no-op
+        # rename. Project-level coverage (codecov/project) still blocks.
+        informational: true
 
 comment:
   layout: "reach,diff,flags,files"

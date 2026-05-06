@@ -5,6 +5,7 @@
 *.out
 coverage.html
 coverage.txt
+.tools/
 dist
 vendor
 dist/
