@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 )
 
 // mockDialer implements httpstream.Dialer for testing

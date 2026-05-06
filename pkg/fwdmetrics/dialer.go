@@ -1,7 +1,7 @@
 package fwdmetrics
 
 import (
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 )
 
 // MetricsDialer wraps httpstream.Dialer to inject metrics tracking

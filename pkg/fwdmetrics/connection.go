@@ -5,7 +5,7 @@ import (
 	"time"
 
 	api "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 )
 
 // MetricsConnection wraps httpstream.Connection to wrap created streams with metrics

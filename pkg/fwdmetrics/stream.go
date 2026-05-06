@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 )
 
 // MetricsStream wraps httpstream.Stream to track bytes transferred.

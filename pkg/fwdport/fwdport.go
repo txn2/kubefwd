@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/streaming/pkg/httpstream"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdip"
@@ -454,7 +454,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
+	dialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
 	dialerWithPing := pingingDialer{
 		wrappedDialer:     dialer,
 		pingPeriod:        time.Second * 30,
@@ -472,7 +472,7 @@ func (pfo *PortForwardOpts) PortForward() error {
 		address = []string{"localhost"}
 	}
 
-	fw, err := portforward.NewOnAddresses(finalDialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
+	fw, err := portforward.NewOnAddressesForStreaming(finalDialer, address, fwdPorts, pfStopChannel, make(chan struct{}), &p, &p)
 	if err != nil {
 		// Emit status change event for TUI
 		if fwdtui.EventsEnabled() {
