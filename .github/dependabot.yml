@@ -21,6 +21,13 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    ignore:
+      # SLSA generator v2.1.x has a privacy-check false positive that halts
+      # provenance generation on public repos. Pinned to v2.0.0 in
+      # release.yml. See issue #471. Drop this ignore once upstream ships
+      # a fix (slsa-framework/slsa-github-generator#4493).
+      - dependency-name: "slsa-framework/slsa-github-generator"
+        versions: ["2.1.x"]
 
   # Docker
   - package-ecosystem: "docker"
