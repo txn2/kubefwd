@@ -23,7 +23,7 @@ require (
 	k8s.io/client-go v0.36.0
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.36.0
-	k8s.io/streaming v0.36.0
+	k8s.io/streaming v0.36.1
 )
 
 require (
