@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/subtle"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -105,6 +107,39 @@ func ErrorHandler() gin.HandlerFunc {
 				},
 			})
 		}
+	}
+}
+
+// APIKeyAuth rejects requests that don't carry a valid Bearer token.
+func APIKeyAuth(apiKey string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" {
+			c.JSON(401, gin.H{
+				"success": false,
+				"error": gin.H{
+					"code":    "UNAUTHORIZED",
+					"message": "API key required. Pass via Authorization: Bearer <key>",
+				},
+			})
+			c.Abort()
+			return
+		}
+
+		token := strings.TrimPrefix(header, "Bearer ")
+		if token == header || subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
+			c.JSON(401, gin.H{
+				"success": false,
+				"error": gin.H{
+					"code":    "UNAUTHORIZED",
+					"message": "Invalid API key",
+				},
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
 	}
 }
 

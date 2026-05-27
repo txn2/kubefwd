@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	apiURL  string
+	apiURL string
+	apiKey string
 	verbose bool
 )
 
@@ -23,6 +24,7 @@ var Version string
 
 func init() {
 	Cmd.Flags().StringVar(&apiURL, "api-url", "http://kubefwd.internal/api", "URL of the kubefwd REST API")
+	Cmd.Flags().StringVar(&apiKey, "api-key", "", "API key for authentication (env: KUBEFWD_API_KEY)")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 }
 
@@ -90,6 +92,12 @@ func runMCP(_ *cobra.Command, _ []string) {
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.WarnLevel)
+	}
+
+	if apiKey != "" {
+		if err := os.Setenv("KUBEFWD_API_KEY", apiKey); err != nil {
+			log.Warnf("Failed to set KUBEFWD_API_KEY: %v", err)
+		}
 	}
 
 	log.Infof("Starting kubefwd MCP server (version %s)", Version)
