@@ -375,12 +375,15 @@ func (svcFwd *ServiceFWD) podStillEligible(podName string, k8sPods []v1.Pod) boo
 	return false
 }
 
-// findKeyToKeep finds a forward key for a pod that is still eligible
-func (svcFwd *ServiceFWD) findKeyToKeep(k8sPods []v1.Pod) string {
+// findPodNameToKeep finds the name of a currently-forwarded pod that is still
+// eligible. For a normal service we forward exactly one pod (all of its ports),
+// so this identifies which pod we should keep forwarding to. Returns "" if none
+// of the currently-forwarded pods are still eligible.
+func (svcFwd *ServiceFWD) findPodNameToKeep(k8sPods []v1.Pod) string {
 	forwards := svcFwd.getForwardInfos()
 	for _, fwd := range forwards {
 		if svcFwd.podStillEligible(fwd.podName, k8sPods) {
-			return fwd.key
+			return fwd.podName
 		}
 	}
 	return ""
@@ -392,21 +395,46 @@ func (svcFwd *ServiceFWD) syncHeadlessService(k8sPods []v1.Pod) {
 	svcFwd.LoopPodsToForward(k8sPods, true)
 }
 
-// syncNormalService syncs forwards for a normal (non-headless) service
+// syncNormalService syncs forwards for a normal (non-headless) service.
+//
+// A normal service forwards a single pod, but that pod may expose multiple
+// ports, each tracked as a separate entry in PortForwards (key:
+// "service.podname.localport"). We therefore reason in terms of the pod NAME to
+// keep, not a single forward key: all forwards belonging to the kept pod must be
+// preserved, and forwards belonging to any other pod removed.
+//
+// Crucially, we always (re)invoke LoopPodsToForward for the kept pod so that any
+// of its ports that are not currently forwarded get re-established.
+// LoopPodsToForward skips ports that already exist, so this is a no-op for a
+// fully-healthy pod, but it recovers a multi-port service when a single port's
+// connection was reset and torn down independently (e.g. the TCP RST behavior of
+// kubernetes/kubernetes#111825). Without this, the surviving port's map entry
+// caused the dead port (and the service's /etc/hosts entries) to never be
+// restored, leaving the service in an unrecoverable zombie state (issue #509).
 func (svcFwd *ServiceFWD) syncNormalService(k8sPods []v1.Pod) {
-	keyToKeep := svcFwd.findKeyToKeep(k8sPods)
+	podNameToKeep := svcFwd.findPodNameToKeep(k8sPods)
 
-	// Remove forwards for pods we're not keeping
+	// Remove forwards belonging to any pod other than the one we're keeping.
 	forwards := svcFwd.getForwardInfos()
 	for _, fwd := range forwards {
-		if fwd.key != keyToKeep {
+		if fwd.podName != podNameToKeep {
 			svcFwd.RemoveServicePod(fwd.key)
 		}
 	}
 
-	// Start new forward if needed
-	if keyToKeep == "" {
+	if podNameToKeep == "" {
+		// No good pod is currently forwarded - start forwarding the first eligible pod.
 		svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+		return
+	}
+
+	// Already forwarding a good pod. Ensure ALL of its ports are forwarded,
+	// re-establishing any that were torn down independently.
+	for i := range k8sPods {
+		if k8sPods[i].Name == podNameToKeep {
+			svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[i]}, false)
+			return
+		}
 	}
 }
 
