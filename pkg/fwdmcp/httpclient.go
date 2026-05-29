@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,25 +21,49 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
 
-// HTTPClient wraps http.Client with base URL
+// HTTPClient wraps http.Client with base URL and optional API key
 type HTTPClient struct {
 	client  *http.Client
 	baseURL string
+	apiKey  string
 }
 
-// NewHTTPClient creates a new HTTP client for the kubefwd API
+// NewHTTPClient creates a new HTTP client for the kubefwd API.
+// The API key is read from KUBEFWD_API_KEY if set.
 func NewHTTPClient(baseURL string) *HTTPClient {
 	return &HTTPClient{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		baseURL: baseURL,
+		apiKey:  os.Getenv("KUBEFWD_API_KEY"),
 	}
+}
+
+// SetAPIKey configures the Bearer token sent with every request
+func (c *HTTPClient) SetAPIKey(key string) {
+	c.apiKey = key
+}
+
+func (c *HTTPClient) newRequest(method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, c.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	return req, nil
 }
 
 // Get performs a GET request and decodes JSON response
 func (c *HTTPClient) Get(path string, result interface{}) error {
-	resp, err := c.client.Get(c.baseURL + path)
+	req, err := c.newRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -58,7 +83,13 @@ func (c *HTTPClient) Get(path string, result interface{}) error {
 
 // Post performs a POST request and decodes JSON response
 func (c *HTTPClient) Post(path string, result interface{}) error {
-	resp, err := c.client.Post(c.baseURL+path, "application/json", nil)
+	req, err := c.newRequest(http.MethodPost, path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -89,7 +120,13 @@ func (c *HTTPClient) PostJSON(path string, body interface{}, result interface{})
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	resp, err := c.client.Post(c.baseURL+path, "application/json", bodyReader)
+	req, err := c.newRequest(http.MethodPost, path, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -111,7 +148,7 @@ func (c *HTTPClient) PostJSON(path string, body interface{}, result interface{})
 
 // Delete performs a DELETE request and decodes JSON response
 func (c *HTTPClient) Delete(path string, result interface{}) error {
-	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, http.NoBody)
+	req, err := c.newRequest(http.MethodDelete, path, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

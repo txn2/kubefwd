@@ -2,9 +2,12 @@ package fwdapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -73,6 +76,7 @@ type Manager struct {
 	namespaces []string
 	contexts   []string
 	tuiEnabled bool
+	apiKey     string
 }
 
 // Enable marks API mode as enabled
@@ -111,6 +115,7 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func(), version string) 
 		startTime:       time.Now(),
 		triggerShutdown: triggerShutdown,
 		version:         version,
+		apiKey:          resolveAPIKey(),
 	}
 
 	// Listen for external shutdown signal
@@ -373,6 +378,15 @@ func (m *Manager) Run() error {
 
 	log.Infof("Server listening on http://%s (http://%s/)", addr, Hostname)
 	log.Infof("API: http://%s/api  Docs: http://%s/docs", Hostname, Hostname)
+	if m.apiKey != "" {
+		// Print the full key so the user can copy it into API/MCP clients.
+		// This is an interactive, localhost-only dev tool run by the same
+		// user that owns the kubeconfig, so echoing the token to that user's
+		// own console is intended (cf. jupyter/ngrok). Set KUBEFWD_API_KEY to
+		// pin a known key for automation. The CodeQL clear-text-logging alert
+		// is a deliberate false positive here.
+		log.Infof("API key: %s", m.apiKey) // lgtm[go/clear-text-logging]
+	}
 
 	// Start server in goroutine
 	errCh := make(chan error, 1)
@@ -442,4 +456,20 @@ func (m *Manager) Contexts() []string {
 // TUIEnabled returns whether TUI is also enabled
 func (m *Manager) TUIEnabled() bool {
 	return m.tuiEnabled
+}
+
+// APIKey returns the API key used for authentication
+func (m *Manager) APIKey() string {
+	return m.apiKey
+}
+
+func resolveAPIKey() string {
+	if key := os.Getenv("KUBEFWD_API_KEY"); key != "" {
+		return key
+	}
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("failed to generate API key: %v", err))
+	}
+	return hex.EncodeToString(b)
 }

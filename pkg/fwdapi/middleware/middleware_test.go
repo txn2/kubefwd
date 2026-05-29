@@ -20,12 +20,16 @@ func performRequest(r *gin.Engine, method, path string) *httptest.ResponseRecord
 	return w
 }
 
-func performRequestWithOrigin(r *gin.Engine, method, path, origin string) *httptest.ResponseRecorder {
+func performRequestWithHeader(r *gin.Engine, method, path, key, value string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, http.NoBody)
-	req.Header.Set("Origin", origin)
+	req.Header.Set(key, value)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
+}
+
+func performRequestWithOrigin(r *gin.Engine, method, path, origin string) *httptest.ResponseRecorder {
+	return performRequestWithHeader(r, method, path, "Origin", origin)
 }
 
 func TestRecovery(t *testing.T) {
@@ -264,5 +268,75 @@ func TestErrorHandler_DefaultsTo500(t *testing.T) {
 	// Status should be 500 since we didn't set one explicitly
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+func TestAPIKeyAuth_ValidKey(t *testing.T) {
+	r := setupRouter()
+	r.Use(APIKeyAuth("test-secret-key"))
+	r.GET("/protected", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := performRequestWithHeader(r, "GET", "/protected", "Authorization", "Bearer test-secret-key")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+}
+
+func TestAPIKeyAuth_NoHeader(t *testing.T) {
+	r := setupRouter()
+	r.Use(APIKeyAuth("test-secret-key"))
+	r.GET("/protected", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := performRequest(r, "GET", "/protected")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
+func TestAPIKeyAuth_WrongKey(t *testing.T) {
+	r := setupRouter()
+	r.Use(APIKeyAuth("test-secret-key"))
+	r.GET("/protected", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := performRequestWithHeader(r, "GET", "/protected", "Authorization", "Bearer wrong-key")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
+func TestAPIKeyAuth_MissingBearerPrefix(t *testing.T) {
+	r := setupRouter()
+	r.Use(APIKeyAuth("test-secret-key"))
+	r.GET("/protected", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := performRequestWithHeader(r, "GET", "/protected", "Authorization", "test-secret-key")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
+func TestAPIKeyAuth_EmptyBearer(t *testing.T) {
+	r := setupRouter()
+	r.Use(APIKeyAuth("test-secret-key"))
+	r.GET("/protected", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := performRequestWithHeader(r, "GET", "/protected", "Authorization", "Bearer ")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
 	}
 }

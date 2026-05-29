@@ -1,6 +1,7 @@
 package fwdapi
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -1026,5 +1027,45 @@ func TestDirectNamespaceManagerAdapter_RemoveNamespace(t *testing.T) {
 	err := controller.RemoveNamespace("test-ctx", "default")
 	if err == nil {
 		t.Error("Expected error for non-existent namespace")
+	}
+}
+
+func TestResolveAPIKey_FromEnv(t *testing.T) {
+	os.Setenv("KUBEFWD_API_KEY", "my-fixed-key")
+	defer os.Unsetenv("KUBEFWD_API_KEY")
+
+	key := resolveAPIKey()
+	if key != "my-fixed-key" {
+		t.Errorf("Expected 'my-fixed-key', got '%s'", key)
+	}
+}
+
+func TestResolveAPIKey_Generated(t *testing.T) {
+	os.Unsetenv("KUBEFWD_API_KEY")
+
+	key := resolveAPIKey()
+	if len(key) != 32 {
+		t.Errorf("Expected 32-char hex string, got length %d", len(key))
+	}
+
+	key2 := resolveAPIKey()
+	if key == key2 {
+		t.Error("Expected different keys on each call")
+	}
+}
+
+func TestManager_APIKey(t *testing.T) {
+	resetGlobalState()
+	os.Unsetenv("KUBEFWD_API_KEY")
+
+	shutdownChan := make(chan struct{})
+	defer close(shutdownChan)
+
+	manager := Init(shutdownChan, func() {}, "1.0.0")
+	if manager.APIKey() == "" {
+		t.Error("Expected non-empty API key")
+	}
+	if len(manager.APIKey()) != 32 {
+		t.Errorf("Expected 32-char hex key, got length %d", len(manager.APIKey()))
 	}
 }
