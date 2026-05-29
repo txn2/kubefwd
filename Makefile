@@ -22,8 +22,22 @@ GO ?= go
 
 .PHONY: verify
 verify: check-go-version tidy-check lint test build validate-actions patch-coverage
+	@$(MAKE) --no-print-directory write-verify-sentinel
 	@echo ""
 	@echo "==> verify: all checks passed"
+
+# Record that verify passed against the current working-tree diff. The
+# pre-commit review gate (~/.claude/hooks/review-gate.sh) reads this
+# sentinel and must find the same diff hash it computes, otherwise it
+# blocks the commit. The hash must match the gate's:
+#   { git diff --cached HEAD; git diff; } | shasum -a 256 | cut -c1-16
+# .claude is gitignored, so writing the sentinel does not alter the diff.
+.PHONY: write-verify-sentinel
+write-verify-sentinel:
+	@if git rev-parse --git-dir >/dev/null 2>&1; then \
+	  mkdir -p .claude; \
+	  { git diff --cached HEAD; git diff; } | shasum -a 256 | cut -c1-16 > .claude/.last-verify-passed; \
+	fi
 
 .PHONY: check-go-version
 check-go-version:

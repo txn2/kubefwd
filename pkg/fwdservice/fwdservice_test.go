@@ -722,6 +722,171 @@ func TestSyncPodForwards_RemovesStoppedPods_FullKeyFormat(t *testing.T) {
 	}
 }
 
+// TestSyncPodForwards_MultiPort_RestoresDeadPort is a regression test for issue #509.
+//
+// A multi-port normal service can lose one port's forward independently (e.g. the
+// TCP RST behavior of kubernetes/kubernetes#111825 tears down a single port's
+// listener). Auto-reconnect re-runs SyncPodForwards, which must re-establish the
+// missing port while keeping the surviving one. Previously syncNormalService kept
+// only a single forward KEY for the pod and skipped LoopPodsToForward entirely
+// when any forward existed, so the dead port was never recreated and the service
+// was stuck in an unrecoverable zombie state.
+//
+//goland:noinspection DuplicatedCode
+func TestSyncPodForwards_MultiPort_RestoresDeadPort(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	// Two-port service: port A (80) and port B (9100).
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
+		{Port: 9100, TargetPort: intstr.FromInt32(9100), Protocol: v1.ProtocolTCP},
+	}, false)
+
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	debouncer := &mockDebouncer{immediate: true}
+
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Headless:             false,
+		Context:              "test-context",
+		Namespace:            namespace,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		SyncDebouncer:        debouncer.debounce,
+		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
+	}
+
+	// Simulate the state after port A (80) was reset and cleaned up: only port B
+	// (9100) remains in the map, pointing at a still-eligible pod.
+	survivingPort := &fwdport.PortForwardOpts{
+		PodName:        "running-pod",
+		Service:        "test-svc",
+		LocalPort:      "9100",
+		Namespace:      namespace,
+		Context:        "test-context",
+		ManualStopChan: make(chan struct{}),
+		DoneChan:       make(chan struct{}),
+	}
+	svcFwd.PortForwards["test-svc.running-pod.9100"] = survivingPort
+
+	// Auto-reconnect re-runs the sync.
+	svcFwd.SyncPodForwards(true)
+
+	// Give goroutines time to register the recreated forward.
+	time.Sleep(200 * time.Millisecond)
+
+	svcFwd.NamespaceServiceLock.Lock()
+	_, hasPortA := svcFwd.PortForwards["test-svc.running-pod.80"]
+	_, hasPortB := svcFwd.PortForwards["test-svc.running-pod.9100"]
+	count := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if !hasPortB {
+		t.Error("Surviving port 9100 should have been kept, but it was removed")
+	}
+	if !hasPortA {
+		t.Error("Dead port 80 should have been re-established by SyncPodForwards, but it is missing. " +
+			"This is a regression of issue #509 (multi-port service stuck in zombie state after a single port's RST).")
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 forwards (both ports of the pod), got %d", count)
+	}
+}
+
+// TestSyncPodForwards_MultiPort_HealthyResyncKeepsAllPorts verifies that a routine
+// resync of a healthy multi-port service does not drop ports. Regression test for
+// the broader bug behind issue #509: syncNormalService used to keep only a single
+// forward key and remove the rest, so a multi-port service would degrade to one
+// port on the first forced resync.
+//
+//goland:noinspection DuplicatedCode
+func TestSyncPodForwards_MultiPort_HealthyResyncKeepsAllPorts(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	namespace := "default"
+	labels := map[string]string{"app": "test"}
+
+	runningPod := createTestPod("running-pod", namespace, v1.PodRunning, labels)
+	clientset := fake.NewClientset(runningPod)
+
+	svc := createTestService("test-svc", namespace, []v1.ServicePort{
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
+		{Port: 9100, TargetPort: intstr.FromInt32(9100), Protocol: v1.ProtocolTCP},
+	}, false)
+
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
+	hostFile := &fwdport.HostFileWithLock{Hosts: hosts}
+
+	debouncer := &mockDebouncer{immediate: true}
+
+	svcFwd := &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Headless:             false,
+		Context:              "test-context",
+		Namespace:            namespace,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             hostFile,
+		SyncDebouncer:        debouncer.debounce,
+		LastSyncedAt:         time.Now().Add(-10 * time.Minute),
+		RESTClient:           restClient,
+	}
+
+	// Both ports are currently healthy and forwarded.
+	for _, lp := range []string{"80", "9100"} {
+		svcFwd.PortForwards["test-svc.running-pod."+lp] = &fwdport.PortForwardOpts{
+			PodName:        "running-pod",
+			Service:        "test-svc",
+			LocalPort:      lp,
+			Namespace:      namespace,
+			Context:        "test-context",
+			ManualStopChan: make(chan struct{}),
+			DoneChan:       make(chan struct{}),
+		}
+	}
+
+	// A forced resync (or the 5-minute periodic resync) must not drop a port.
+	svcFwd.SyncPodForwards(true)
+
+	time.Sleep(200 * time.Millisecond)
+
+	svcFwd.NamespaceServiceLock.Lock()
+	count := len(svcFwd.PortForwards)
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if count != 2 {
+		t.Errorf("Healthy multi-port service should retain both ports after resync, got %d", count)
+	}
+}
+
 // TestAddServicePod tests adding a pod to the PortForwards map
 func TestAddServicePod(t *testing.T) {
 	svcFwd := &ServiceFWD{

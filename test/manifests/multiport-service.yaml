@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-multiport
+---
+# Single nginx serving two ports (80 and 8080) so one pod backs a
+# multi-port service. Used by the #509 reconnect regression test, which
+# verifies a forced resync keeps every port of the service forwarded.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multiport-nginx
+  namespace: test-multiport
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 80;
+        location / { return 200 'ok-80\n'; }
+      }
+      server {
+        listen 8080;
+        location / { return 200 'ok-8080\n'; }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multiport
+  namespace: test-multiport
+spec:
+  selector:
+    app: multiport
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: http-alt
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multiport
+  namespace: test-multiport
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multiport
+  template:
+    metadata:
+      labels:
+        app: multiport
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+            - containerPort: 8080
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests:
+              cpu: 50m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+      volumes:
+        - name: conf
+          configMap:
+            name: multiport-nginx
