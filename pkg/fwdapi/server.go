@@ -44,13 +44,18 @@ func (m *Manager) setupRouter() *gin.Engine {
 	// API group
 	api := r.Group("/api")
 	{
-		// Health endpoints
+		// Health endpoint (unauthenticated for liveness probes)
 		healthHandler := handlers.NewHealthHandler(m.version, m.startTime, getManagerInfo)
 		api.GET("/health", healthHandler.Health)
-		api.GET("/info", healthHandler.Info)
+
+		// Authenticated API routes
+		auth := api.Group("")
+		auth.Use(middleware.APIKeyAuth(m.apiKey))
+
+		auth.GET("/info", healthHandler.Info)
 
 		// API v1 routes
-		v1 := api.Group("/v1")
+		v1 := auth.Group("/v1")
 		{
 			// Services endpoints
 			svcHandler := handlers.NewServicesHandler(m.stateReader, m.serviceController)
