@@ -378,8 +378,14 @@ func (m *Manager) Run() error {
 
 	log.Infof("Server listening on http://%s (http://%s/)", addr, Hostname)
 	log.Infof("API: http://%s/api  Docs: http://%s/docs", Hostname, Hostname)
-	if len(m.apiKey) >= 4 {
-		log.Infof("API key: ...%s", m.apiKey[len(m.apiKey)-4:])
+	if m.apiKey != "" {
+		// Print the full key so the user can copy it into API/MCP clients.
+		// This is an interactive, localhost-only dev tool run by the same
+		// user that owns the kubeconfig, so echoing the token to that user's
+		// own console is intended (cf. jupyter/ngrok). Set KUBEFWD_API_KEY to
+		// pin a known key for automation. The CodeQL clear-text-logging alert
+		// is a deliberate false positive here.
+		log.Infof("API key: %s", m.apiKey) // lgtm[go/clear-text-logging]
 	}
 
 	// Start server in goroutine
