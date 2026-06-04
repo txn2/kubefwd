@@ -14,7 +14,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
-	github.com/txn2/txeh v1.8.0
+	github.com/txn2/txeh v1.8.1
 	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.36.1
