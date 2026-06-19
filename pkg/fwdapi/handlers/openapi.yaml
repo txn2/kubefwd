@@ -12,8 +12,31 @@ info:
 
     ## Authentication
 
-    The API runs on a loopback interface (127.2.27.1) and does not require authentication.
-    It is only accessible from localhost.
+    All endpoints except `/api/health` require a Bearer token. Send it in the
+    `Authorization` header:
+
+    ```
+    Authorization: Bearer <api-key>
+    ```
+
+    Requests with a missing or invalid key receive `401 Unauthorized`.
+
+    The key is resolved at startup from the `KUBEFWD_API_KEY` environment
+    variable. If that variable is unset, kubefwd generates a random 32-character
+    hex key and prints the full value to the console (the only way to learn a
+    generated key). When you supply the key via `KUBEFWD_API_KEY`, it is not
+    echoed — the console only notes that the variable was used. To pin a known
+    key (for automation, CI, or the MCP bridge), set the variable before
+    launching:
+
+    ```
+    export KUBEFWD_API_KEY=my-known-key
+    sudo -E kubefwd --api
+    ```
+
+    The API binds to a loopback interface (127.2.27.1), so it is only reachable
+    from localhost, but the Bearer token is still required — any local process
+    could otherwise drive kubefwd against your kubeconfig.
 
     ## URL Structure
 
@@ -60,6 +83,9 @@ tags:
   - name: History
     description: Historical events and reconnection data
 
+security:
+  - bearerAuth: []
+
 paths:
   /health:
     get:
@@ -67,6 +93,7 @@ paths:
       summary: Health check
       description: Returns the health status of the kubefwd API server
       operationId: getHealth
+      security: []
       responses:
         "200":
           description: Health status
@@ -89,6 +116,8 @@ paths:
       description: Returns detailed runtime information including version, platform, and configuration
       operationId: getInfo
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Runtime information
           content:
@@ -110,6 +139,8 @@ paths:
         - $ref: "#/components/parameters/contextParam"
         - $ref: "#/components/parameters/searchParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of forwarded services
           content:
@@ -128,6 +159,8 @@ paths:
             schema:
               $ref: "#/components/schemas/AddServiceRequest"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service forwarding started
           content:
@@ -156,6 +189,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service details
           content:
@@ -176,6 +211,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service forwarding stopped
           content:
@@ -198,6 +235,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Reconnection triggered
           content:
@@ -226,6 +265,8 @@ paths:
             type: boolean
             default: false
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Sync triggered
           content:
@@ -246,6 +287,8 @@ paths:
       description: Trigger reconnection for all services in error state
       operationId: reconnectAllServices
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Reconnection triggered
           content:
@@ -262,6 +305,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: HTTP traffic logs
           content:
@@ -284,6 +329,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Reconnection history
           content:
@@ -303,6 +350,8 @@ paths:
         - $ref: "#/components/parameters/statusParam"
         - $ref: "#/components/parameters/namespaceParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of port forwards
           content:
@@ -324,6 +373,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Forward details
           content:
@@ -351,6 +402,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: HTTP traffic logs
           content:
@@ -365,6 +418,8 @@ paths:
       description: Returns all namespaces currently being watched for services
       operationId: listNamespaces
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of watched namespaces
           content:
@@ -383,6 +438,8 @@ paths:
             schema:
               $ref: "#/components/schemas/AddNamespaceRequest"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Namespace watcher started
           content:
@@ -416,6 +473,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Namespace details
           content:
@@ -441,6 +500,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Namespace watcher stopped
           content:
@@ -461,6 +522,8 @@ paths:
       description: Returns all namespaces available in the Kubernetes cluster
       operationId: listK8sNamespaces
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of K8s namespaces
           content:
@@ -481,6 +544,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of K8s services
           content:
@@ -508,6 +573,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: K8s service details
           content:
@@ -528,6 +595,8 @@ paths:
       description: Returns all available Kubernetes contexts from kubeconfig
       operationId: listK8sContexts
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of K8s contexts
           content:
@@ -564,6 +633,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: List of pods
           content:
@@ -602,6 +673,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Pod details
           content:
@@ -670,6 +743,8 @@ paths:
             type: boolean
             default: false
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Pod logs
           content:
@@ -736,6 +811,8 @@ paths:
             type: integer
             default: 50
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Kubernetes events
           content:
@@ -768,6 +845,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service endpoints
           content:
@@ -788,6 +867,8 @@ paths:
       description: Returns overall traffic and health metrics
       operationId: getMetricsSummary
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Metrics summary
           content:
@@ -802,6 +883,8 @@ paths:
       description: Returns traffic metrics grouped by service
       operationId: getMetricsByService
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service metrics
           content:
@@ -818,6 +901,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service metrics
           content:
@@ -840,6 +925,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Metrics history
           content:
@@ -856,6 +943,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limitParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Log entries
           content:
@@ -870,6 +959,8 @@ paths:
       description: Server-Sent Events stream of log entries
       operationId: streamLogs
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: SSE log stream
           content:
@@ -900,6 +991,8 @@ paths:
             type: string
             enum: [debug, info, warn, error, fatal, panic]
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: System log entries
           content:
@@ -925,6 +1018,8 @@ paths:
       description: Clears the system log ring buffer
       operationId: clearSystemLogs
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Log buffer cleared
           content:
@@ -939,6 +1034,8 @@ paths:
       description: Server-Sent Events stream of kubefwd events (service added, pod changed, etc.)
       operationId: streamEvents
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: SSE event stream
           content:
@@ -953,6 +1050,8 @@ paths:
       description: Returns overall diagnostic information
       operationId: getDiagnostics
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Diagnostics summary
           content:
@@ -969,6 +1068,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/serviceKeyParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Service diagnostics
           content:
@@ -990,6 +1091,8 @@ paths:
           schema:
             type: string
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Forward diagnostics
           content:
@@ -1004,6 +1107,8 @@ paths:
       description: Returns network interface and IP allocation diagnostics
       operationId: getNetworkDiagnostics
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Network diagnostics
           content:
@@ -1018,6 +1123,8 @@ paths:
       description: Returns information about services and forwards in error state
       operationId: getErrorDiagnostics
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Error diagnostics
           content:
@@ -1032,6 +1139,8 @@ paths:
       description: Returns a compact status summary optimized for AI/MCP consumption
       operationId: getStatus
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Compact status
           content:
@@ -1046,6 +1155,8 @@ paths:
       description: Returns detailed analysis optimized for AI/MCP consumption
       operationId: getAnalysis
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Analysis results
           content:
@@ -1062,6 +1173,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limitParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Event history
           content:
@@ -1078,6 +1191,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limitParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Error history
           content:
@@ -1094,6 +1209,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/limitParam"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Reconnection history
           content:
@@ -1108,6 +1225,8 @@ paths:
       description: Returns aggregate statistics from historical data
       operationId: getHistoryStats
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: History statistics
           content:
@@ -1116,6 +1235,27 @@ paths:
                 $ref: "#/components/schemas/Response"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token resolved from the `KUBEFWD_API_KEY` environment variable,
+        or a random key generated and printed to the console at startup.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: "API key required. Pass via Authorization: Bearer <key>"
+
   parameters:
     serviceKeyParam:
       name: key
