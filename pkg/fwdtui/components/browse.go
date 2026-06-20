@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
@@ -147,7 +147,7 @@ func (m *BrowseModel) Init() tea.Cmd {
 // Update handles messages for the browse modal
 func (m *BrowseModel) Update(msg tea.Msg) (BrowseModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
 
 	case BrowseContextsLoadedMsg:
@@ -209,7 +209,7 @@ func (m *BrowseModel) Update(msg tea.Msg) (BrowseModel, tea.Cmd) {
 }
 
 // handleKeyMsg handles keyboard input
-func (m *BrowseModel) handleKeyMsg(msg tea.KeyMsg) (BrowseModel, tea.Cmd) {
+func (m *BrowseModel) handleKeyMsg(msg tea.KeyPressMsg) (BrowseModel, tea.Cmd) {
 	// Always allow 'q' to close the modal, even during loading
 	if msg.String() == "q" {
 		m.Hide()
@@ -245,7 +245,7 @@ func (m *BrowseModel) handleKeyMsg(msg tea.KeyMsg) (BrowseModel, tea.Cmd) {
 }
 
 // handleNamespacesViewKey handles keys in namespaces view
-func (m *BrowseModel) handleNamespacesViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cmd) {
+func (m *BrowseModel) handleNamespacesViewKey(msg tea.KeyPressMsg) (BrowseModel, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "f":
 		m.Hide()
@@ -301,7 +301,7 @@ func (m *BrowseModel) handleNamespacesViewKey(msg tea.KeyMsg) (BrowseModel, tea.
 }
 
 // handleContextsViewKey handles keys in contexts view
-func (m *BrowseModel) handleContextsViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cmd) {
+func (m *BrowseModel) handleContextsViewKey(msg tea.KeyPressMsg) (BrowseModel, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		m.Hide()
@@ -345,7 +345,7 @@ func (m *BrowseModel) handleContextsViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cm
 }
 
 // handleServicesViewKey handles keys in services view
-func (m *BrowseModel) handleServicesViewKey(msg tea.KeyMsg) (BrowseModel, tea.Cmd) {
+func (m *BrowseModel) handleServicesViewKey(msg tea.KeyPressMsg) (BrowseModel, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		m.Hide()

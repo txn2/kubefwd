@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
@@ -54,18 +54,18 @@ func (m *LogsModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) {
 		viewportHeight = 1
 	}
 	if !m.ready {
-		m.viewport = viewport.New(m.width, viewportHeight)
+		m.viewport = viewport.New(viewport.WithWidth(m.width), viewport.WithHeight(viewportHeight))
 		m.viewport.Style = lipgloss.NewStyle()
 		m.ready = true
 	} else {
-		m.viewport.Width = m.width
-		m.viewport.Height = viewportHeight
+		m.viewport.SetWidth(m.width)
+		m.viewport.SetHeight(viewportHeight)
 	}
 	m.updateContent()
 }
 
 // handleKeyMsg handles keyboard navigation messages
-func (m *LogsModel) handleKeyMsg(msg tea.KeyMsg) {
+func (m *LogsModel) handleKeyMsg(msg tea.KeyPressMsg) {
 	if !m.focused || !m.ready {
 		return
 	}
@@ -89,8 +89,8 @@ func (m *LogsModel) handleKeyMsg(msg tea.KeyMsg) {
 }
 
 // handleMouseMsg handles mouse scroll messages
-func (m *LogsModel) handleMouseMsg(msg tea.MouseMsg) {
-	if m.focused && m.ready && msg.Button == tea.MouseButtonWheelUp {
+func (m *LogsModel) handleMouseMsg(msg tea.MouseWheelMsg) {
+	if m.focused && m.ready && msg.Button == tea.MouseWheelUp {
 		m.autoFollow = false
 	}
 }
@@ -103,9 +103,9 @@ func (m *LogsModel) Update(msg tea.Msg) (LogsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.handleWindowSizeMsg(msg)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.handleKeyMsg(msg)
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		m.handleMouseMsg(msg)
 	}
 
@@ -287,13 +287,13 @@ func (m *LogsModel) SetSize(width, height int) {
 
 	if !m.ready {
 		// Initialize viewport on first SetSize call
-		m.viewport = viewport.New(width, viewportHeight)
+		m.viewport = viewport.New(viewport.WithWidth(width), viewport.WithHeight(viewportHeight))
 		m.viewport.Style = lipgloss.NewStyle()
 		m.viewport.MouseWheelEnabled = true
 		m.ready = true
 	} else {
-		m.viewport.Width = width
-		m.viewport.Height = viewportHeight
+		m.viewport.SetWidth(width)
+		m.viewport.SetHeight(viewportHeight)
 	}
 	m.updateContent()
 }

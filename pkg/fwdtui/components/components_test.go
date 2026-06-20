@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
@@ -199,7 +199,7 @@ func TestHelpModel_CloseWithEscape(t *testing.T) {
 	m.Show()
 
 	// Send escape key
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updated, _ := m.Update(keyMsg("esc"))
 	m = updated
 
 	if m.IsVisible() {
@@ -212,7 +212,7 @@ func TestHelpModel_CloseWithQ(t *testing.T) {
 	m.Show()
 
 	// Send 'q' key
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updated, _ := m.Update(keyMsg("q"))
 	m = updated
 
 	if m.IsVisible() {
@@ -225,7 +225,7 @@ func TestHelpModel_CloseWithQuestionMark(t *testing.T) {
 	m.Show()
 
 	// Send '?' key
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	updated, _ := m.Update(keyMsg("?"))
 	m = updated
 
 	if m.IsVisible() {
@@ -497,7 +497,7 @@ func TestLogsModel_NavigationDisablesAutoFollow(t *testing.T) {
 	}
 
 	// Press 'k' (scroll up) - should disable auto-follow
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	updated, _ := m.Update(keyMsg("k"))
 	m = updated
 
 	view := m.View()
@@ -581,7 +581,7 @@ func TestLogsModel_VimNavigation(t *testing.T) {
 	}
 
 	// Test 'G' goes to bottom and enables auto-follow
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	updated, _ := m.Update(keyMsg("G"))
 	m = updated
 
 	view := m.View()
@@ -612,7 +612,7 @@ func TestServicesModel_FilterModeActivation(t *testing.T) {
 	m.Refresh()
 
 	// Press '/' to activate filter mode
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updated, _ := m.Update(keyMsg("/"))
 	m = updated
 
 	if !m.IsFiltering() {
@@ -626,15 +626,15 @@ func TestServicesModel_FilterInput(t *testing.T) {
 	m.Refresh()
 
 	// Activate filter mode
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updated, _ := m.Update(keyMsg("/"))
 	m = updated
 
 	// Type some filter text
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	updated, _ = m.Update(keyMsg("s"))
 	m = updated
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	updated, _ = m.Update(keyMsg("v"))
 	m = updated
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updated, _ = m.Update(keyMsg("c"))
 	m = updated
 
 	view := m.View()
@@ -649,11 +649,11 @@ func TestServicesModel_FilterEscape(t *testing.T) {
 	m.Refresh()
 
 	// Activate filter mode
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	updated, _ := m.Update(keyMsg("/"))
 	m = updated
 
 	// Press escape to exit filter mode
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updated, _ = m.Update(keyMsg("esc"))
 	m = updated
 
 	if m.IsFiltering() {
@@ -672,7 +672,7 @@ func TestServicesModel_BandwidthToggle(t *testing.T) {
 	hasBandwidth1 := strings.Contains(view1, "Rate In") || strings.Contains(view1, "Total In")
 
 	// Toggle bandwidth with 'b'
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	updated, _ := m.Update(keyMsg("b"))
 	m = updated
 
 	// Get updated view
@@ -695,7 +695,7 @@ func TestServicesModel_CompactViewToggle(t *testing.T) {
 	view1 := m.View()
 
 	// Toggle compact view with 'c'
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	updated, _ := m.Update(keyMsg("c"))
 	m = updated
 
 	// Get updated view
@@ -891,7 +891,7 @@ func TestDetailModel_TabSwitching(t *testing.T) {
 	}
 
 	// Press tab to go to HTTP
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ := m.Update(keyMsg("tab"))
 	m = updated
 
 	if m.GetCurrentTab() != TabHTTP {
@@ -899,7 +899,7 @@ func TestDetailModel_TabSwitching(t *testing.T) {
 	}
 
 	// Press tab again to go to Logs
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = m.Update(keyMsg("tab"))
 	m = updated
 
 	if m.GetCurrentTab() != TabLogs {
@@ -907,7 +907,7 @@ func TestDetailModel_TabSwitching(t *testing.T) {
 	}
 
 	// Press tab again to wrap to Info
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = m.Update(keyMsg("tab"))
 	m = updated
 
 	if m.GetCurrentTab() != TabInfo {
@@ -922,7 +922,7 @@ func TestDetailModel_TabSwitchingWithShiftTab(t *testing.T) {
 	m.SetSize(80, 40)
 
 	// Press shift+tab to go backwards
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	updated, _ := m.Update(keyMsg("shift+tab"))
 	m = updated
 
 	if m.GetCurrentTab() != TabLogs {
@@ -942,7 +942,7 @@ func TestDetailModel_TabSwitchingWithArrows(t *testing.T) {
 	}
 
 	// Press right arrow - use KeyRight type
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := m.Update(keyMsg("right"))
 	m = updated
 
 	if m.GetCurrentTab() != TabHTTP {
@@ -1069,7 +1069,7 @@ func TestDetailModel_CloseWithEscape(t *testing.T) {
 	m.Show("svc1.default.ctx1")
 	m.SetSize(80, 40)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updated, _ := m.Update(keyMsg("esc"))
 	m = updated
 
 	if m.IsVisible() {
@@ -1083,7 +1083,7 @@ func TestDetailModel_CloseWithQ(t *testing.T) {
 	m.Show("svc1.default.ctx1")
 	m.SetSize(80, 40)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updated, _ := m.Update(keyMsg("q"))
 	m = updated
 
 	if m.IsVisible() {
@@ -1422,7 +1422,7 @@ func TestLogsModel_Update_KeyMsg_J_ScrollDown(t *testing.T) {
 	}
 
 	// Press 'j' to scroll down
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	msg := keyMsg("j")
 	updated, _ := m.Update(msg)
 
 	// Just verify no panic and model is updated
@@ -1442,10 +1442,10 @@ func TestLogsModel_Update_KeyMsg_K_ScrollUp(t *testing.T) {
 	}
 
 	// Go to bottom first
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m.Update(keyMsg("G"))
 
 	// Press 'k' to scroll up - should disable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
+	msg := keyMsg("k")
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1464,7 +1464,7 @@ func TestLogsModel_Update_KeyMsg_G_GotoTop(t *testing.T) {
 	}
 
 	// Press 'g' to go to top - should disable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}
+	msg := keyMsg("g")
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1483,10 +1483,10 @@ func TestLogsModel_Update_KeyMsg_UpperG_GotoBottom(t *testing.T) {
 	}
 
 	// First go to top
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m.Update(keyMsg("g"))
 
 	// Press 'G' to go to bottom - should enable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}
+	msg := keyMsg("G")
 	updated, _ := m.Update(msg)
 
 	if !updated.autoFollow {
@@ -1505,10 +1505,10 @@ func TestLogsModel_Update_KeyMsg_ArrowUp(t *testing.T) {
 	}
 
 	// Go to bottom first to have auto-follow true
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	m.Update(keyMsg("G"))
 
 	// Press up arrow - should disable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyUp}
+	msg := keyMsg("up")
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1527,7 +1527,7 @@ func TestLogsModel_Update_KeyMsg_PageUp(t *testing.T) {
 	}
 
 	// Press pgup - should disable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyPgUp}
+	msg := keyMsg("pgup")
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1546,7 +1546,7 @@ func TestLogsModel_Update_KeyMsg_Home(t *testing.T) {
 	}
 
 	// Press home - should disable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyHome}
+	msg := keyMsg("home")
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1565,10 +1565,10 @@ func TestLogsModel_Update_KeyMsg_End(t *testing.T) {
 	}
 
 	// First go to top
-	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m.Update(keyMsg("home"))
 
 	// Press end - should enable auto-follow
-	msg := tea.KeyMsg{Type: tea.KeyEnd}
+	msg := keyMsg("end")
 	updated, _ := m.Update(msg)
 
 	if !updated.autoFollow {
@@ -1587,7 +1587,7 @@ func TestLogsModel_Update_MouseMsg_WheelUp(t *testing.T) {
 	}
 
 	// Scroll wheel up - should disable auto-follow
-	msg := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+	msg := tea.MouseWheelMsg{Button: tea.MouseWheelUp}
 	updated, _ := m.Update(msg)
 
 	if updated.autoFollow {
@@ -1606,7 +1606,7 @@ func TestLogsModel_Update_NotFocused(_ *testing.T) {
 	}
 
 	// Press 'j' - should not do anything since not focused
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	msg := keyMsg("j")
 	_, _ = m.Update(msg)
 
 	// Just verify no panic
@@ -1617,7 +1617,7 @@ func TestLogsModel_Update_NotReady(_ *testing.T) {
 	// Don't call SetSize, so viewport is not ready
 
 	// Press 'j' - should not panic even though not ready
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	msg := keyMsg("j")
 	_, _ = m.Update(msg)
 
 	// Just verify no panic
@@ -1805,7 +1805,7 @@ func TestDetailModel_UpdateWithReconnectKey(t *testing.T) {
 	m.Show("svc1.default.ctx1")
 	m.SetSize(80, 40)
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := m.Update(keyMsg("r"))
 	m = updated
 
 	// Should return a command that produces ReconnectErroredMsg
@@ -1827,28 +1827,28 @@ func TestDetailModel_UpdateWithVimKeysOnHTTPTab(t *testing.T) {
 	}
 
 	// Test 'j' key (scroll down)
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	updated, _ := m.Update(keyMsg("j"))
 	m = updated
 	if m.httpScrollOffset != 1 {
 		t.Errorf("Expected httpScrollOffset 1 after 'j', got %d", m.httpScrollOffset)
 	}
 
 	// Test 'k' key (scroll up)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	updated, _ = m.Update(keyMsg("k"))
 	m = updated
 	if m.httpScrollOffset != 0 {
 		t.Errorf("Expected httpScrollOffset 0 after 'k', got %d", m.httpScrollOffset)
 	}
 
 	// Test 'G' key (go to bottom)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	updated, _ = m.Update(keyMsg("G"))
 	m = updated
 	if m.httpScrollOffset == 0 {
 		t.Error("Expected httpScrollOffset to be > 0 after 'G'")
 	}
 
 	// Test 'g' key (go to top)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	updated, _ = m.Update(keyMsg("g"))
 	m = updated
 	if m.httpScrollOffset != 0 {
 		t.Errorf("Expected httpScrollOffset 0 after 'g', got %d", m.httpScrollOffset)
@@ -1868,28 +1868,28 @@ func TestDetailModel_UpdateWithArrowKeysOnHTTPTab(t *testing.T) {
 	}
 
 	// Test 'down' key
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ := m.Update(keyMsg("down"))
 	m = updated
 	if m.httpScrollOffset != 1 {
 		t.Errorf("Expected httpScrollOffset 1 after 'down', got %d", m.httpScrollOffset)
 	}
 
 	// Test 'up' key
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = m.Update(keyMsg("up"))
 	m = updated
 	if m.httpScrollOffset != 0 {
 		t.Errorf("Expected httpScrollOffset 0 after 'up', got %d", m.httpScrollOffset)
 	}
 
 	// Test 'pgdown' key
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	updated, _ = m.Update(keyMsg("pgdown"))
 	m = updated
 	if m.httpScrollOffset == 0 {
 		t.Error("Expected httpScrollOffset > 0 after 'pgdown'")
 	}
 
 	// Test 'pgup' key
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	updated, _ = m.Update(keyMsg("pgup"))
 	m = updated
 	// Should scroll up from current position
 }
@@ -2021,11 +2021,11 @@ func TestServicesModel_Update_MouseMsg(_ *testing.T) {
 	m := NewServicesModel(store)
 
 	// Test wheel up
-	wheelUp := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+	wheelUp := tea.MouseWheelMsg{Button: tea.MouseWheelUp}
 	m.Update(wheelUp)
 
 	// Test wheel down
-	wheelDown := tea.MouseMsg{Button: tea.MouseButtonWheelDown}
+	wheelDown := tea.MouseWheelMsg{Button: tea.MouseWheelDown}
 	m.Update(wheelDown)
 }
 
@@ -2034,28 +2034,28 @@ func TestServicesModel_Update_KeyMsg_Filtering(t *testing.T) {
 	m := NewServicesModel(store)
 
 	// Enable filtering
-	slashMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	slashMsg := keyMsg("/")
 	updated, _ := m.Update(slashMsg)
 	if !updated.filtering {
 		t.Error("Expected filtering to be enabled after /")
 	}
 
 	// Type some characters
-	charMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	charMsg := keyMsg("a")
 	updated, _ = updated.Update(charMsg)
 	if updated.filterText != "a" {
 		t.Errorf("Expected filterText 'a', got '%s'", updated.filterText)
 	}
 
 	// Backspace
-	bsMsg := tea.KeyMsg{Type: tea.KeyBackspace}
+	bsMsg := keyMsg("backspace")
 	updated, _ = updated.Update(bsMsg)
 	if updated.filterText != "" {
 		t.Errorf("Expected filterText '', got '%s'", updated.filterText)
 	}
 
 	// Escape to cancel
-	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	escMsg := keyMsg("esc")
 	updated, _ = updated.Update(escMsg)
 	if updated.filtering {
 		t.Error("Expected filtering to be disabled after Escape")
@@ -2067,14 +2067,14 @@ func TestServicesModel_Update_KeyMsg_Enter(t *testing.T) {
 	m := NewServicesModel(store)
 
 	// Enable filtering and type
-	slashMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	slashMsg := keyMsg("/")
 	updated, _ := m.Update(slashMsg)
 
-	charMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}
+	charMsg := keyMsg("t")
 	updated, _ = updated.Update(charMsg)
 
 	// Press enter to apply filter
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	enterMsg := keyMsg("enter")
 	updated, _ = updated.Update(enterMsg)
 	if updated.filtering {
 		t.Error("Expected filtering to be disabled after Enter")
@@ -2087,7 +2087,7 @@ func TestServicesModel_Update_KeyMsg_ToggleBandwidth(t *testing.T) {
 
 	initialBandwidth := m.showBandwidth
 
-	bMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}}
+	bMsg := keyMsg("b")
 	updated, _ := m.Update(bMsg)
 
 	if updated.showBandwidth == initialBandwidth {
@@ -2101,7 +2101,7 @@ func TestServicesModel_Update_KeyMsg_ToggleCompact(t *testing.T) {
 
 	initialCompact := m.compactView
 
-	cMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
+	cMsg := keyMsg("c")
 	updated, _ := m.Update(cMsg)
 
 	if updated.compactView == initialCompact {
@@ -2122,7 +2122,7 @@ func TestServicesModel_Update_KeyMsg_Delete(t *testing.T) {
 	})
 	m.Refresh()
 
-	dMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+	dMsg := keyMsg("d")
 	_, cmd := m.Update(dMsg)
 
 	// If there's a selection, cmd should return a RemoveForwardMsg
@@ -2147,27 +2147,27 @@ func TestServicesModel_Update_KeyMsg_Navigation(_ *testing.T) {
 	m.Refresh()
 
 	// Test g (home)
-	gMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	gMsg := keyMsg("g")
 	m.Update(gMsg)
 
 	// Test G (end)
-	GMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+	GMsg := keyMsg("G")
 	m.Update(GMsg)
 
 	// Test page down
-	pgdnMsg := tea.KeyMsg{Type: tea.KeyPgDown}
+	pgdnMsg := keyMsg("pgdown")
 	m.Update(pgdnMsg)
 
 	// Test page up
-	pgupMsg := tea.KeyMsg{Type: tea.KeyPgUp}
+	pgupMsg := keyMsg("pgup")
 	m.Update(pgupMsg)
 
 	// Test home key
-	homeMsg := tea.KeyMsg{Type: tea.KeyHome}
+	homeMsg := keyMsg("home")
 	m.Update(homeMsg)
 
 	// Test end key
-	endMsg := tea.KeyMsg{Type: tea.KeyEnd}
+	endMsg := keyMsg("end")
 	m.Update(endMsg)
 }
 
@@ -2177,7 +2177,7 @@ func TestServicesModel_Update_KeyMsg_ClearFilter(t *testing.T) {
 	m := NewServicesModel(store)
 
 	// Escape in normal mode clears filter
-	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	escMsg := keyMsg("esc")
 	updated, _ := m.Update(escMsg)
 
 	if store.GetFilter() != "" {
@@ -2225,7 +2225,7 @@ func TestDetailModel_Update_NumberKeyCopy(_ *testing.T) {
 	m.currentTab = TabInfo
 
 	// Press '1' to copy first connect string
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")}
+	msg := keyMsg("1")
 	updated, cmd := m.Update(msg)
 	m = updated
 
@@ -2242,7 +2242,7 @@ func TestDetailModel_Update_NumberKeyOutOfRange(_ *testing.T) {
 	m.currentTab = TabInfo
 
 	// Press '9' - likely out of range for connect strings
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("9")}
+	msg := keyMsg("9")
 	updated, _ := m.Update(msg)
 	m = updated
 
@@ -2259,7 +2259,7 @@ func TestDetailModel_Update_TabSwitchFromLogsStreaming(t *testing.T) {
 	m.logsStreaming = true
 
 	// Press 'tab' to switch away from logs - should stop streaming
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")}
+	msg := keyMsg("tab")
 	updated, cmd := m.Update(msg)
 	m = updated
 
@@ -2280,8 +2280,8 @@ func TestDetailModel_Update_TabSwitchToLogs(t *testing.T) {
 	m.logsLoading = false
 
 	// Press 'tab' twice to get to Logs tab
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+	m.Update(keyMsg("tab"))
+	updated, _ := m.Update(keyMsg("tab"))
 	m = updated
 
 	if m.currentTab != TabLogs {
@@ -2302,7 +2302,7 @@ func TestDetailModel_Update_ShiftTabFromLogsStreaming(t *testing.T) {
 	m.logsStreaming = true
 
 	// Press 'shift+tab' to switch away from logs - should stop streaming
-	msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+	msg := keyMsg("shift+tab")
 	updated, _ := m.Update(msg)
 	m = updated
 
@@ -2326,24 +2326,24 @@ func TestDetailModel_Update_VimScrollOnLogsTab(t *testing.T) {
 	}
 
 	// Test 'j' (scroll down)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m.Update(keyMsg("j"))
 
 	// Test 'k' (scroll up) - should disable auto-follow
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	updated, _ := m.Update(keyMsg("k"))
 	m = updated
 	if m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be false after 'k'")
 	}
 
 	// Test 'g' (go to top) - should disable auto-follow
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	updated, _ = m.Update(keyMsg("g"))
 	m = updated
 	if m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be false after 'g'")
 	}
 
 	// Test 'G' (go to bottom) - should enable auto-follow
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	updated, _ = m.Update(keyMsg("G"))
 	m = updated
 	if !m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be true after 'G'")
@@ -2366,21 +2366,21 @@ func TestDetailModel_Update_ArrowScrollOnLogsTab(t *testing.T) {
 	}
 
 	// Test 'up' (scroll up) - should disable auto-follow
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ := m.Update(keyMsg("up"))
 	m = updated
 	if m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be false after 'up'")
 	}
 
 	// Test 'home' (go to top) - should disable auto-follow
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	updated, _ = m.Update(keyMsg("home"))
 	m = updated
 	if m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be false after 'home'")
 	}
 
 	// Test 'end' (go to bottom) - should enable auto-follow
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	updated, _ = m.Update(keyMsg("end"))
 	m = updated
 	if !m.logsAutoFollow {
 		t.Error("Expected logsAutoFollow to be true after 'end'")
@@ -2396,7 +2396,7 @@ func TestDetailModel_Update_YankKey(t *testing.T) {
 	m.currentTab = TabInfo
 
 	// Press 'y' to yank/copy first connect string
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	msg := keyMsg("y")
 	updated, _ := m.Update(msg)
 	m = updated
 
@@ -2412,7 +2412,7 @@ func TestDetailModel_Update_YankKeyOnHTTPTab(t *testing.T) {
 	m.currentTab = TabHTTP
 
 	// Press 'y' on HTTP tab - should do nothing
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	msg := keyMsg("y")
 	updated, _ := m.Update(msg)
 	m = updated
 
@@ -2432,7 +2432,7 @@ func TestDetailModel_Update_PageDownOnHTTPTab(t *testing.T) {
 	}
 
 	// Test 'ctrl+d' (page down half)
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+d")}
+	msg := keyMsg("ctrl+d")
 	updated, _ := m.Update(msg)
 	m = updated
 
@@ -2455,7 +2455,7 @@ func TestDetailModel_Update_PageUpOnHTTPTab(t *testing.T) {
 	}
 
 	// Test 'ctrl+u' (page up half)
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+u")}
+	msg := keyMsg("ctrl+u")
 	updated, _ := m.Update(msg)
 	m = updated
 

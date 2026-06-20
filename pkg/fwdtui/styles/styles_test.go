@@ -3,8 +3,7 @@ package styles_test
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
 
@@ -70,9 +69,9 @@ func TestStylesRenderLightTheme(t *testing.T) {
 }
 
 func TestThemeSwitchProducesDifferentOutput(t *testing.T) {
-	// Force ANSI256 color profile so escape codes are actually generated
-	lipgloss.SetColorProfile(termenv.ANSI256)
-
+	// In lipgloss v2, Style.Render emits the raw ANSI color codes directly
+	// (color-profile downsampling happens at the Writer layer), so escape
+	// codes are generated without forcing a profile.
 	styles.SetDarkTheme(true)
 	darkResult := styles.HeaderTitleStyle.Render("test")
 
