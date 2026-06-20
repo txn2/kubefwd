@@ -3,8 +3,8 @@ package components
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
 
@@ -31,7 +31,7 @@ func (m *HelpModel) Update(msg tea.Msg) (HelpModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.visible {
 			switch msg.String() {
 			case "?", "q", "esc":

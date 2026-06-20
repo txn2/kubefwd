@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
@@ -167,8 +167,49 @@ func createBrowseModelWithData() BrowseModel {
 	return m
 }
 
-func keyMsg(key string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+// keyMsg builds a Bubble Tea v2 key-press message whose String() matches the
+// given keystroke (e.g. "j", "tab", "enter", "esc", "ctrl+u", "/").
+func keyMsg(key string) tea.KeyPressMsg {
+	switch key {
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc", "escape":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
+	case "right":
+		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "home":
+		return tea.KeyPressMsg{Code: tea.KeyHome}
+	case "end":
+		return tea.KeyPressMsg{Code: tea.KeyEnd}
+	case "pgup":
+		return tea.KeyPressMsg{Code: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
+	case "space":
+		return tea.KeyPressMsg{Code: tea.KeySpace}
+	}
+	// ctrl+<x> chords, e.g. "ctrl+u".
+	if strings.HasPrefix(key, "ctrl+") && len([]rune(key)) == 6 {
+		return tea.KeyPressMsg{Code: rune(key[5]), Mod: tea.ModCtrl}
+	}
+	// Single printable rune.
+	if r := []rune(key); len(r) == 1 {
+		return tea.KeyPressMsg{Code: r[0], Text: key}
+	}
+	// Fallback: treat as literal text input.
+	return tea.KeyPressMsg{Text: key}
 }
 
 // =============================================================================

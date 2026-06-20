@@ -3,8 +3,8 @@ package components
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/evertras/bubble-table/table"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
@@ -118,7 +118,7 @@ func (m *ServicesModel) Init() tea.Cmd {
 }
 
 // handleFilterKeyMsg handles key messages while in filtering mode
-func (m *ServicesModel) handleFilterKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.Cmd) {
+func (m *ServicesModel) handleFilterKeyMsg(msg tea.KeyPressMsg) (ServicesModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "esc":
 		m.filtering = false
@@ -142,7 +142,7 @@ func (m *ServicesModel) handleFilterKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.C
 
 // handleNormalKeyMsg handles key messages in normal (non-filtering) mode
 // Returns the updated model, command, and whether the key was fully handled
-func (m *ServicesModel) handleNormalKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.Cmd, bool) {
+func (m *ServicesModel) handleNormalKeyMsg(msg tea.KeyPressMsg) (ServicesModel, tea.Cmd, bool) {
 	switch msg.String() {
 	case "/":
 		m.filtering = true
@@ -180,13 +180,13 @@ func (m *ServicesModel) handleNormalKeyMsg(msg tea.KeyMsg) (ServicesModel, tea.C
 }
 
 // handleMouseMsg handles mouse messages for scrolling
-func (m *ServicesModel) handleMouseMsg(msg tea.MouseMsg) {
+func (m *ServicesModel) handleMouseMsg(msg tea.MouseWheelMsg) {
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		for range 3 {
 			m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() - 1)
 		}
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		for range 3 {
 			m.table = m.table.WithHighlightedRow(m.table.GetHighlightedRowIndex() + 1)
 		}
@@ -205,10 +205,10 @@ func (m *ServicesModel) Update(msg tea.Msg) (ServicesModel, tea.Cmd) {
 		m.height = msg.Height
 		m.table = m.table.WithTargetWidth(m.width - 2)
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		m.handleMouseMsg(msg)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.filtering {
 			return m.handleFilterKeyMsg(msg)
 		}

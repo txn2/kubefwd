@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
@@ -802,7 +802,7 @@ func TestRootModel_View_Quitting(t *testing.T) {
 	m := createTestRootModel()
 	m.quitting = true
 
-	view := m.View()
+	view := m.View().Content
 	if view != "Shutting down...\n" {
 		t.Errorf("Expected 'Shutting down...' view when quitting, got '%s'", view)
 	}
@@ -812,7 +812,7 @@ func TestRootModel_View_HelpVisible(t *testing.T) {
 	m := createTestRootModel()
 	m.help.Show()
 
-	view := m.View()
+	view := m.View().Content
 	// Help view should contain keyboard shortcuts
 	if !strings.Contains(view, "help") && !strings.Contains(view, "Help") {
 		t.Error("Expected help content in view when help is visible")
@@ -822,7 +822,7 @@ func TestRootModel_View_HelpVisible(t *testing.T) {
 func TestRootModel_View_Normal(t *testing.T) {
 	m := createTestRootModel()
 
-	view := m.View()
+	view := m.View().Content
 
 	// Should contain section titles
 	if !strings.Contains(view, "Services") {
@@ -1089,7 +1089,7 @@ func TestRootModel_Update_WindowSizeMsg(t *testing.T) {
 func TestRootModel_Update_KeyMsg_CtrlC(t *testing.T) {
 	m := createTestRootModel()
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	msg := keyMsg("ctrl+c")
 	model, cmd := m.Update(msg)
 	result := model.(*RootModel)
 
@@ -1104,7 +1104,7 @@ func TestRootModel_Update_KeyMsg_CtrlC(t *testing.T) {
 func TestRootModel_Update_KeyMsg_Q(t *testing.T) {
 	m := createTestRootModel()
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	msg := keyMsg("q")
 	model, cmd := m.Update(msg)
 	result := model.(*RootModel)
 
@@ -1120,11 +1120,11 @@ func TestRootModel_Update_KeyMsg_Q_NotWhileFiltering(t *testing.T) {
 	m := createTestRootModel()
 
 	// Start filtering mode
-	slashMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+	slashMsg := keyMsg("/")
 	m.Update(slashMsg)
 
 	// Now try q - should NOT quit because we're filtering
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	msg := keyMsg("q")
 	model, _ := m.Update(msg)
 	result := model.(*RootModel)
 
@@ -1140,7 +1140,7 @@ func TestRootModel_Update_KeyMsg_Question(t *testing.T) {
 		t.Error("Help should be hidden initially")
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+	msg := keyMsg("?")
 	m.Update(msg)
 
 	if !m.help.IsVisible() {
@@ -1155,7 +1155,7 @@ func TestRootModel_Update_KeyMsg_Tab(t *testing.T) {
 		t.Error("Initial focus should be FocusServices")
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyTab}
+	msg := keyMsg("tab")
 	m.Update(msg)
 
 	if m.focus != FocusLogs {
@@ -1178,7 +1178,7 @@ func TestRootModel_Update_KeyMsg_R_ReconnectErrored(t *testing.T) {
 		return 3
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	msg := keyMsg("r")
 	_, cmd := m.Update(msg)
 
 	if !reconnectCalled {
@@ -1196,7 +1196,7 @@ func TestRootModel_Update_KeyMsg_R_NoErrors(t *testing.T) {
 		return 0 // No errors to reconnect
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	msg := keyMsg("r")
 	_, cmd := m.Update(msg)
 
 	if cmd == nil {
@@ -1211,7 +1211,7 @@ func TestRootModel_Update_KeyMsg_F_ShowBrowse(t *testing.T) {
 		t.Error("Browse should be hidden initially")
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}}
+	msg := keyMsg("f")
 	m.Update(msg)
 
 	if !m.browse.IsVisible() {
@@ -1234,7 +1234,7 @@ func TestRootModel_Update_KeyMsg_Enter_OpenDetail(t *testing.T) {
 	})
 	m.services.Refresh()
 
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	msg := keyMsg("enter")
 	m.Update(msg)
 
 	if m.focus != FocusDetail {
@@ -1247,7 +1247,7 @@ func TestRootModel_Update_HelpCapturesInput(t *testing.T) {
 	m.help.Show()
 
 	// When help is visible, any key should be handled by help
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	msg := keyMsg("q")
 	model, _ := m.Update(msg)
 	result := model.(*RootModel)
 
@@ -1273,7 +1273,7 @@ func TestRootModel_Update_DetailCapturesInput(t *testing.T) {
 	m.detail.Show("svc.ns.ctx.pod.8080")
 
 	// Esc should close detail
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	msg := keyMsg("esc")
 	m.Update(msg)
 
 	if m.detail.IsVisible() {
@@ -1288,7 +1288,7 @@ func TestRootModel_Update_MouseWheelServices(t *testing.T) {
 	m := createTestRootModel()
 	m.focus = FocusServices
 
-	msg := tea.MouseMsg{Button: tea.MouseButtonWheelDown}
+	msg := tea.MouseWheelMsg{Button: tea.MouseWheelDown}
 	model, _ := m.Update(msg)
 
 	// Should not panic and model should be returned
@@ -1301,7 +1301,7 @@ func TestRootModel_Update_MouseWheelLogs(t *testing.T) {
 	m := createTestRootModel()
 	m.focus = FocusLogs
 
-	msg := tea.MouseMsg{Button: tea.MouseButtonWheelUp}
+	msg := tea.MouseWheelMsg{Button: tea.MouseWheelUp}
 	model, _ := m.Update(msg)
 
 	if model == nil {
@@ -1314,8 +1314,8 @@ func TestRootModel_Update_MouseClickServices(t *testing.T) {
 	m.focus = FocusLogs // Start with logs focus
 
 	// Click in services area
-	msg := tea.MouseMsg{
-		Button: tea.MouseButtonLeft,
+	msg := tea.MouseClickMsg{
+		Button: tea.MouseLeft,
 		Y:      m.servicesStartY + 1,
 	}
 	m.Update(msg)
@@ -1330,8 +1330,8 @@ func TestRootModel_Update_MouseClickLogs(t *testing.T) {
 	m.focus = FocusServices // Start with services focus
 
 	// Click in logs area
-	msg := tea.MouseMsg{
-		Button: tea.MouseButtonLeft,
+	msg := tea.MouseClickMsg{
+		Button: tea.MouseLeft,
 		Y:      m.logsStartY + 1,
 	}
 	m.Update(msg)
@@ -2509,8 +2509,8 @@ func TestRootModel_Update_MouseClick_InLogsArea(t *testing.T) {
 	m.logs.SetFocus(false)
 
 	// Simulate click in logs area
-	msg := tea.MouseMsg{
-		Button: tea.MouseButtonLeft,
+	msg := tea.MouseClickMsg{
+		Button: tea.MouseLeft,
 		Y:      m.logsStartY + 1, // Click inside logs area
 	}
 	m.Update(msg)
@@ -2534,8 +2534,8 @@ func TestRootModel_Update_MouseWheel_InLogs(t *testing.T) {
 	m.logs.SetFocus(true)
 
 	// Simulate wheel scroll
-	msg := tea.MouseMsg{
-		Button: tea.MouseButtonWheelDown,
+	msg := tea.MouseWheelMsg{
+		Button: tea.MouseWheelDown,
 	}
 	_, cmd := m.Update(msg)
 
@@ -2548,7 +2548,7 @@ func TestRootModel_Update_KeyMsg_R_NoReconnector(t *testing.T) {
 	m.reconnectErrored = nil
 
 	// Press 'r' with no reconnector set
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	msg := keyMsg("r")
 	_, cmd := m.Update(msg)
 
 	// Should return nil cmd when no reconnector
@@ -2562,7 +2562,7 @@ func TestRootModel_Update_KeyMsg_Tab_CycleFocus(t *testing.T) {
 	m.focus = FocusServices
 
 	// Press tab to cycle focus
-	msg := tea.KeyMsg{Type: tea.KeyTab}
+	msg := keyMsg("tab")
 	m.Update(msg)
 
 	// Focus should change
@@ -2575,7 +2575,7 @@ func TestRootModel_Update_KeyMsg_HelpToggle(t *testing.T) {
 	m := createTestRootModel()
 
 	// Press '?' to toggle help
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}
+	msg := keyMsg("?")
 	m.Update(msg)
 
 	if !m.help.IsVisible() {
@@ -2594,7 +2594,7 @@ func TestRootModel_Update_KeyMsg_Enter_DetailView_NoSelection(t *testing.T) {
 	m.focus = FocusServices
 
 	// No forwards added, so no selection
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	msg := keyMsg("enter")
 	m.Update(msg)
 
 	// Detail should not be visible
@@ -2611,7 +2611,7 @@ func TestRootModel_Update_KeyMsg_BrowseVisible(t *testing.T) {
 	// We can't easily show browse, but we can test the path where it's visible
 
 	// Just verify the code path works without error
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	msg := keyMsg("j")
 	_, _ = m.Update(msg)
 }
 
@@ -2622,7 +2622,7 @@ func TestRootModel_Update_KeyMsg_InLogsPanel(t *testing.T) {
 	m.logs.SetSize(100, 10)
 
 	// Send key to logs panel
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	msg := keyMsg("j")
 	updated, _ := m.Update(msg)
 
 	if updated == nil {
@@ -2734,7 +2734,7 @@ func TestRootModel_Update_KeyMsg_R_WithReconnector_CountZero(t *testing.T) {
 	m.reconnectErrored = func() int { return 0 }
 
 	// Press 'r' when no services have errors
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	msg := keyMsg("r")
 	_, cmd := m.Update(msg)
 
 	// Should return a log command indicating no errors
@@ -2748,7 +2748,7 @@ func TestRootModel_Update_KeyMsg_R_WithReconnector_CountPositive(t *testing.T) {
 	m.reconnectErrored = func() int { return 5 }
 
 	// Press 'r' when services have errors
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}
+	msg := keyMsg("r")
 	_, cmd := m.Update(msg)
 
 	// Should return a log command indicating reconnection
@@ -2762,11 +2762,11 @@ func TestRootModel_Update_KeyMsg_Q_WhileFiltering(t *testing.T) {
 	m.services.SetSize(100, 20)
 
 	// Enter filter mode by simulating '/'
-	filterMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
+	filterMsg := keyMsg("/")
 	m.Update(filterMsg)
 
 	// Now press 'q' - should NOT quit because we're filtering
-	qMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}
+	qMsg := keyMsg("q")
 	_, cmd := m.Update(qMsg)
 
 	// Should not be quitting
@@ -2782,4 +2782,49 @@ func TestRootModel_Update_KeyMsg_Q_WhileFiltering(t *testing.T) {
 			t.Error("Should not return tea.Quit while filtering")
 		}
 	}
+}
+
+// keyMsg builds a Bubble Tea v2 key-press message whose String() matches the
+// given keystroke (e.g. "j", "tab", "enter", "esc", "ctrl+c", "/").
+func keyMsg(key string) tea.KeyPressMsg {
+	switch key {
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc", "escape":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
+	case "right":
+		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "home":
+		return tea.KeyPressMsg{Code: tea.KeyHome}
+	case "end":
+		return tea.KeyPressMsg{Code: tea.KeyEnd}
+	case "pgup":
+		return tea.KeyPressMsg{Code: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
+	case "space":
+		return tea.KeyPressMsg{Code: tea.KeySpace}
+	}
+	// ctrl+<x> chords, e.g. "ctrl+c".
+	if strings.HasPrefix(key, "ctrl+") && len([]rune(key)) == 6 {
+		return tea.KeyPressMsg{Code: rune(key[5]), Mod: tea.ModCtrl}
+	}
+	// Single printable rune.
+	if r := []rune(key); len(r) == 1 {
+		return tea.KeyPressMsg{Code: r[0], Text: key}
+	}
+	// Fallback: treat as literal text input.
+	return tea.KeyPressMsg{Text: key}
 }

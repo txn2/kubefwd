@@ -1,10 +1,15 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	gocolor "image/color"
 
-// color returns a lipgloss.Color, choosing light or dark variant based on the
-// current theme set by SetDarkTheme.
-func color(light, dark string) lipgloss.Color {
+	"charm.land/lipgloss/v2"
+)
+
+// color returns a color.Color, choosing light or dark variant based on the
+// current theme set by SetDarkTheme. In lipgloss v2, lipgloss.Color is a
+// function returning color.Color rather than a string type.
+func color(light, dark string) gocolor.Color {
 	if isDark {
 		return lipgloss.Color(dark)
 	}

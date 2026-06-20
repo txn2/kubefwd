@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
@@ -143,8 +143,8 @@ func (m *DetailModel) SetSize(width, height int) {
 
 	// Resize logs viewport if ready
 	if m.logsViewportReady {
-		m.logsViewport.Width = m.getLogsViewportWidth()
-		m.logsViewport.Height = m.getLogsViewportHeight()
+		m.logsViewport.SetWidth(m.getLogsViewportWidth())
+		m.logsViewport.SetHeight(m.getLogsViewportHeight())
 		m.updateLogsViewportContent()
 	}
 }
@@ -248,7 +248,7 @@ func (m *DetailModel) initLogsViewport() {
 	if m.logsViewportReady {
 		return
 	}
-	m.logsViewport = viewport.New(m.getLogsViewportWidth(), m.getLogsViewportHeight())
+	m.logsViewport = viewport.New(viewport.WithWidth(m.getLogsViewportWidth()), viewport.WithHeight(m.getLogsViewportHeight()))
 	m.logsViewport.MouseWheelEnabled = true
 	m.logsViewportReady = true
 	m.updateLogsViewportContent()
@@ -505,7 +505,7 @@ func (m *DetailModel) handleHomeEnd(key string) (DetailModel, tea.Cmd) {
 }
 
 // handleKeyMsg handles all keyboard input
-func (m *DetailModel) handleKeyMsg(msg tea.KeyMsg) (DetailModel, tea.Cmd) {
+func (m *DetailModel) handleKeyMsg(msg tea.KeyPressMsg) (DetailModel, tea.Cmd) {
 	key := msg.String()
 
 	// Number keys 1-9 for copying connect strings
@@ -535,16 +535,16 @@ func (m *DetailModel) handleKeyMsg(msg tea.KeyMsg) (DetailModel, tea.Cmd) {
 }
 
 // handleMouseMsg handles mouse input
-func (m *DetailModel) handleMouseMsg(msg tea.MouseMsg) (DetailModel, tea.Cmd) {
+func (m *DetailModel) handleMouseMsg(msg tea.MouseWheelMsg) (DetailModel, tea.Cmd) {
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		if m.currentTab == TabHTTP {
 			m.handleHTTPScroll(-3)
 			return *m, nil
 		} else if m.currentTab == TabLogs && m.logsViewportReady {
 			m.logsAutoFollow = false
 		}
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		if m.currentTab == TabHTTP {
 			m.handleHTTPScroll(3)
 			return *m, nil
@@ -564,11 +564,11 @@ func (m *DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		return m.handlePodLogLine(msg.Line)
 	case PodLogsErrorMsg:
 		return m.handlePodLogsError(msg.Error)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		return m.handleMouseMsg(msg)
 	}
 

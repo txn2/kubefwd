@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
@@ -373,13 +373,11 @@ func (m *Manager) Run() error {
 		_ = os.Setenv("TERM", "xterm-256color")
 	}
 
-	// Create the program with mouse support for scrolling
-	// Hold Shift to select text (standard terminal behavior with mouse capture)
-	m.program = tea.NewProgram(
-		m.model,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	// Create the program. In Bubble Tea v2 the alternate screen and mouse
+	// mode are no longer program options; they are set on the tea.View
+	// returned by RootModel.View (see AltScreen and MouseMode there).
+	// Hold Shift to select text (standard terminal behavior with mouse capture).
+	m.program = tea.NewProgram(m.model)
 
 	// Run the program - blocks until quit
 	_, err := m.program.Run()
@@ -462,10 +460,12 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.handleWindowSizeMsg(msg)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
-	case tea.MouseMsg:
-		return m.handleMouseMsg(msg)
+	case tea.MouseWheelMsg:
+		return m.handleMouseWheel(msg)
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
 	case MetricsUpdateMsg:
 		return m, m.handleMetricsUpdateMsg(msg)
 	case KubefwdEventMsg:
@@ -504,8 +504,18 @@ func (m *RootModel) waitForLogLine() tea.Cmd {
 	}
 }
 
-// View renders the UI
-func (m *RootModel) View() string {
+// View renders the UI. In Bubble Tea v2, View returns a tea.View whose
+// AltScreen and MouseMode fields replace the v1 program options
+// tea.WithAltScreen and tea.WithMouseCellMotion.
+func (m *RootModel) View() tea.View {
+	v := tea.NewView(m.renderView())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+// renderView builds the textual content of the UI.
+func (m *RootModel) renderView() string {
 	if m.quitting {
 		return "Shutting down...\n"
 	}
@@ -720,7 +730,7 @@ func (m *RootModel) handleWindowSizeMsg(msg tea.WindowSizeMsg) {
 }
 
 // handleKeyMsg handles keyboard input
-func (m *RootModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *RootModel) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Help modal captures all input when visible
 	if m.help.IsVisible() {
 		m.help, _ = m.help.Update(msg)
@@ -757,7 +767,7 @@ func (m *RootModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleGlobalKeys handles global keyboard shortcuts
-func (m *RootModel) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+func (m *RootModel) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -792,7 +802,7 @@ func (m *RootModel) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 }
 
 // handleFocusedComponentKey routes key to the focused component
-func (m *RootModel) handleFocusedComponentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *RootModel) handleFocusedComponentKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m.focus {
 	case FocusServices:
@@ -814,40 +824,35 @@ func (m *RootModel) handleFocusedComponentKey(msg tea.KeyMsg) (tea.Model, tea.Cm
 	return m, cmd
 }
 
-// handleMouseMsg handles mouse input
-func (m *RootModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+// handleMouseWheel handles mouse wheel scrolling. In Bubble Tea v2 wheel
+// events arrive as a distinct tea.MouseWheelMsg rather than a generic
+// tea.MouseMsg with a wheel button.
+func (m *RootModel) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-
-	// Handle mouse wheel scrolling
-	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
-		var cmd tea.Cmd
-		if m.detail.IsVisible() {
-			m.detail, cmd = m.detail.Update(msg)
+	var cmd tea.Cmd
+	if m.detail.IsVisible() {
+		m.detail, cmd = m.detail.Update(msg)
+		cmds = append(cmds, cmd)
+	} else {
+		switch m.focus {
+		case FocusServices:
+			m.services, cmd = m.services.Update(msg)
 			cmds = append(cmds, cmd)
-		} else {
-			switch m.focus {
-			case FocusServices:
-				m.services, cmd = m.services.Update(msg)
-				cmds = append(cmds, cmd)
-			case FocusLogs:
-				m.logs, cmd = m.logs.Update(msg)
-				cmds = append(cmds, cmd)
-			case FocusDetail:
-				// Detail visible case handled above
-			}
+		case FocusLogs:
+			m.logs, cmd = m.logs.Update(msg)
+			cmds = append(cmds, cmd)
+		case FocusDetail:
+			// Detail visible case handled above
 		}
 	}
-
-	// Handle click for focus switching
-	if msg.Button == tea.MouseButtonLeft {
-		return m.handleMouseClick(msg)
-	}
-
 	return m, tea.Batch(cmds...)
 }
 
 // handleMouseClick handles mouse click events
-func (m *RootModel) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *RootModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft {
+		return m, nil
+	}
 	y := msg.Y
 
 	// Check if click is in Services area
