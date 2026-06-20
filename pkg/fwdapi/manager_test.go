@@ -1034,21 +1034,27 @@ func TestResolveAPIKey_FromEnv(t *testing.T) {
 	os.Setenv("KUBEFWD_API_KEY", "my-fixed-key")
 	defer os.Unsetenv("KUBEFWD_API_KEY")
 
-	key := resolveAPIKey()
+	key, generated := resolveAPIKey()
 	if key != "my-fixed-key" {
 		t.Errorf("Expected 'my-fixed-key', got '%s'", key)
+	}
+	if generated {
+		t.Error("Expected generated=false when key comes from env")
 	}
 }
 
 func TestResolveAPIKey_Generated(t *testing.T) {
 	os.Unsetenv("KUBEFWD_API_KEY")
 
-	key := resolveAPIKey()
+	key, generated := resolveAPIKey()
 	if len(key) != 32 {
 		t.Errorf("Expected 32-char hex string, got length %d", len(key))
 	}
+	if !generated {
+		t.Error("Expected generated=true when KUBEFWD_API_KEY is unset")
+	}
 
-	key2 := resolveAPIKey()
+	key2, _ := resolveAPIKey()
 	if key == key2 {
 		t.Error("Expected different keys on each call")
 	}

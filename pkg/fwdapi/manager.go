@@ -77,6 +77,11 @@ type Manager struct {
 	contexts   []string
 	tuiEnabled bool
 	apiKey     string
+	// apiKeyGenerated is true when no KUBEFWD_API_KEY was set and kubefwd
+	// generated a random key. It controls whether the key is printed to the
+	// console at startup (generated keys must be shown; user-supplied keys
+	// are referenced by env var name and never echoed).
+	apiKeyGenerated bool
 }
 
 // Enable marks API mode as enabled
@@ -109,13 +114,15 @@ func Init(shutdownChan <-chan struct{}, triggerShutdown func(), version string) 
 		return apiManager
 	}
 
+	apiKey, apiKeyGenerated := resolveAPIKey()
 	apiManager = &Manager{
 		stopChan:        make(chan struct{}),
 		doneChan:        make(chan struct{}),
 		startTime:       time.Now(),
 		triggerShutdown: triggerShutdown,
 		version:         version,
-		apiKey:          resolveAPIKey(),
+		apiKey:          apiKey,
+		apiKeyGenerated: apiKeyGenerated,
 	}
 
 	// Listen for external shutdown signal
@@ -378,14 +385,19 @@ func (m *Manager) Run() error {
 
 	log.Infof("Server listening on http://%s (http://%s/)", addr, Hostname)
 	log.Infof("API: http://%s/api  Docs: http://%s/docs", Hostname, Hostname)
-	if m.apiKey != "" {
-		// Print the full key so the user can copy it into API/MCP clients.
-		// This is an interactive, localhost-only dev tool run by the same
-		// user that owns the kubeconfig, so echoing the token to that user's
-		// own console is intended (cf. jupyter/ngrok). Set KUBEFWD_API_KEY to
-		// pin a known key for automation. The CodeQL clear-text-logging alert
-		// is a deliberate false positive here.
-		log.Infof("API key: %s", m.apiKey) // lgtm[go/clear-text-logging]
+	if m.apiKeyGenerated {
+		// kubefwd generated this key, so the user has no other way to learn
+		// it — print the full value so it can be copied into API/MCP clients.
+		// This is an interactive, localhost-only dev tool run by the same user
+		// that owns the kubeconfig, so echoing the token to that user's own
+		// console is intended (cf. jupyter/ngrok). The CodeQL clear-text-logging
+		// alert is a deliberate false positive here.
+		log.Infof("API key (generated): %s", m.apiKey) // lgtm[go/clear-text-logging]
+		log.Infof("Set KUBEFWD_API_KEY to pin your own key instead.")
+	} else if m.apiKey != "" {
+		// The user supplied the key via KUBEFWD_API_KEY. They already know it,
+		// so reference the variable rather than echoing the secret to the log.
+		log.Infof("API key: using KUBEFWD_API_KEY from environment")
 	}
 
 	// Start server in goroutine
@@ -463,13 +475,15 @@ func (m *Manager) APIKey() string {
 	return m.apiKey
 }
 
-func resolveAPIKey() string {
+// resolveAPIKey returns the API key and whether it was randomly generated.
+// generated is false when the key came from KUBEFWD_API_KEY.
+func resolveAPIKey() (key string, generated bool) {
 	if key := os.Getenv("KUBEFWD_API_KEY"); key != "" {
-		return key
+		return key, false
 	}
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic(fmt.Sprintf("failed to generate API key: %v", err))
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), true
 }

@@ -226,7 +226,37 @@ The `--tui` flag is recommended as it lets you visually monitor what your AI is 
 !!! tip "The `-E` flag"
     Always use `sudo -E` to preserve your `KUBECONFIG` environment variable. Without it, kubefwd won't find your cluster configuration.
 
-### 2. Configure Your AI Client
+### 2. Set the API key
+
+The kubefwd REST API requires a Bearer token (see [Authentication](api-reference.md#authentication)),
+and the MCP bridge must present the same key. Pin a known key with `KUBEFWD_API_KEY`
+so both sides agree on it:
+
+```bash
+export KUBEFWD_API_KEY=my-known-key
+sudo -E kubefwd            # API uses this key
+```
+
+The `kubefwd mcp` bridge reads `KUBEFWD_API_KEY` from its environment automatically
+and sends `Authorization: Bearer <key>` on every request. You can also pass it
+explicitly, which overrides the env var:
+
+```bash
+kubefwd mcp --api-key my-known-key
+```
+
+!!! warning "Don't rely on the auto-generated key for MCP"
+    If `KUBEFWD_API_KEY` is unset, kubefwd generates a random key and prints the
+    full value to its own console. The MCP bridge has no way to discover that
+    generated key (the public `/api/health` endpoint never exposes it), so it
+    will connect but every tool call returns `401`. **Always set
+    `KUBEFWD_API_KEY` when using MCP** so both sides share the same key.
+
+When configuring your AI client below, make sure `KUBEFWD_API_KEY` is present in
+the environment the client uses to spawn `kubefwd mcp` (or add `--api-key` to the
+`args`).
+
+### 3. Configure Your AI Client
 
 === "Claude Code (Recommended)"
 

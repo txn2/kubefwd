@@ -26,7 +26,7 @@ Interactive documentation is at `http://kubefwd.internal/docs`.
 | Property | Value |
 |----------|-------|
 | Base URL | `http://kubefwd.internal/api` |
-| Authentication | None (loopback only) |
+| Authentication | Bearer token (all endpoints except `/api/health`) |
 | Response Format | JSON |
 | OpenAPI Spec | `/openapi.yaml` |
 
@@ -52,6 +52,67 @@ Error responses:
   }
 }
 ```
+
+---
+
+## Authentication
+
+Every endpoint **except `/api/health`** requires a Bearer token. Send it in the
+`Authorization` header:
+
+```bash
+curl http://kubefwd.internal/api/services \
+  -H "Authorization: Bearer $KUBEFWD_API_KEY"
+```
+
+Requests with a missing or invalid key get `401 Unauthorized`:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "API key required. Pass via Authorization: Bearer <key>"
+  }
+}
+```
+
+### Getting the key
+
+kubefwd resolves the key at startup from the `KUBEFWD_API_KEY` environment
+variable. If that variable is unset, it generates a random 32-character hex key
+and prints the **full key** to the console when the server starts (this is the
+only way to learn a generated key):
+
+```
+API key (generated): 8f3c2a1b9d4e6f70a1b2c3d4e5f60718
+Set KUBEFWD_API_KEY to pin your own key instead.
+```
+
+To pin a known key — recommended for automation, CI, or the [MCP bridge](mcp-integration.md) —
+set the variable before launching:
+
+```bash
+export KUBEFWD_API_KEY=my-known-key
+sudo -E kubefwd --api
+```
+
+When you supply the key this way, kubefwd does **not** echo it to the console —
+it only logs that the key was read from `KUBEFWD_API_KEY`, since you already
+know its value:
+
+```
+API key: using KUBEFWD_API_KEY from environment
+```
+
+> The API binds to a loopback address (127.2.27.1) and is only reachable from
+> localhost, but the token is still required: any local process could otherwise
+> drive kubefwd against your kubeconfig (it runs as root via `sudo -E`).
+
+> **Note:** The `curl` examples below omit the `Authorization` header for
+> readability. Add `-H "Authorization: Bearer $KUBEFWD_API_KEY"` to every
+> request except `/api/health`.
 
 ---
 
