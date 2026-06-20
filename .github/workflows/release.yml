@@ -15,8 +15,6 @@ jobs:
       packages: write
       id-token: write  # Required for keyless signing with Cosign and SLSA provenance
       attestations: write  # Required for GitHub attestations
-    outputs:
-      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -97,19 +95,35 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false
 
-      - name: Generate artifact hashes
+      - name: Generate artifact checksums
         id: hash
         run: |
           cd dist
-          # Find all release artifacts and generate hashes
-          # Using find to avoid glob expansion issues when files don't exist
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.mcpb" \) -exec sha256sum {} \; > /tmp/hashes.txt
-          if [ -s /tmp/hashes.txt ]; then
-            cat /tmp/hashes.txt | base64 -w0 > /tmp/hashes_b64.txt
-            echo "hashes=$(cat /tmp/hashes_b64.txt)" >> "$GITHUB_OUTPUT"
+          # Find all release artifacts and generate sha256 checksums.
+          # Using find to avoid glob expansion issues when files don't exist.
+          # The checksums file feeds actions/attest-build-provenance below.
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.mcpb" \) -exec sha256sum {} \; > /tmp/checksums.txt
+          if [ -s /tmp/checksums.txt ]; then
+            echo "Checksums generated:"
+            cat /tmp/checksums.txt
+            echo "has_artifacts=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No artifacts found for hashing"
+            echo "No artifacts found for checksums"
+            echo "has_artifacts=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Attest build provenance (SLSA)
+        if: steps.hash.outputs.has_artifacts == 'true'
+        # GitHub-native build provenance attestation. Replaces the SLSA
+        # reusable workflow (generator_generic_slsa3.yml), which was pinned to
+        # v2.0.0 and broke under the runner's Node 20 -> 24 migration (see #528,
+        # superseding the v2.1.0 privacy-check workaround tracked in #471).
+        # This action is actively maintained and Node 24-based. Attestations are
+        # stored in GitHub's attestation API; verify with:
+        #   gh attestation verify <artifact> --repo txn2/kubefwd
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-checksums: /tmp/checksums.txt
 
       - name: Install mcp-publisher
         run: |
@@ -179,18 +193,3 @@ jobs:
 
           # Publish the server to the MCP registry
           mcp-publisher publish
-
-  provenance:
-    needs: [release]
-    if: needs.release.outputs.hashes != ''
-    permissions:
-      actions: read
-      id-token: write
-      contents: write
-    # Pinned to v2.0.0 due to false-positive privacy-check halt in v2.1.0
-    # (slsa-framework/slsa-github-generator#4493). See issue #471.
-    # Re-evaluate when an upstream fix lands.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@5a775b367a56d5bd118a224a811bba288150a563 # v2.0.0
-    with:
-      base64-subjects: "${{ needs.release.outputs.hashes }}"
-      upload-assets: true
