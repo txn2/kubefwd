@@ -101,7 +101,7 @@ jobs:
           cd dist
           # Find all release artifacts and generate sha256 checksums.
           # Using find to avoid glob expansion issues when files don't exist.
-          # The checksums file feeds actions/attest-build-provenance below.
+          # The checksums file feeds actions/attest below.
           find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.mcpb" \) -exec sha256sum {} \; > /tmp/checksums.txt
           if [ -s /tmp/checksums.txt ]; then
             echo "Checksums generated:"
@@ -121,7 +121,7 @@ jobs:
         # This action is actively maintained and Node 24-based. Attestations are
         # stored in GitHub's attestation API; verify with:
         #   gh attestation verify <artifact> --repo txn2/kubefwd
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-checksums: /tmp/checksums.txt
 
