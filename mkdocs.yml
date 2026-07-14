@@ -6,7 +6,7 @@ repo_url: https://github.com/txn2/kubefwd
 repo_name: txn2/kubefwd
 edit_uri: edit/master/docs/
 
-copyright: Copyright &copy; 2018 - 2025 Craig Johnston / Deasil Works, Inc.
+copyright: Copyright &copy; 2018 - 2025 <a href="https://imti.co">Craig Johnston</a> / <a href="https://deasil.works">Deasil Works, Inc.</a> / <a href="https://plexara.io">Plexara</a>
 
 theme:
   name: material

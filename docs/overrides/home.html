@@ -23,8 +23,6 @@
   <div class="rail__meta">
     <span class="rail__rel">v1.x</span>
     <span class="rail__dot" aria-hidden="true">●</span>
-    <span data-clock>·· UTC</span>
-    <span class="rail__dot" aria-hidden="true">●</span>
     <a href="https://txn2.com" class="rail__org">part of <em class="serif">txn2</em>&nbsp;↗</a>
   </div>
   <nav class="rail__nav" aria-label="primary">
@@ -70,7 +68,6 @@
     <h1 class="hero__display">
       <span class="hero__row hero__row--1">
         <em class="serif">kubefwd</em>
-        <span class="hero__chip">v1.x · go</span>
       </span>
       <span class="hero__row hero__row--2">
         <span class="outline">kubernetes</span>
@@ -82,7 +79,7 @@
 
     <div class="hero__intro">
       <p class="hero__lede">
-        <span class="dropcap">k</span>ubefwd port-forwards Kubernetes services in bulk: a single service, a whole namespace, several namespaces at once, or several clusters at once, optionally filtered by label or field selector. Each service it touches gets its own <strong>127.x.x.x</strong> loopback address with the cluster hostname written to <code>/etc/hosts</code>. In-cluster connection strings (<code>http://api:8080</code>, <code>redis-cli -h cache</code>, <code>mysql -h db</code>) resolve and work without modification. Multiple databases on port 3306, multiple gateways on 443. No conflicts, no remapping, no environment-specific config.
+        kubefwd port-forwards Kubernetes services in bulk: a single service, a whole namespace, several namespaces at once, or several clusters at once, optionally filtered by label or field selector. Each service it touches gets its own <strong>127.x.x.x</strong> loopback address with the cluster hostname written to <code>/etc/hosts</code>. In-cluster connection strings (<code>http://api:8080</code>, <code>redis-cli -h cache</code>, <code>mysql -h db</code>) resolve and work without modification. Multiple databases on port 3306, multiple gateways on 443. No conflicts, no remapping, no environment-specific config.
       </p>
       <p class="hero__lede hero__lede--muted">
         Watches Kubernetes events and reconnects automatically on pod churn. Handles headless services with one address per pod, port remapping, custom domain suffixes, and IP reservation. Drive it from an interactive TUI with live traffic and log streaming, a 40+ endpoint REST API, or an MCP server for AI assistants. Apache 2.0, on the <a href="https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd">CNCF Landscape</a> since 2018.
@@ -215,71 +212,57 @@
       </p>
     </header>
 
-    <ol class="stack">
+    <ul class="stack">
       <li class="stack__row">
-        <span class="stack__num">001</span>
         <div class="stack__main">
           <a class="stack__name" href="architecture/#ip-allocation">unique loopback ip per service</a>
           <p class="stack__desc">Each service gets its own <code>127.x.x.x</code> address. Many databases on port 3306, many web services on port 80. No conflicts, no remapping. The local network mirrors the cluster network.</p>
         </div>
-        <span class="stack__tag">network</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row">
-        <span class="stack__num">002</span>
         <div class="stack__main">
           <a class="stack__name" href="advanced-usage/#custom-hosts-file-path">/etc/hosts integration</a>
           <p class="stack__desc">Service names resolve to the assigned loopback IPs through the host file. Any application, any language, no configuration to teach. Backup of the original hosts file is kept at <code>~/hosts.original</code>.</p>
         </div>
-        <span class="stack__tag">dns / hosts</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row">
-        <span class="stack__num">003</span>
         <div class="stack__main">
           <a class="stack__name" href="user-guide/#auto-reconnect">auto-reconnect with backoff</a>
           <p class="stack__desc">Pods restart, kubefwd re-establishes the forward. Exponential backoff from 1s to 5min ceiling. Watch events keep the local state aligned with cluster reality during rolling deploys.</p>
         </div>
-        <span class="stack__tag">runtime</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row">
-        <span class="stack__num">004</span>
         <div class="stack__main">
           <a class="stack__name" href="user-guide/#interface-overview">interactive tui</a>
           <p class="stack__desc">Bubble Tea TUI with live bandwidth sparklines, pod log streaming, and HTTP request detection. Filter, navigate, reconnect, all from the keyboard. Full help overlay on <code>?</code>.</p>
         </div>
-        <span class="stack__tag">tui</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row">
-        <span class="stack__num">005</span>
         <div class="stack__main">
           <a class="stack__name" href="api-reference/">rest api · 40+ endpoints</a>
           <p class="stack__desc">Add namespaces, register services, query metrics, stream SSE events. Drives editors, CI tooling, and any process that wants to script local cluster access.</p>
         </div>
-        <span class="stack__tag">api</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row">
-        <span class="stack__num">006</span>
         <div class="stack__main">
           <a class="stack__name" href="mcp-integration/">mcp server for ai clients</a>
           <p class="stack__desc">Drop-in MCP server. Claude, Cursor, and any MCP-capable assistant can connect, browse cluster services, and forward what your task needs. Talk about the work, not the tooling.</p>
         </div>
-        <span class="stack__tag">mcp</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
       <li class="stack__row stack__row--more">
-        <span class="stack__num">···</span>
         <div class="stack__main">
           <a class="stack__name" href="advanced-usage/">multi-namespace, multi-cluster, port mapping, label selectors, headless services, ip reservation</a>
           <p class="stack__desc">Full feature surface in advanced usage.</p>
         </div>
-        <span class="stack__tag">+ more</span>
         <span class="stack__year" aria-hidden="true">↗</span>
       </li>
-    </ol>
+    </ul>
   </section>
 
   {# CODA / sister projects, context #}
@@ -343,7 +326,7 @@
       <p class="home-footer__label">txn2 / org</p>
       <p class="home-footer__text"><a href="https://txn2.com">txn2.com&nbsp;↗</a><br>
       <span class="home-footer__links__sub">canonical home of the txn2 open source organization</span></p>
-      <p class="home-footer__mono">apache 2.0 license <span class="dot">·</span> <span data-clock>·· UTC</span></p>
+      <p class="home-footer__mono">apache 2.0 license</p>
     </div>
   </div>
   <div class="home-footer__base">
@@ -351,32 +334,4 @@
     <p class="home-footer__base__tag"><a href="https://txn2.com">design · txn2.com&nbsp;↗</a></p>
   </div>
 </footer>
-{% endblock %}
-
-{% block scripts %}
-{{ super() }}
-<script>
-  // Live UTC clock for rail/footer.
-  // Guarded against duplicate registration: Material's instant-nav rehydrates
-  // the body on every navigation back to the homepage; without this guard a
-  // fresh setInterval handle leaks each visit.
-  (function () {
-    if (window.__kubefwdClock) {
-      window.__kubefwdClock.tick();
-      return;
-    }
-    function tick() {
-      var now = new Date();
-      var hh = String(now.getUTCHours()).padStart(2, '0');
-      var mm = String(now.getUTCMinutes()).padStart(2, '0');
-      var stamp = hh + ':' + mm + ' UTC';
-      document.querySelectorAll('[data-clock]').forEach(function (el) {
-        el.textContent = stamp;
-      });
-    }
-    tick();
-    var handle = setInterval(tick, 30 * 1000);
-    window.__kubefwdClock = { tick: tick, handle: handle };
-  })();
-</script>
 {% endblock %}
