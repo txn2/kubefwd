@@ -1,5 +1,7 @@
 # kubefwd (Kube Forward)
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.txn2%2Fkubefwd.svg)](https://mcptoplist.com/server/io.github.txn2%2Fkubefwd)
+
 ![kubefwd - kubernetes bulk port forwarding](kubefwd-mast2.jpg)
 
 [![CNCF Landscape](https://img.shields.io/badge/CNCF%20Landscape-5699C6?logo=cncf&logoColor=fff)](https://landscape.cncf.io/?item=app-definition-and-development--application-definition-image-build--kubefwd)
