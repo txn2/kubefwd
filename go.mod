@@ -9,7 +9,7 @@ require (
 	github.com/bep/debounce v1.2.1
 	github.com/evertras/bubble-table v0.22.3
 	github.com/gin-gonic/gin v1.12.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
