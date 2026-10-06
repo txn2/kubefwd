@@ -16,13 +16,13 @@ require (
 	github.com/txn2/txeh v1.8.1
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
 	k8s.io/cli-runtime v0.37.0
 	k8s.io/client-go v0.37.0
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.37.0
-	k8s.io/streaming v0.37.0
+	k8s.io/streaming v0.37.1
 )
 
 require (
