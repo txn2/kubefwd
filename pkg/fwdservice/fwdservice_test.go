@@ -163,9 +163,10 @@ func TestGetPodsForService_FiltersByPhase(t *testing.T) {
 	}, false)
 
 	svcFwd := &ServiceFWD{
-		ClientSet:        clientset,
-		Svc:              svc,
-		PodLabelSelector: "app=test",
+		NamespaceServiceLock: &sync.Mutex{},
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
 	}
 
 	pods := svcFwd.GetPodsForService()
@@ -209,9 +210,10 @@ func TestGetPodsForService_NoPodsFound(t *testing.T) {
 	}, false)
 
 	svcFwd := &ServiceFWD{
-		ClientSet:        clientset,
-		Svc:              svc,
-		PodLabelSelector: "app=nonexistent",
+		NamespaceServiceLock: &sync.Mutex{},
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=nonexistent",
 	}
 
 	pods := svcFwd.GetPodsForService()
@@ -240,9 +242,10 @@ func TestGetPodsForService_OnlyRunningPods(t *testing.T) {
 	}, false)
 
 	svcFwd := &ServiceFWD{
-		ClientSet:        clientset,
-		Svc:              svc,
-		PodLabelSelector: "app=test",
+		NamespaceServiceLock: &sync.Mutex{},
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
 	}
 
 	pods := svcFwd.GetPodsForService()
@@ -2172,5 +2175,245 @@ func TestBuildServiceHostname(t *testing.T) {
 				t.Errorf("buildServiceHostname() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// ============================================================================
+// Service spec update tests (txn2/kubefwd#615)
+// ============================================================================
+
+// newTestServiceFWD builds a ServiceFWD wired to a fake clientset, a mock hosts
+// file and an immediate debouncer, as the sync tests above do.
+func newTestServiceFWD(t *testing.T, clientset *fake.Clientset, svc *v1.Service, restClient *restclient.RESTClient) *ServiceFWD {
+	t.Helper()
+	hosts, err := txeh.NewHosts(&txeh.HostsConfig{})
+	if err != nil {
+		t.Fatalf("Failed to create txeh.Hosts: %v", err)
+	}
+	return &ServiceFWD{
+		ClientSet:            clientset,
+		Svc:                  svc,
+		PodLabelSelector:     "app=test",
+		Context:              "test-context",
+		Namespace:            svc.Namespace,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+		Hostfile:             &fwdport.HostFileWithLock{Hosts: hosts},
+		SyncDebouncer:        (&mockDebouncer{immediate: true}).debounce,
+		DoneChannel:          make(chan struct{}),
+		RESTClient:           restClient,
+	}
+}
+
+// stubForward registers a forward that was "started" before the test and
+// completes its shutdown the way PortForward() does: DoneChan closes once the
+// forward is stopped and its cleanup (hosts entries, loopback alias) has run.
+func stubForward(svcFwd *ServiceFWD, podName, localPort, podPort string, cleanup time.Duration) *fwdport.PortForwardOpts {
+	pfo := &fwdport.PortForwardOpts{
+		Service:        svcFwd.Svc.Name,
+		PodName:        podName,
+		LocalPort:      localPort,
+		PodPort:        podPort,
+		ManualStopChan: make(chan struct{}),
+		DoneChan:       make(chan struct{}),
+	}
+	svcFwd.PortForwards[svcFwd.Svc.Name+"."+podName+"."+localPort] = pfo
+	go func() {
+		<-pfo.ManualStopChan
+		time.Sleep(cleanup)
+		close(pfo.DoneChan)
+	}()
+	return pfo
+}
+
+// waitForReplacementForward polls until key maps to a forward other than old,
+// or the timeout passes.
+func waitForReplacementForward(svcFwd *ServiceFWD, key string, old *fwdport.PortForwardOpts, timeout time.Duration) *fwdport.PortForwardOpts {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		svcFwd.NamespaceServiceLock.Lock()
+		pfo := svcFwd.PortForwards[key]
+		svcFwd.NamespaceServiceLock.Unlock()
+		if pfo != nil && pfo != old {
+			return pfo
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+// TestUpdateService_RebuildsForwardsFromNewPorts covers the bug in #615: a
+// targetPort change keeps the port count, and the forward built from the old
+// ports must be replaced by one built from the new ones.
+func TestUpdateService_RebuildsForwardsFromNewPorts(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	labels := map[string]string{"app": "test"}
+	clientset := fake.NewClientset(createTestPod("running-pod", "default", v1.PodRunning, labels))
+
+	oldSvc := createTestService("test-svc", "default", []v1.ServicePort{
+		{Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: v1.ProtocolTCP},
+	}, false)
+	oldSvc.Spec.Selector = labels
+	newSvc := oldSvc.DeepCopy()
+	newSvc.Spec.Ports[0].TargetPort = intstr.FromInt32(9090)
+
+	svcFwd := newTestServiceFWD(t, clientset, oldSvc, restClient)
+	old := stubForward(svcFwd, "running-pod", "80", "8080", 0)
+
+	svcFwd.UpdateService(newSvc)
+
+	select {
+	case <-old.ManualStopChan:
+	default:
+		t.Error("Expected the forward built from the old ports to be stopped")
+	}
+
+	rebuilt := waitForReplacementForward(svcFwd, "test-svc.running-pod.80", old, 2*time.Second)
+	if rebuilt == nil {
+		t.Fatal("Expected a forward to be rebuilt for the pod")
+	}
+	if rebuilt.PodPort != "9090" {
+		t.Errorf("Expected the rebuilt forward to target port 9090, got %q", rebuilt.PodPort)
+	}
+}
+
+// TestUpdateService_SelectsPodsWithTheNewSelector checks that pod selection
+// follows the updated spec, not the selector seen at registration.
+func TestUpdateService_SelectsPodsWithTheNewSelector(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	clientset := fake.NewClientset(
+		createTestPod("test-pod", "default", v1.PodRunning, map[string]string{"app": "test"}),
+		createTestPod("other-pod", "default", v1.PodRunning, map[string]string{"app": "other"}),
+	)
+
+	oldSvc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, false)
+	oldSvc.Spec.Selector = map[string]string{"app": "test"}
+	newSvc := oldSvc.DeepCopy()
+	newSvc.Spec.Selector = map[string]string{"app": "other"}
+
+	svcFwd := newTestServiceFWD(t, clientset, oldSvc, restClient)
+	svcFwd.UpdateService(newSvc)
+
+	if waitForReplacementForward(svcFwd, "test-svc.other-pod.80", nil, 2*time.Second) == nil {
+		t.Error("Expected the pod matched by the new selector to be forwarded")
+	}
+	svcFwd.NamespaceServiceLock.Lock()
+	_, oldSelection := svcFwd.PortForwards["test-svc.test-pod.80"]
+	svcFwd.NamespaceServiceLock.Unlock()
+	if oldSelection {
+		t.Error("Expected the pod matched only by the old selector not to be forwarded")
+	}
+}
+
+// TestUpdateService_ForwardsEveryPodOnceHeadless checks that the headless
+// mode follows the updated spec: every pod gets a forward, not just one.
+func TestUpdateService_ForwardsEveryPodOnceHeadless(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	restClient, restCleanup := setupMockRESTClient()
+	defer restCleanup()
+
+	labels := map[string]string{"app": "test"}
+	clientset := fake.NewClientset(
+		createTestPod("pod-a", "default", v1.PodRunning, labels),
+		createTestPod("pod-b", "default", v1.PodRunning, labels),
+	)
+
+	oldSvc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, false)
+	oldSvc.Spec.Selector = labels
+	newSvc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, true)
+	newSvc.Spec.Selector = labels
+
+	svcFwd := newTestServiceFWD(t, clientset, oldSvc, restClient)
+	svcFwd.UpdateService(newSvc)
+
+	for _, key := range []string{"pod-a.test-svc.pod-a.80", "pod-b.test-svc.pod-b.80"} {
+		if waitForReplacementForward(svcFwd, key, nil, 2*time.Second) == nil {
+			t.Errorf("Expected a per-pod forward %s once the Service is headless", key)
+		}
+	}
+}
+
+// TestUpdateService_WaitsForOldForwardsToStopBeforeResync guards the ordering
+// the rebuild depends on: the replacements register the same hostnames and
+// loopback IP, so the old forwards must finish their cleanup first.
+func TestUpdateService_WaitsForOldForwardsToStopBeforeResync(t *testing.T) {
+	cleanup := setupMockInterface()
+	defer cleanup()
+
+	svc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, false)
+	svcFwd := newTestServiceFWD(t, fake.NewClientset(), svc, nil)
+	old := stubForward(svcFwd, "old-pod", "80", "8080", 100*time.Millisecond)
+
+	oldDoneAtSync := false
+	svcFwd.SyncDebouncer = func(f func()) {
+		select {
+		case <-old.DoneChan:
+			oldDoneAtSync = true
+		default:
+		}
+		f()
+	}
+
+	svcFwd.UpdateService(svc.DeepCopy())
+
+	if !oldDoneAtSync {
+		t.Error("Expected the resync to start only after the old forward finished its cleanup")
+	}
+}
+
+// TestUpdateService_SkipsResyncWhenShuttingDown makes sure an update racing
+// with the Service's removal does not start forwards for a removed Service.
+func TestUpdateService_SkipsResyncWhenShuttingDown(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, false)
+	svcFwd := newTestServiceFWD(t, fake.NewClientset(), svc, nil)
+	close(svcFwd.DoneChannel)
+
+	synced := false
+	svcFwd.SyncDebouncer = func(f func()) {
+		synced = true
+		f()
+	}
+
+	svcFwd.UpdateService(svc.DeepCopy())
+
+	if synced {
+		t.Error("Expected no resync for a Service that is shutting down")
+	}
+}
+
+// TestRemoveOwnForward_KeepsReplacement covers the exit path of a forward's
+// goroutine: a rebuild may already have registered a replacement under the
+// same key, and the stale forward's exit must not unregister it.
+func TestRemoveOwnForward_KeepsReplacement(t *testing.T) {
+	svc := createTestService("test-svc", "default", []v1.ServicePort{{Port: 80}}, false)
+	svcFwd := &ServiceFWD{
+		Svc:                  svc,
+		PortForwards:         make(map[string]*fwdport.PortForwardOpts),
+		NamespaceServiceLock: &sync.Mutex{},
+	}
+	old := &fwdport.PortForwardOpts{Service: "test-svc", PodName: "pod", LocalPort: "80"}
+	replacement := &fwdport.PortForwardOpts{Service: "test-svc", PodName: "pod", LocalPort: "80"}
+	svcFwd.PortForwards["test-svc.pod.80"] = replacement
+
+	svcFwd.removeOwnForward(old)
+	if svcFwd.PortForwards["test-svc.pod.80"] != replacement {
+		t.Error("Expected a stale forward's exit to leave its replacement registered")
+	}
+
+	svcFwd.removeOwnForward(replacement)
+	if _, found := svcFwd.PortForwards["test-svc.pod.80"]; found {
+		t.Error("Expected a forward's exit to remove its own entry")
 	}
 }
