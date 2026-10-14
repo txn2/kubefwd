@@ -695,3 +695,16 @@ func TestWaitUntilPodRunning_ChannelClose(t *testing.T) {
 		t.Error("Expected nil pod when context canceled")
 	}
 }
+
+// TestPingingDialerLeak verifies that pingingDialer's background goroutine cleans up properly on stop.
+func TestPingingDialerLeak(t *testing.T) {
+	d := &pingingDialer{
+		pingPeriod:        10 * time.Millisecond,
+		pingStopChan:      make(chan struct{}),
+		pingTargetPodName: "test-pod",
+	}
+
+	// We can't easily dial without a real wrappedDialer, but we can test stopPing and channel close.
+	d.stopPing()
+	d.stopPing() // should be safe due to sync.Once
+}

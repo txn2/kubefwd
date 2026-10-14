@@ -311,19 +311,16 @@ type pingingDialer struct {
 	pingPeriod        time.Duration
 	pingStopChan      chan struct{}
 	pingTargetPodName string
+	stopOnce          sync.Once
 }
 
-func (p pingingDialer) stopPing() {
-	select {
-	case p.pingStopChan <- struct{}{}:
-		// Signal sent successfully
-	case <-time.After(100 * time.Millisecond):
-		// Timeout - ping goroutine is blocked or dead, continue cleanup anyway
-		log.Debugf("Ping stop signal timed out for %s, continuing cleanup", p.pingTargetPodName)
-	}
+func (p *pingingDialer) stopPing() {
+	p.stopOnce.Do(func() {
+		close(p.pingStopChan)
+	})
 }
 
-func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
+func (p *pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
 	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial(protocols...)
 	if dialErr != nil {
 		log.Warnf("Ping process will not be performed for %s, cannot dial", p.pingTargetPodName)
@@ -332,9 +329,12 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 		if streamConnection == nil || dialErr != nil {
 			return
 		}
+		ticker := time.NewTicker(p.pingPeriod)
+		defer ticker.Stop()
+
 		for {
 			select {
-			case <-time.After(p.pingPeriod):
+			case <-ticker.C:
 				if pingStream, err := streamConnection.CreateStream(nil); err == nil {
 					_ = pingStream.Reset()
 				}
