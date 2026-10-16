@@ -579,33 +579,6 @@ func TestAddHosts_HostnameVariations(t *testing.T) {
 	}
 }
 
-// TestPingingDialer_StopPing tests that ping channel can be closed without blocking
-func TestPingingDialer_StopPing(t *testing.T) {
-	stopChan := make(chan struct{})
-
-	// Close the channel directly (simulating stopPing behavior)
-	done := make(chan struct{})
-	go func() {
-		close(stopChan)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Good - channel closed without blocking
-	case <-time.After(100 * time.Millisecond):
-		t.Error("Channel close blocked for too long")
-	}
-
-	// Verify channel is closed
-	select {
-	case <-stopChan:
-		// Good - channel is closed
-	default:
-		t.Error("Expected stopChan to be closed")
-	}
-}
-
 // TestPortForwardOpts_Fields tests that all expected fields are accessible
 func TestPortForwardOpts_Fields(t *testing.T) {
 	hosts, _ := txeh.NewHosts(&txeh.HostsConfig{})
