@@ -6,6 +6,7 @@ package fwdns
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -735,7 +736,9 @@ func (w *NamespaceWatcher) deleteServiceHandler(obj interface{}) {
 	fwdsvcregistry.RemoveByName(svc.Name + "." + svc.Namespace + "." + w.context)
 }
 
-// updateServiceHandler handles service update events
+// updateServiceHandler handles service update events. A change to the ports
+// (targetPort included) or to the selector rebuilds the service's forwards from
+// the new spec; status and metadata updates are ignored.
 func (w *NamespaceWatcher) updateServiceHandler(oldObj interface{}, newObj interface{}) {
 	oldSvc, oldOk := oldObj.(*v1.Service)
 	newSvc, newOk := newObj.(*v1.Service)
@@ -744,21 +747,35 @@ func (w *NamespaceWatcher) updateServiceHandler(oldObj interface{}, newObj inter
 		return
 	}
 
-	// Check if selector or ports changed
 	oldSelector := labels.Set(oldSvc.Spec.Selector).AsSelector().String()
 	newSelector := labels.Set(newSvc.Spec.Selector).AsSelector().String()
 	selectorChanged := oldSelector != newSelector
-	portsChanged := len(oldSvc.Spec.Ports) != len(newSvc.Spec.Ports)
+	portsChanged := !reflect.DeepEqual(oldSvc.Spec.Ports, newSvc.Spec.Ports)
 
-	if selectorChanged || portsChanged {
-		key := newSvc.Name + "." + newSvc.Namespace + "." + w.context
-		log.Infof("Service %s updated (selector=%v, ports=%v), triggering resync",
-			key, selectorChanged, portsChanged)
+	if !selectorChanged && !portsChanged {
+		return
+	}
 
-		// Find and resync the service
-		if svcfwd := fwdsvcregistry.Get(key); svcfwd != nil {
-			svcfwd.SyncPodForwards(true) // force=true
+	key := newSvc.Name + "." + newSvc.Namespace + "." + w.context
+
+	switch {
+	case newSelector == "":
+		// Nothing left to forward to: treat it like a deletion.
+		log.Warnf("Service %s updated without a Pod selector, stopping its forwards", key)
+		fwdsvcregistry.RemoveByName(key)
+	case oldSelector == "":
+		// addServiceHandler skipped it for lack of a selector; it has one now.
+		w.addServiceHandler(newObj)
+	default:
+		svcfwd := fwdsvcregistry.Get(key)
+		if svcfwd == nil {
+			return
 		}
+		log.Infof("Service %s updated (selector=%v, ports=%v), rebuilding its forwards",
+			key, selectorChanged, portsChanged)
+		// Stopping the old forwards waits for their cleanup; keep that off the
+		// informer's event loop.
+		go svcfwd.UpdateService(newSvc)
 	}
 }
 

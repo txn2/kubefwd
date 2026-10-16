@@ -244,9 +244,9 @@ func TestWaitUntilPodRunning_PodNotFound(t *testing.T) {
 	}
 }
 
-// TestWaitUntilPodRunning_WatchError tests handling of watch ERROR event
-func TestWaitUntilPodRunning_WatchError(t *testing.T) {
-	pod := &v1.Pod{
+// pendingPod returns a Pending test pod.
+func pendingPod() *v1.Pod {
+	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
@@ -256,11 +256,39 @@ func TestWaitUntilPodRunning_WatchError(t *testing.T) {
 			Phase: v1.PodPending,
 		},
 	}
+}
 
+// watchSequence hands out a fresh fake watcher per Watch call and records
+// them, so a test can drive one watch to fail and the next one to succeed.
+func watchSequence(clientset *fake.Clientset) <-chan *watch.FakeWatcher {
+	watchers := make(chan *watch.FakeWatcher, 8)
+	clientset.PrependWatchReactor("pods", func(k8stesting.Action) (bool, watch.Interface, error) {
+		w := watch.NewFakeWithChanSize(2, false)
+		watchers <- w
+		return true, w, nil
+	})
+	return watchers
+}
+
+// nextWatcher waits for the wait loop to open another watch.
+func nextWatcher(t *testing.T, watchers <-chan *watch.FakeWatcher) *watch.FakeWatcher {
+	t.Helper()
+	select {
+	case w := <-watchers:
+		return w
+	case <-time.After(5 * time.Second):
+		t.Fatal("Expected a new watch to be opened")
+		return nil
+	}
+}
+
+// TestWaitUntilPodRunning_WatchError_Rewatches tests that an ERROR event from
+// the API server (an expired or not yet served resourceVersion, typically) does
+// not fail the forward: the pod is read again and a fresh watch is opened.
+func TestWaitUntilPodRunning_WatchError_Rewatches(t *testing.T) {
+	pod := pendingPod()
 	clientset := fake.NewClientset(pod)
-	fakeWatcher := watch.NewFake()
-
-	clientset.PrependWatchReactor("pods", k8stesting.DefaultWatchReactor(fakeWatcher, nil))
+	watchers := watchSequence(clientset)
 
 	pfo := &PortForwardOpts{
 		ClientSet: clientset,
@@ -282,24 +310,113 @@ func TestWaitUntilPodRunning_WatchError(t *testing.T) {
 		returnedPod, err = pfo.WaitUntilPodRunning(stopCh)
 	}()
 
-	// Give time for watch to start
-	time.Sleep(50 * time.Millisecond)
-
-	// Send error event
-	fakeWatcher.Error(&metav1.Status{
+	first := nextWatcher(t, watchers)
+	first.Error(&metav1.Status{
 		Status:  metav1.StatusFailure,
-		Message: "watch error",
+		Reason:  metav1.StatusReasonExpired,
+		Message: "too old resource version: 1 (2)",
 	})
+
+	second := nextWatcher(t, watchers)
+	runningPod := pod.DeepCopy()
+	runningPod.Status.Phase = v1.PodRunning
+	second.Modify(runningPod)
 
 	wg.Wait()
 
-	// Should return an error for ERROR event type
-	if err == nil {
-		t.Error("Expected error for watch ERROR event")
+	if err != nil {
+		t.Fatalf("Expected the watch to be re-established after an ERROR event, got: %v", err)
+	}
+	if returnedPod == nil || returnedPod.Status.Phase != v1.PodRunning {
+		t.Fatal("Expected the Running pod to be returned")
+	}
+}
+
+// TestWaitUntilPodRunning_WatchClosed_Rewatches tests that a watch stream the
+// API server closes before the pod is Running is re-established.
+func TestWaitUntilPodRunning_WatchClosed_Rewatches(t *testing.T) {
+	pod := pendingPod()
+	clientset := fake.NewClientset(pod)
+	watchers := watchSequence(clientset)
+
+	pfo := &PortForwardOpts{
+		ClientSet: clientset,
+		Namespace: "default",
+		PodName:   "test-pod",
+		Timeout:   10,
 	}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	var wg sync.WaitGroup
+	var returnedPod *v1.Pod
+	var err error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		returnedPod, err = pfo.WaitUntilPodRunning(stopCh)
+	}()
+
+	first := nextWatcher(t, watchers)
+	first.Stop() // the API server closed the stream
+
+	second := nextWatcher(t, watchers)
+	runningPod := pod.DeepCopy()
+	runningPod.Status.Phase = v1.PodRunning
+	second.Modify(runningPod)
+
+	wg.Wait()
+
+	if err != nil {
+		t.Fatalf("Expected the watch to be re-established after the stream closed, got: %v", err)
+	}
+	if returnedPod == nil || returnedPod.Status.Phase != v1.PodRunning {
+		t.Fatal("Expected the Running pod to be returned")
+	}
+}
+
+// TestWaitUntilPodRunning_WatchError_TimesOut tests that a watch failing on
+// every attempt still ends the wait at the timeout, as (nil, nil) like any
+// other timeout.
+func TestWaitUntilPodRunning_WatchError_TimesOut(t *testing.T) {
+	pod := pendingPod()
+	clientset := fake.NewClientset(pod)
+
+	attempts := 0
+	clientset.PrependWatchReactor("pods", func(k8stesting.Action) (bool, watch.Interface, error) {
+		attempts++
+		w := watch.NewFakeWithChanSize(1, false)
+		w.Error(&metav1.Status{Status: metav1.StatusFailure, Message: "watch error"})
+		return true, w, nil
+	})
+
+	pfo := &PortForwardOpts{
+		ClientSet: clientset,
+		Namespace: "default",
+		PodName:   "test-pod",
+		Timeout:   2,
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	start := time.Now()
+	returnedPod, err := pfo.WaitUntilPodRunning(stopCh)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("Expected nil error at the timeout, got: %v", err)
+	}
 	if returnedPod != nil {
-		t.Error("Expected nil pod for watch ERROR event")
+		t.Error("Expected nil pod at the timeout")
+	}
+	if elapsed < 1900*time.Millisecond || elapsed > 4*time.Second {
+		t.Errorf("Expected the wait to end at the 2s timeout, took: %v", elapsed)
+	}
+	if attempts < 2 {
+		t.Errorf("Expected the watch to be retried until the timeout, got %d attempt(s)", attempts)
 	}
 }
 
