@@ -308,24 +308,30 @@ type PortForwardOpts struct {
 	stopOnce sync.Once // Ensures ManualStopChan is closed exactly once
 }
 
+// pingingDialer wraps a dialer and keeps each dialed connection alive by
+// opening and resetting a stream every pingPeriod. Use it through a pointer:
+// stopPing closes pingStopChan once, which ends every ping goroutine this
+// dialer started.
 type pingingDialer struct {
 	wrappedDialer     httpstream.Dialer
 	pingPeriod        time.Duration
 	pingStopChan      chan struct{}
 	pingTargetPodName string
+	stopOnce          sync.Once
 }
 
-func (p pingingDialer) stopPing() {
-	select {
-	case p.pingStopChan <- struct{}{}:
-		// Signal sent successfully
-	case <-time.After(100 * time.Millisecond):
-		// Timeout - ping goroutine is blocked or dead, continue cleanup anyway
-		log.Debugf("Ping stop signal timed out for %s, continuing cleanup", p.pingTargetPodName)
-	}
+// stopPing ends every ping goroutine started by Dial, including one that is
+// inside CreateStream at the time (it exits when CreateStream returns). Safe
+// to call more than once. Closing the channel replaces a send with a timeout,
+// which left a goroutine parked forever when the ping was in flight on a dead
+// connection, e.g. after the machine slept (#614).
+func (p *pingingDialer) stopPing() {
+	p.stopOnce.Do(func() {
+		close(p.pingStopChan)
+	})
 }
 
-func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
+func (p *pingingDialer) Dial(protocols ...string) (httpstream.Connection, string, error) {
 	streamConn, streamProtocolVersion, dialErr := p.wrappedDialer.Dial(protocols...)
 	if dialErr != nil {
 		log.Warnf("Ping process will not be performed for %s, cannot dial", p.pingTargetPodName)
@@ -334,14 +340,31 @@ func (p pingingDialer) Dial(protocols ...string) (httpstream.Connection, string,
 		if streamConnection == nil || dialErr != nil {
 			return
 		}
+		ticker := time.NewTicker(p.pingPeriod)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-time.After(p.pingPeriod):
+			case <-ticker.C:
+				// Re-check before pinging: a stream created on a connection
+				// that is shutting down can be left registered in spdystream
+				// and hold the connection open.
+				select {
+				case <-p.pingStopChan:
+					log.Debugf("Ping process stopped for %s", p.pingTargetPodName)
+					return
+				case <-streamConnection.CloseChan():
+					log.Debugf("Ping process ended for %s, connection closed", p.pingTargetPodName)
+					return
+				default:
+				}
 				if pingStream, err := streamConnection.CreateStream(nil); err == nil {
 					_ = pingStream.Reset()
 				}
 			case <-p.pingStopChan:
-				log.Debug(fmt.Sprintf("Ping process stopped for %s", p.pingTargetPodName))
+				log.Debugf("Ping process stopped for %s", p.pingTargetPodName)
+				return
+			case <-streamConnection.CloseChan():
+				log.Debugf("Ping process ended for %s, connection closed", p.pingTargetPodName)
 				return
 			}
 		}
@@ -457,12 +480,14 @@ func (pfo *PortForwardOpts) PortForward() error {
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
 	dialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
-	dialerWithPing := pingingDialer{
+	dialerWithPing := &pingingDialer{
 		wrappedDialer:     dialer,
 		pingPeriod:        time.Second * 30,
 		pingStopChan:      make(chan struct{}),
 		pingTargetPodName: pfo.PodName,
 	}
+	// Stop pinging on every return path, including the early ones below.
+	defer dialerWithPing.stopPing()
 
 	// Wrap with metrics dialer if TUI is enabled
 	finalDialer, _ := pfo.wrapWithMetricsDialer(dialerWithPing)
