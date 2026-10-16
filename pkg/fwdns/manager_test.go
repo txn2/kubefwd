@@ -8,10 +8,13 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	restclient "k8s.io/client-go/rest"
 
 	"github.com/txn2/kubefwd/pkg/fwdsvcregistry"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 // Package-level registry initialization
@@ -1526,5 +1529,127 @@ func TestSplitPortMapping_EdgeCases(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// ============================================================================
+// Service spec update handling (txn2/kubefwd#615)
+// ============================================================================
+
+// newRegisteredWatcher returns a watcher with a fake clientset whose
+// addServiceHandler registers Services in the shared registry.
+func newRegisteredWatcher(t *testing.T, stopCh chan struct{}) *NamespaceWatcher {
+	t.Helper()
+	mgr := NewManager(ManagerConfig{GlobalStopCh: stopCh, Timeout: 300})
+	return &NamespaceWatcher{
+		manager:    mgr,
+		namespace:  "default",
+		context:    "test-ctx",
+		clientSet:  fake.NewClientset(),
+		restConfig: &restclient.Config{Host: "https://localhost:6443"},
+		ipLock:     &sync.Mutex{},
+	}
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_TargetPortChanged_RebuildsForwards(t *testing.T) {
+	initRegistryOnce()
+
+	collector, cleanupEvents := fwdtui.EnableTestMode()
+	defer cleanupEvents()
+
+	oldSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "retarget-svc", Namespace: "default"},
+		Spec: v1.ServiceSpec{
+			Selector:  map[string]string{"app": "test"},
+			ClusterIP: "10.0.0.1",
+			Ports: []v1.ServicePort{
+				{Port: 80, Name: "http", TargetPort: intstr.FromInt32(8080)},
+			},
+		},
+	}
+	// Same number of ports: only the target changes.
+	newSvc := oldSvc.DeepCopy()
+	newSvc.Spec.Ports[0].TargetPort = intstr.FromInt32(9090)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	watcher := newRegisteredWatcher(t, stopCh)
+
+	key := "retarget-svc.default.test-ctx"
+	watcher.addServiceHandler(oldSvc)
+	defer fwdsvcregistry.RemoveByName(key)
+	if fwdsvcregistry.Get(key) == nil {
+		t.Fatal("Expected the service to be registered")
+	}
+
+	collector.Clear()
+	watcher.updateServiceHandler(oldSvc, newSvc)
+
+	// UpdateService announces the rebuild before it resyncs.
+	if !collector.WaitForEventType(events.ServiceUpdated, 1, 2*time.Second) {
+		t.Fatal("Expected a targetPort-only change to rebuild the service's forwards")
+	}
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_SelectorRemoved_StopsForwarding(t *testing.T) {
+	initRegistryOnce()
+
+	oldSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "deselected-svc", Namespace: "default"},
+		Spec: v1.ServiceSpec{
+			Selector:  map[string]string{"app": "test"},
+			ClusterIP: "10.0.0.1",
+			Ports:     []v1.ServicePort{{Port: 80, Name: "http"}},
+		},
+	}
+	newSvc := oldSvc.DeepCopy()
+	newSvc.Spec.Selector = nil
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	watcher := newRegisteredWatcher(t, stopCh)
+
+	key := "deselected-svc.default.test-ctx"
+	watcher.addServiceHandler(oldSvc)
+	defer fwdsvcregistry.RemoveByName(key)
+	if fwdsvcregistry.Get(key) == nil {
+		t.Fatal("Expected the service to be registered")
+	}
+
+	watcher.updateServiceHandler(oldSvc, newSvc)
+
+	if fwdsvcregistry.Get(key) != nil {
+		t.Error("Expected a Service that lost its selector to be removed from the registry")
+	}
+}
+
+func TestNamespaceWatcher_UpdateServiceHandler_SelectorAdded_StartsForwarding(t *testing.T) {
+	initRegistryOnce()
+
+	oldSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "selected-later-svc", Namespace: "default"},
+		Spec: v1.ServiceSpec{
+			ClusterIP: "10.0.0.1",
+			Ports:     []v1.ServicePort{{Port: 80, Name: "http"}},
+		},
+	}
+	newSvc := oldSvc.DeepCopy()
+	newSvc.Spec.Selector = map[string]string{"app": "test"}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	watcher := newRegisteredWatcher(t, stopCh)
+
+	key := "selected-later-svc.default.test-ctx"
+	watcher.addServiceHandler(oldSvc) // skipped: no selector
+	defer fwdsvcregistry.RemoveByName(key)
+	if fwdsvcregistry.Get(key) != nil {
+		t.Fatal("Expected a Service without a selector to be skipped")
+	}
+
+	watcher.updateServiceHandler(oldSvc, newSvc)
+
+	if fwdsvcregistry.Get(key) == nil {
+		t.Error("Expected a Service that gained a selector to be registered")
 	}
 }

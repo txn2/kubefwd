@@ -16,6 +16,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
@@ -25,6 +26,10 @@ const (
 	// Auto-reconnect backoff settings
 	initialReconnectBackoff = 1 * time.Second
 	maxReconnectBackoff     = 5 * time.Minute
+
+	// forwardStopTimeout bounds how long UpdateService waits for a stopped
+	// forward to finish its cleanup before rebuilding the service's forwards.
+	forwardStopTimeout = 10 * time.Second
 )
 
 // ServiceFWD Single service to forward, with a reference to
@@ -106,6 +111,48 @@ type ServiceFWD struct {
 	// noPodsLogged tracks if we've already logged "no pods" warning for this service
 	// to avoid spamming logs with repeated warnings
 	noPodsLogged bool
+
+	// updatedSpec is the Service spec after an in-place update (UpdateService),
+	// nil until then. Forwards are built from it through currentPorts,
+	// podSelector and isHeadless; Svc keeps the object seen at registration,
+	// whose immutable name and namespace are read without a lock across
+	// packages. Guarded by NamespaceServiceLock.
+	updatedSpec *v1.ServiceSpec
+
+	// syncMu serializes doSyncPods and guards LastSyncedAt and noPodsLogged,
+	// so a rebuild never interleaves with a retry, reconnect or resync.
+	syncMu sync.Mutex
+
+	// updateMu serializes UpdateService calls for this service
+	updateMu sync.Mutex
+}
+
+// currentPorts returns the ports forwards are built from: the registered
+// Service's, or the updated spec's after UpdateService. Callers hold
+// NamespaceServiceLock.
+func (svcFwd *ServiceFWD) currentPorts() []v1.ServicePort {
+	if svcFwd.updatedSpec != nil {
+		return svcFwd.updatedSpec.Ports
+	}
+	return svcFwd.Svc.Spec.Ports
+}
+
+// podSelector returns the label selector pods are listed with, following the
+// updated spec after UpdateService. Callers hold NamespaceServiceLock.
+func (svcFwd *ServiceFWD) podSelector() string {
+	if svcFwd.updatedSpec != nil {
+		return labels.Set(svcFwd.updatedSpec.Selector).AsSelector().String()
+	}
+	return svcFwd.PodLabelSelector
+}
+
+// isHeadless reports whether every pod is forwarded, following the updated
+// spec after UpdateService. Callers hold NamespaceServiceLock.
+func (svcFwd *ServiceFWD) isHeadless() bool {
+	if svcFwd.updatedSpec != nil {
+		return svcFwd.updatedSpec.ClusterIP == "None"
+	}
+	return svcFwd.Headless
 }
 
 type PortMap struct {
@@ -218,6 +265,51 @@ func (svcFwd *ServiceFWD) ForceReconnect() {
 // This does NOT wait for the stopped forwards to finish - they will clean up asynchronously.
 // This is necessary for force reconnect because stuck forwards may never return.
 func (svcFwd *ServiceFWD) StopAllPortForwards() {
+	svcFwd.stopAllPortForwards()
+}
+
+// UpdateService applies an in-place change to the Service's spec (ports,
+// targetPort, selector) and rebuilds the forwards from it. Forwards are built
+// from the spec kept here (LoopPodsToForward reads its ports, GetPodsForService
+// its selector) and keyed by service, pod and local port, so a resync alone
+// would keep the existing forwards pointing at the old container port. The old
+// forwards are stopped and waited for before the resync: their replacements
+// register the same hostnames and loopback IP, which a cleanup running after
+// their setup would remove again.
+func (svcFwd *ServiceFWD) UpdateService(svc *v1.Service) {
+	svcFwd.updateMu.Lock()
+	defer svcFwd.updateMu.Unlock()
+
+	svcFwd.NamespaceServiceLock.Lock()
+	svcFwd.updatedSpec = svc.Spec.DeepCopy()
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	for _, pfo := range svcFwd.stopAllPortForwards() {
+		select {
+		case <-pfo.DoneChan:
+		case <-time.After(forwardStopTimeout):
+			log.Warnf("Timed out waiting for the forward of pod %s:%s to stop before rebuilding %s",
+				pfo.PodName, pfo.LocalPort, svcFwd)
+		}
+	}
+
+	// The Service may have been deleted while its forwards were stopping.
+	select {
+	case <-svcFwd.DoneChannel:
+		return
+	default:
+	}
+
+	if fwdtui.EventsEnabled() {
+		fwdtui.Emit(events.NewServiceEvent(events.ServiceUpdated, svc.Name, svcFwd.Namespace, svcFwd.Context))
+	}
+
+	svcFwd.SyncPodForwards(true)
+}
+
+// stopAllPortForwards is StopAllPortForwards returning the stopped forwards,
+// so a caller can wait on their DoneChan.
+func (svcFwd *ServiceFWD) stopAllPortForwards() []*fwdport.PortForwardOpts {
 	svcFwd.NamespaceServiceLock.Lock()
 	// Get all forwards and clear the map immediately
 	forwards := make([]*fwdport.PortForwardOpts, 0, len(svcFwd.PortForwards))
@@ -247,6 +339,8 @@ func (svcFwd *ServiceFWD) StopAllPortForwards() {
 			fwdtui.Emit(event)
 		}
 	}
+
+	return forwards
 }
 
 // CloseIdleHTTPConnections attempts to close idle HTTP connections in the k8s client transport.
@@ -289,7 +383,10 @@ func isPodReady(pod *v1.Pod) bool {
 // GetPodsForService queries k8s and returns all pods backing this service
 // which are eligible for port-forwarding; exclude some pods which are in final/failure state.
 func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
-	listOpts := metav1.ListOptions{LabelSelector: svcFwd.PodLabelSelector}
+	svcFwd.NamespaceServiceLock.Lock()
+	selector := svcFwd.podSelector()
+	svcFwd.NamespaceServiceLock.Unlock()
+	listOpts := metav1.ListOptions{LabelSelector: selector}
 
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOpts)
 
@@ -440,8 +537,11 @@ func (svcFwd *ServiceFWD) syncNormalService(k8sPods []v1.Pod) {
 
 // doSyncPods performs the actual pod sync logic
 func (svcFwd *ServiceFWD) doSyncPods(force bool) {
+	svcFwd.syncMu.Lock()
+	defer svcFwd.syncMu.Unlock()
+
 	if !svcFwd.noPodsLogged {
-		log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.PortForwards))
+		log.Infof("SyncPodForwards starting for service %s (force=%v, currentForwards=%d)", svcFwd, force, len(svcFwd.getForwardInfos()))
 	}
 	k8sPods := svcFwd.GetPodsForService()
 	if !svcFwd.noPodsLogged || len(k8sPods) > 0 {
@@ -466,7 +566,11 @@ func (svcFwd *ServiceFWD) doSyncPods(force bool) {
 
 	svcFwd.removeStaleForwards(k8sPods)
 
-	if svcFwd.Headless {
+	svcFwd.NamespaceServiceLock.Lock()
+	headless := svcFwd.isHeadless()
+	svcFwd.NamespaceServiceLock.Unlock()
+
+	if headless {
 		svcFwd.syncHeadlessService(k8sPods)
 	} else {
 		svcFwd.syncNormalService(k8sPods)
@@ -485,7 +589,10 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	if resyncInterval == 0 {
 		resyncInterval = 5 * time.Minute // default fallback
 	}
-	if force || time.Since(svcFwd.LastSyncedAt) > resyncInterval {
+	svcFwd.syncMu.Lock()
+	lastSyncedAt := svcFwd.LastSyncedAt
+	svcFwd.syncMu.Unlock()
+	if force || time.Since(lastSyncedAt) > resyncInterval {
 		svcFwd.SyncDebouncer(func() {})
 		svcFwd.doSyncPods(force)
 	} else {
@@ -544,7 +651,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 		serviceHostName := buildServiceHostname(svcName, pod.Namespace, svcFwd.Context, svcFwd.NamespaceN, svcFwd.ClusterN)
 
-		for _, port := range svcFwd.Svc.Spec.Ports {
+		for _, port := range svcFwd.currentPorts() {
 
 			// Skip if pod port protocol is UDP - not supported in k8s port forwarding yet, see https://github.com/kubernetes/kubernetes/issues/47862
 			if port.Protocol == v1.ProtocolUDP {
@@ -638,10 +745,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				err := pfo.PortForward()
 
 				// Normal cleanup - remove from map and emit TUI event
-				svcFwd.NamespaceServiceLock.Lock()
-				servicePodKey := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
-				delete(svcFwd.PortForwards, servicePodKey)
-				svcFwd.NamespaceServiceLock.Unlock()
+				svcFwd.removeOwnForward(pfo)
 
 				// Emit PodRemoved event so TUI can clean up the entry
 				if fwdtui.EventsEnabled() {
@@ -683,6 +787,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 		}
 
+	}
+}
+
+// removeOwnForward unregisters pfo when it exits. Only its own entry is
+// removed: a rebuild (UpdateService, ForceReconnect) may already have
+// registered a replacement under the same key.
+func (svcFwd *ServiceFWD) removeOwnForward(pfo *fwdport.PortForwardOpts) {
+	svcFwd.NamespaceServiceLock.Lock()
+	defer svcFwd.NamespaceServiceLock.Unlock()
+	key := pfo.Service + "." + pfo.PodName + "." + pfo.LocalPort
+	if current, found := svcFwd.PortForwards[key]; found && current == pfo {
+		delete(svcFwd.PortForwards, key)
 	}
 }
 
