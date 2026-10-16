@@ -25,8 +25,10 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
@@ -733,19 +735,51 @@ func (pfo *PortForwardOpts) removeInterfaceAlias() {
 	fwdnet.RemoveInterfaceAlias(pfo.LocalIP)
 }
 
+// podWatchRetryDelay is the pause before a pod watch that ended early (an
+// ERROR event, or a stream the API server closed) is re-established.
+const podWatchRetryDelay = time.Second
+
+// WaitUntilPodRunning blocks until the pod is Running and returns it. It
+// returns (nil, nil) when stopChannel fires or the timeout expires, and an
+// error when the pod cannot be read. A watch that ends early, with an ERROR
+// event (typically an expired or not yet served resourceVersion while the API
+// server is busy) or a stream the API server closed, is re-established from a
+// fresh read of the pod instead of failing the forward.
 func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {
-	pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(context.TODO(), pfo.PodName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
+	deadline := time.Now().Add(time.Duration(pfo.Timeout) * time.Second)
 
-	if pod.Status.Phase == v1.PodRunning {
-		return pod, nil
-	}
+	for {
+		pod, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Get(context.TODO(), pfo.PodName, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
 
+		if pod.Status.Phase == v1.PodRunning {
+			return pod, nil
+		}
+
+		pod, rewatch, err := pfo.watchUntilPodRunning(pod, stopChannel, deadline)
+		if !rewatch {
+			return pod, err
+		}
+
+		select {
+		case <-stopChannel:
+			return nil, nil
+		case <-time.After(podWatchRetryDelay):
+		}
+		if !time.Now().Before(deadline) {
+			return nil, nil
+		}
+	}
+}
+
+// watchUntilPodRunning watches pod until it is Running. rewatch reports that
+// the watch ended early and a fresh one should be opened.
+func (pfo *PortForwardOpts) watchUntilPodRunning(pod *v1.Pod, stopChannel <-chan struct{}, deadline time.Time) (running *v1.Pod, rewatch bool, err error) {
 	watcher, err := pfo.ClientSet.CoreV1().Pods(pfo.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// done signals that this function is returning (pod became Running or loop exited)
@@ -762,7 +796,7 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 		select {
 		case <-stopChannel:
 		case <-done:
-		case <-time.After(time.Duration(pfo.Timeout) * time.Second):
+		case <-time.After(time.Until(deadline)):
 		}
 	}()
 
@@ -770,17 +804,27 @@ func (pfo *PortForwardOpts) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-			// Channel closed - watch ended (timeout, stop signal, etc.)
-			return nil, nil
+			// Channel closed: our own stop or timeout ends the wait, a stream
+			// the API server closed is re-established.
+			select {
+			case <-stopChannel:
+				return nil, false, nil
+			default:
+			}
+			if !time.Now().Before(deadline) {
+				return nil, false, nil
+			}
+			log.Debugf("Watch for pod %s closed by the API server, re-watching", pfo.PodName)
+			return nil, true, nil
 		}
-		if event.Type == "ERROR" {
-			// Actual error from the API server
-			return nil, fmt.Errorf("watch error for pod %s: event type ERROR", pfo.PodName)
-		}
-		if event.Object != nil && event.Type == "MODIFIED" {
-			changedPod := event.Object.(*v1.Pod)
-			if changedPod.Status.Phase == v1.PodRunning {
-				return changedPod, nil
+		switch event.Type {
+		case watch.Error:
+			// A failure of the watch stream, not of the pod: re-establish it.
+			log.Warnf("Watch for pod %s returned an error, re-watching: %v", pfo.PodName, apierrors.FromObject(event.Object))
+			return nil, true, nil
+		case watch.Modified:
+			if changedPod, isPod := event.Object.(*v1.Pod); isPod && changedPod.Status.Phase == v1.PodRunning {
+				return changedPod, false, nil
 			}
 		}
 	}
