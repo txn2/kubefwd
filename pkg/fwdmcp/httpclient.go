@@ -6,9 +6,11 @@ package fwdmcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -45,8 +47,11 @@ func (c *HTTPClient) SetAPIKey(key string) {
 	c.apiKey = key
 }
 
+// newRequest builds a request to the kubefwd API. The client's methods take no
+// context, so the request is rooted at context.Background and bounded by the
+// http.Client timeout.
 func (c *HTTPClient) newRequest(method, path string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, c.baseURL+path, body)
+	req, err := http.NewRequestWithContext(context.Background(), method, c.baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1328,24 +1333,24 @@ func generateEnvVars(serviceName, localIP string, ports []types.PortInfo) map[st
 
 		// Generate connection URL based on common port patterns
 		port := ports[0].LocalPort
-		host := serviceName
+		hostPort := net.JoinHostPort(serviceName, strconv.Itoa(port))
 		switch port {
 		case 5432:
-			envVars["DATABASE_URL"] = fmt.Sprintf("postgresql://%s:%d", host, port)
+			envVars["DATABASE_URL"] = "postgresql://" + hostPort
 		case 3306:
-			envVars["DATABASE_URL"] = fmt.Sprintf("mysql://%s:%d", host, port)
+			envVars["DATABASE_URL"] = "mysql://" + hostPort
 		case 27017:
-			envVars["MONGODB_URI"] = fmt.Sprintf("mongodb://%s:%d", host, port)
+			envVars["MONGODB_URI"] = "mongodb://" + hostPort
 		case 6379:
-			envVars["REDIS_URL"] = fmt.Sprintf("redis://%s:%d", host, port)
+			envVars["REDIS_URL"] = "redis://" + hostPort
 		case 9092:
-			envVars["KAFKA_BROKERS"] = fmt.Sprintf("%s:%d", host, port)
+			envVars["KAFKA_BROKERS"] = hostPort
 		case 80, 8080, 443, 8443:
 			protocol := "http"
 			if port == 443 || port == 8443 {
 				protocol = "https"
 			}
-			envVars[upperName+"_URL"] = fmt.Sprintf("%s://%s:%d", protocol, host, port)
+			envVars[upperName+"_URL"] = protocol + "://" + hostPort
 		}
 	}
 

@@ -1,0 +1,28 @@
+# Rules enforced against changed lines only (`make semgrep-diff`).
+#
+# These refuse a shape that CodeQL's security-and-quality suite rejects at PR
+# time. CodeQL decides with range analysis that Semgrep does not have, so the
+# shape matches here far more often than CodeQL flags it. That is why the rule
+# is scoped to the diff, the way Code Scanning scopes CodeQL, instead of
+# running over the whole tree.
+rules:
+  - id: allocation-size-length-arithmetic
+    patterns:
+      # The deep-expression operator, so `len(a)+len(b)`, `n+len(x)` and
+      # `len(x)*2` are one rule instead of a list of operators and orders.
+      - pattern-either:
+          - pattern: make($TYPE, <... len($X) ...>)
+          - pattern: make($TYPE, $LEN, <... len($X) ...>)
+      # A length used as the size is the correct form, and what the fix looks
+      # like; only arithmetic around it is refused.
+      - pattern-not: make($TYPE, len($X))
+      - pattern-not: make($TYPE, $LEN, len($X))
+    message: >-
+      Arithmetic on a length is used as an allocation size. CodeQL refuses
+      this as go/allocation-size-overflow: the arithmetic overflows for a large
+      enough operand, and make panics on a negative result or allocates a tiny
+      one. A capacity or map size hint is advisory, so size it from the length
+      alone; where the arithmetic is a real slice length, bound the operand
+      first.
+    languages: [go]
+    severity: ERROR

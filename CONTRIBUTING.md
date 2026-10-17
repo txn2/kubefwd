@@ -17,7 +17,8 @@ We welcome pull requests for:
 
 ### Prerequisites
 
-- Go 1.21 or later
+- Go: the version in `go.mod`'s `toolchain` line. With the default `GOTOOLCHAIN=auto`, `go` downloads it for you.
+- Python 3 (for the govulncheck gate and semgrep, which `make` installs into `.tools/`)
 - Access to a Kubernetes cluster for testing
 - `kubectl` configured with cluster access
 
@@ -38,6 +39,9 @@ go build -ldflags "-X main.Version=dev" -o kubefwd ./cmd/kubefwd/kubefwd.go
 ### Running Tests
 
 ```bash
+# Run every check CI runs
+make verify
+
 # Run all tests
 go test ./...
 
@@ -80,15 +84,41 @@ sudo -E ./kubefwd svc -n default --tui -v
 ### Running Linters
 
 ```bash
-# Format code
-go fmt ./...
+# Apply gofmt, goimports and gofumpt
+make fmt
 
-# Vet for issues
-go vet ./...
+# Lint the lines you changed (installs the pinned golangci-lint into .tools/)
+make lint
 
-# If golangci-lint is installed
-golangci-lint run
+# Lint the whole repository, including pre-existing issues
+make lint-full
 ```
+
+CI and `make lint` report only issues on lines changed since the merge base with `master`. Pre-existing issues elsewhere don't fail the build, but anything you add or modify has to pass every linter in `.golangci.yml`. A `//nolint` or `#nosec` needs a reason after it.
+
+## Quality Gates
+
+`make verify` runs everything CI runs. Run it before you push; a PR that passes it locally passes the same checks in CI. Every tool is installed at a pinned version into `.tools/`, and CI calls the same `make` targets.
+
+| Gate | Rule | Target |
+|---|---|---|
+| Formatting | gofmt, goimports (kubefwd local prefix) and gofumpt, whole tree | `make fmt-check` |
+| Lint | Every linter in `.golangci.yml`, on changed lines | `make lint` |
+| Complexity | Cyclomatic 10, cognitive 15, nesting 5, duplication 150 tokens, naked returns in functions over 30 lines (production code; changed lines) | `make lint` |
+| Layering | `depguard` rules in `.golangci.yml`, e.g. the forwarding core must not import the API or MCP packages | `make lint` |
+| Tests | `go test -race ./...` | `make test` |
+| Coverage | Total at least 80% | `make coverage-check` |
+| Patch coverage | Changed lines at least 80% | `make patch-coverage` |
+| Security | gosec over the whole tree; govulncheck on both modules, judged against `.govulncheck-allow.txt`; osv-scanner, judged against `osv-scanner.toml` | `make security` |
+| SAST | Semgrep `p/golang` over the whole tree; `.semgrep-diff/` rules on changed lines; CodeQL `security-and-quality` in CI | `make semgrep`, `make semgrep-diff` |
+| Modules | `go mod tidy` is a no-op; `go mod verify` passes | `make tidy-check`, `make mod-verify` |
+| Mutation | gremlins test efficacy at least 60%, weekly in CI | `make mutate` |
+
+`make dead-code` reports unreachable functions; it's informational.
+
+Accepting a vulnerability is a last resort. An entry in `.govulncheck-allow.txt` or `osv-scanner.toml` needs a reason, and the gates fail once a fix ships, the advisory stops being reported, or (for osv-scanner) the `ignoreUntil` date passes.
+
+Code that only runs as root or against a live cluster still counts toward patch coverage. Make it testable by injecting the OS or cluster call, as `pkg/fwdapi/network.go` does with `runCommand`, rather than leaving it uncovered.
 
 ## Making Changes
 
@@ -104,7 +134,7 @@ golangci-lint run
 2. Create a feature branch: `git checkout -b fix/issue-description`
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass: `go test ./...`
+5. Ensure `make verify` passes
 6. Commit with clear messages
 
 ### Commit Messages
@@ -167,12 +197,14 @@ sudo -E go test -tags=integration -v ./test/integration/
 
 ### Test Coverage
 
-We aim to maintain and improve test coverage:
+Total coverage must stay at or above 80%, and lines a PR changes must be at least 80% covered (see [Quality Gates](#quality-gates)):
 
 ```bash
+# Check both floors
+make test coverage-check patch-coverage
+
 # View coverage report
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
+go tool cover -html=coverage.txt
 ```
 
 ## Reporting Issues

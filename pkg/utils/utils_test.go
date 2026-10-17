@@ -185,7 +185,6 @@ func TestDefaultRootChecker_CheckRoot(t *testing.T) {
 
 	// Call the actual CheckRoot method
 	isRoot, err := checker.CheckRoot()
-
 	// The test should not error (unless id command is not available)
 	if err != nil {
 		t.Logf("CheckRoot returned error (may be expected on some systems): %v", err)

@@ -105,7 +105,6 @@ func (r *ContainerTestRunner) writeKubeconfig(kubeconfig string) error {
 	exitCode, output, err := r.container.Exec(r.ctx, []string{
 		"sh", "-c", fmt.Sprintf("cat > /tmp/kubeconfig <<'EOF'\n%s\nEOF", kubeconfig),
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to write kubeconfig: %w", err)
 	}
@@ -127,7 +126,6 @@ func (r *ContainerTestRunner) buildKubefwd() error {
 	exitCode, output, err := r.container.Exec(r.ctx, []string{
 		"sh", "-c", "cd /workspace && go build -o kubefwd ./cmd/kubefwd/kubefwd.go",
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to build kubefwd: %w", err)
 	}
@@ -273,7 +271,6 @@ func RequiresKindCluster(t *testing.T, clusterName string) {
 		ContainerRequest: req,
 		Started:          true,
 	})
-
 	if err != nil {
 		t.Skip("Docker not available - required for testcontainers")
 	}

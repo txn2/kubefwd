@@ -4,22 +4,18 @@
 # Usage:
 #   scripts/patch-coverage.sh <base-ref> <coverage-profile> <target-pct> <strict>
 #
-# Reads `git diff <base-ref>...HEAD` to find added Go lines, intersects
-# them with the Go coverage profile, and prints a per-file + total
-# patch coverage report. With strict=1, exits non-zero if total patch
-# coverage is below the target (matches codecov's blocking mode);
-# otherwise informational only.
+# Reads the branch's changes from scripts/changed-patch.sh (merge base to
+# working tree, including untracked files) to find added lines in non-test
+# Go files, intersects them with the Go coverage profile, and prints the
+# total patch coverage. With strict=1 (the default in `make verify`), exits
+# non-zero if patch coverage is below the target, matching codecov's
+# blocking patch status.
 set -euo pipefail
 
 BASE="${1:?base ref required}"
 PROFILE="${2:?coverage profile required}"
 TARGET="${3:?target percentage required}"
 STRICT="${4:-0}"
-
-if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-  echo "patch-coverage: base ref '$BASE' not found locally; skipping" >&2
-  exit 0
-fi
 
 if [ ! -f "$PROFILE" ]; then
   echo "patch-coverage: profile '$PROFILE' missing; run 'make test' first" >&2
@@ -28,9 +24,12 @@ fi
 
 MODULE="$(awk '/^module /{print $2; exit}' go.mod)"
 
+PATCH="$(mktemp -t kubefwd-patch-coverage.XXXXXX)"
+trap 'rm -f "$PATCH"' EXIT
+"$(dirname "$0")/changed-patch.sh" "$BASE" > "$PATCH"
+
 # Use awk to do the entire correlation in one pass — no Python required.
-git diff --unified=0 "$BASE"...HEAD -- '*.go' ':!*_test.go' \
-  | awk -v module="$MODULE" -v profile="$PROFILE" -v target="$TARGET" -v strict="$STRICT" '
+awk -v module="$MODULE" -v profile="$PROFILE" -v target="$TARGET" -v strict="$STRICT" '
       # Pass 1: read coverage profile into a hits[file:line] map.
       BEGIN {
         while ((getline line < profile) > 0) {
@@ -59,9 +58,14 @@ git diff --unified=0 "$BASE"...HEAD -- '*.go' ':!*_test.go' \
       }
 
       # Pass 2: walk the unified diff and mark added lines.
-      /^\+\+\+ b\// {
-        sub(/^\+\+\+ b\//, "")
-        cur = $0
+      # A new file header. Only non-test .go files count; a deleted file
+      # (+++ /dev/null) resets cur so its lines are not misattributed.
+      /^\+\+\+ / {
+        cur = ""
+        if ($0 ~ /^\+\+\+ b\//) {
+          sub(/^\+\+\+ b\//, "")
+          if ($0 ~ /\.go$/ && $0 !~ /_test\.go$/) cur = $0
+        }
         next
       }
       /^@@/ {
@@ -104,4 +108,4 @@ git diff --unified=0 "$BASE"...HEAD -- '*.go' ':!*_test.go' \
           print "patch-coverage: BELOW TARGET (informational; set STRICT=1 to enforce)"
         }
       }
-    '
+    ' "$PATCH"

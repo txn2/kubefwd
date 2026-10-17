@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
 

@@ -1,88 +1,382 @@
 version: "2"
 
+# CI and `make lint` report only issues on lines changed since the merge base
+# (--new-from-rev / --new-from-patch), so pre-existing issues do not block a
+# PR, but anything a PR adds or modifies must pass every linter below.
+# `make lint-full` reports the whole backlog. See #621.
+
 run:
-  timeout: 5m
+  timeout: 10m
   modules-download-mode: readonly
 
 linters:
+  default: none
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
+    # Bugs
+    - errcheck           # Unchecked errors, including in tests
+    - govet              # Official vet checks
+    - staticcheck        # Comprehensive static analysis
+    - ineffassign        # Ineffective assignments
+    - unused             # Unused code
+    - bodyclose          # HTTP response bodies are closed
+    - noctx              # HTTP requests carry a context
+    - nilerr             # Returning nil after checking err != nil
+    - nilnil             # Returning nil value with nil error
+    - durationcheck      # Duration multiplied by a duration
+    - makezero           # append to a slice made with non-zero length
+    - nosprintfhostport  # host:port built with Sprintf
+    - wastedassign       # Assignments that are never read
+    - errorlint          # Error comparison and wrapping
+    - errname            # Error type and sentinel naming
+    - copyloopvar        # Redundant loop variable copies
+    - thelper            # t.Helper() in test helpers
+    - unparam            # Parameters and results that never vary
+    - prealloc           # Slices that can be preallocated
+    - gosec              # Security (OWASP)
+
+    # Complexity
+    - gocyclo
+    - gocognit
+    - nestif
+    - dupl
+    - nakedret
+
+    # Style and hygiene
     - misspell
     - unconvert
-    - gocritic        # Style checks (ifElseChain, singleCaseSwitch, etc.)
-    - revive          # Unused params, exported comments, etc.
-    - predeclared     # Variable shadows predeclared identifier
-    - nilnil          # Return nil error with nil value
-  disable:
+    - whitespace
+    - godot
+    - perfsprint
+    - gocritic
+    - revive
+    - predeclared
+    - goconst
+    - wrapcheck
+    - modernize
+
+    # Layering
     - depguard
+
   settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+
     govet:
       enable-all: true
       disable:
-        - fieldalignment  # Too noisy for existing codebase
-        - shadow          # err shadowing is standard Go idiom
+        - fieldalignment  # Too noisy; struct layout is not a concern here
+        - shadow          # err shadowing is a standard Go idiom
+
     misspell:
       locale: US
+
+    nakedret:
+      max-func-lines: 30
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+    gocyclo:
+      min-complexity: 10
+
+    gocognit:
+      min-complexity: 15
+
+    nestif:
+      min-complexity: 5
+
+    dupl:
+      threshold: 150
+
+    # Layering rules. Each one holds for the code as it stands; a PR that
+    # breaks one should move code, not the rule.
+    depguard:
+      rules:
+        entry-point-is-a-sink:
+          list-mode: lax
+          files:
+            - "**/pkg/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/txn2/kubefwd/cmd
+              desc: "cmd/ holds entry points; pkg/ must not import it. Move shared code into pkg/."
+        leaf-packages-import-nothing-first-party:
+          list-mode: lax
+          files:
+            - "**/pkg/fwdip/**"
+            - "**/pkg/fwdcfg/**"
+            - "**/pkg/fwdmetrics/**"
+            - "**/pkg/fwdpub/**"
+            - "**/pkg/fwdtui/events/**"
+            - "**/pkg/fwdtui/state/**"
+            - "**/pkg/fwdtui/styles/**"
+            - "**/pkg/fwdapi/history/**"
+            - "**/pkg/fwdapi/middleware/**"
+            - "**/pkg/utils/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/txn2/kubefwd
+              desc: "this is a leaf package with no first-party imports; keep it that way so any layer can use it."
+        forwarding-core-does-not-depend-on-api:
+          list-mode: lax
+          files:
+            - "**/pkg/fwdport/**"
+            - "**/pkg/fwdservice/**"
+            - "**/pkg/fwdsvcregistry/**"
+            - "**/pkg/fwdns/**"
+            - "**/pkg/fwdnet/**"
+            - "**/pkg/fwdhost/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/txn2/kubefwd/pkg/fwdapi
+              desc: "the REST API sits on top of the forwarding core; the core must not import it."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdmcp
+              desc: "the MCP server sits on top of the forwarding core; the core must not import it."
+        mcp-is-an-api-client:
+          list-mode: lax
+          files:
+            - "**/pkg/fwdmcp/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/txn2/kubefwd/pkg/fwdport
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdservice
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdsvcregistry
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdns
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdnet
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdhost
+              desc: "fwdmcp talks to kubefwd through the REST API types, not the forwarding core."
+        tui-components-are-views:
+          list-mode: lax
+          files:
+            - "**/pkg/fwdtui/components/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/txn2/kubefwd/pkg/fwdport
+              desc: "TUI components render state; they must not reach into the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdservice
+              desc: "TUI components render state; they must not reach into the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdsvcregistry
+              desc: "TUI components render state; they must not reach into the forwarding core."
+            - pkg: github.com/txn2/kubefwd/pkg/fwdns
+              desc: "TUI components render state; they must not reach into the forwarding core."
+
     gocritic:
       enabled-tags:
         - diagnostic
         - style
         - performance
+        - opinionated
       disabled-checks:
-        - whyNoLint         # We don't require nolint explanations
-        - hugeParam         # Too strict for existing code
+        - hugeParam         # Too strict for k8s structs passed by value
         - rangeValCopy      # Too noisy for k8s structs
-        - unnamedResult     # Style preference
-        - paramTypeCombine  # Style preference
-        - emptyStringTest   # Style preference (len(s) vs s == "")
-        - commentedOutCode  # Too noisy, especially in tests
-        - nestingReduce     # Style suggestion, not a bug
         - evalOrder         # False positive for intentional order
-        - deferUnlambda     # False positive when variable assigned later
+        - deferUnlambda     # False positive when the variable is assigned later
         - exposedSyncMutex  # Intentional for thread-safe exported types
+
     revive:
+      severity: error
+      confidence: 0.8
       enable-all-rules: false
       rules:
-        - name: unused-parameter
-          severity: warning
-        - name: var-declaration
-          severity: warning
-        - name: import-shadowing
-          severity: warning
-        - name: unreachable-code
-          severity: warning
+        # Naming and documentation
+        - name: exported
+          arguments: [checkPrivateReceivers, sayRepetitiveInsteadOfStutters]
+        - name: package-comments
+        - name: var-naming
+        - name: receiver-naming
+        - name: error-naming
+        - name: time-naming
+        - name: unexported-naming
+        # Errors
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: unhandled-error
+          arguments: ["fmt.Printf", "fmt.Println", "fmt.Print"]
+        # Context
         - name: context-as-argument
-          severity: warning
+        - name: context-keys-type
+        # Imports
+        - name: blank-imports
+        - name: dot-imports
+        - name: import-shadowing
+        - name: import-alias-naming
+          arguments: ["^[a-z][a-z0-9]*$"]
+        - name: duplicated-imports
+        # Control flow
+        - name: if-return
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: early-return
+        - name: empty-block
+        - name: unreachable-code
+        - name: unconditional-recursion
+        - name: identical-branches
+        - name: useless-break
+        - name: unnecessary-stmt
+        # Size and complexity
+        - name: function-result-limit
+          arguments: [3]
+        - name: argument-limit
+          arguments: [5]
+        - name: cognitive-complexity
+          arguments: [15]
+        - name: cyclomatic
+          arguments: [10]
+        - name: function-length
+          arguments: [80, 0]
+        - name: max-public-structs
+          arguments: [5]
+        # Correctness
+        - name: var-declaration
+        - name: increment-decrement
+        - name: range
+        - name: range-val-in-closure
+        - name: range-val-address
+        - name: redefines-builtin-id
+        - name: unused-parameter
+        - name: unused-receiver
+        - name: confusing-naming
+        - name: confusing-results
+        - name: bare-return
+        - name: get-return
+        - name: modifies-parameter
+        - name: modifies-value-receiver
+        - name: deep-exit
+        - name: defer
+          arguments: [["call-chain", "loop", "method-call", "recover", "immediate-recover", "return"]]
+        - name: string-of-int
+        - name: string-format
+          arguments:
+            - - 'fmt.Errorf[0]'
+              - '/^[a-z].*[^.]$/'
+              - 'error strings should not be capitalized or end with punctuation'
+        - name: bool-literal-in-expr
+        - name: constant-logical-expr
+        - name: datarace
+        - name: waitgroup-by-value
+        - name: atomic
+        - name: comment-spacings
+          arguments: ["nolint", "TODO", "FIXME", "BUG", "HACK"]
+        - name: struct-tag
+        - name: unexported-return
+        - name: add-constant
+          arguments:
+            - maxLitCount: "3"
+              allowStrs: '""'
+              allowInts: "0,1,2"
+              ignoreFuncs: "make,len,cap"
+
+    gosec:
+      excludes:
+        - G104  # Unhandled errors; errcheck owns this
+      config:
+        G306: "0644"
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithStack(
+      # client-go and apimachinery return typed Kubernetes errors
+      # (apierrors.IsNotFound and friends). Wrapping them is fine, but
+      # returning them unwrapped from a thin pass-through is the norm.
+      ignore-package-globs:
+        - k8s.io/*
+
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: true
+      comparison: true
+
+    perfsprint:
+      integer-format: false
+      int-conversion: false
+      error-format: true    # Parent gate for errorf; must be on
+      err-error: false
+      errorf: true          # Verb-less fmt.Errorf becomes errors.New
+      string-format: false
+      sprintf1: false
+      strconcat: false
+      bool-format: false
+      hex-format: false
+
   exclusions:
+    generated: lax
     rules:
-      # Test files can be more relaxed
+      # Complexity gates apply to production code
       - path: _test\.go
         linters:
-          - errcheck
-          - nilnil  # Test mocks often return nil, nil
-      # Ignore unused writes in test struct initializations
-      - path: _test\.go
-        text: "unusedwrite"
-      # Test mocks and HTTP handlers commonly have unused params for interface conformance
+          - gocognit
+          - gocyclo
+          - nestif
+          - dupl
+          - goconst
       - path: _test\.go
         linters:
           - revive
-        text: "unused-parameter"
+        text: "cognitive-complexity|cyclomatic|function-length|add-constant|max-public-structs"
+      # Test mocks and HTTP handlers have unused params for interface conformance
+      - path: _test\.go
+        linters:
+          - revive
+        text: "unused-parameter|unused-receiver"
+      - path: _test\.go
+        linters:
+          - nilnil  # Test mocks often return nil, nil
+      - path: _test\.go
+        text: "unusedwrite"
+      # Test code uses deprecated K8s APIs to match the production code it tests
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA1019.*deprecated"
+      # Fixture conversions (G115), temp-file permissions (G302, G306) and
+      # fixture paths (G304) in tests are not attack surface
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G101|G115|G302|G304|G306"
+      # Test helpers keep general signatures even when every caller passes
+      # the same value today, and return errors as-is to the test
+      - path: _test\.go
+        linters:
+          - unparam
+          - wrapcheck
       # Watch channel closure returns nil, nil intentionally (not an error)
       - path: pkg/fwdport/fwdport\.go
         linters:
           - nilnil
         text: "return both a `nil` error"
-      # Test code uses deprecated K8s APIs to match production code being tested
-      - path: _test\.go
-        linters:
-          - staticcheck
-        text: "SA1019.*deprecated"
 
 issues:
-  max-issues-per-linter: 100
-  max-same-issues: 20
+  # Unlimited: with changed-line linting, every reported issue is one the PR
+  # introduced, and a cap would hide some of them.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gofumpt
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/txn2/kubefwd
+  exclusions:
+    generated: lax

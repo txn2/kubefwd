@@ -6,8 +6,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/txeh"
+
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 func BackupHostFile(hostFile *txeh.Hosts, forceRefresh bool) (string, error) {
@@ -34,6 +35,8 @@ func BackupHostFile(hostFile *txeh.Hosts, forceRefresh bool) (string, error) {
 	}
 	defer func() { _ = from.Close() }()
 
+	// #nosec G302 G304 -- a fixed path in the user's home directory; 0644 mirrors
+	// the world-readable hosts file it backs up.
 	to, err := os.OpenFile(backupHostsPath, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return "", err

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,14 +15,14 @@ func setupRouter() *gin.Engine {
 }
 
 func performRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
 }
 
 func performRequestWithHeader(r *gin.Engine, method, path, key, value string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, http.NoBody)
 	req.Header.Set(key, value)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -246,7 +247,7 @@ func TestRequestLogger_WithQueryString(t *testing.T) {
 	})
 
 	// Perform request with query string
-	req := httptest.NewRequest("GET", "/test?foo=bar&baz=qux", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "/test?foo=bar&baz=qux", http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

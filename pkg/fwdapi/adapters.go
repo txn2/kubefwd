@@ -395,7 +395,7 @@ func (a *DiagnosticsProviderAdapter) GetServiceDiagnostic(key string) (*types.Se
 	// Build forward diagnostics
 	forwards := make([]types.ForwardDiagnostic, len(svc.PortForwards))
 	for i, fwd := range svc.PortForwards {
-		fwdDiag, _ := a.buildForwardDiagnostic(&fwd)
+		fwdDiag := a.buildForwardDiagnostic(&fwd)
 		forwards[i] = fwdDiag
 	}
 
@@ -442,12 +442,11 @@ func (a *DiagnosticsProviderAdapter) GetForwardDiagnostic(key string) (*types.Fo
 		return nil, fmt.Errorf("forward not found: %s", key)
 	}
 
-	diag, _ := a.buildForwardDiagnostic(fwd)
+	diag := a.buildForwardDiagnostic(fwd)
 	return &diag, nil
 }
 
-func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSnapshot) (types.ForwardDiagnostic, error) {
-
+func (*DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSnapshot) types.ForwardDiagnostic {
 	connState := "disconnected"
 	switch fwd.Status {
 	case state.StatusPending:
@@ -497,7 +496,7 @@ func (a *DiagnosticsProviderAdapter) buildForwardDiagnostic(fwd *state.ForwardSn
 		BytesOut: fwd.BytesOut,
 		RateIn:   fwd.RateIn,
 		RateOut:  fwd.RateOut,
-	}, nil
+	}
 }
 
 func (a *DiagnosticsProviderAdapter) GetNetworkStatus() types.NetworkStatus {
@@ -944,12 +943,12 @@ func splitLogLines(content string) []string {
 		switch content[i] {
 		case '\n':
 			lines = append(lines, string(currentLine))
-			currentLine = nil
+			currentLine = currentLine[:0]
 		case '\r':
 			// Handle \r\n
 			if i+1 < len(content) && content[i+1] == '\n' {
 				lines = append(lines, string(currentLine))
-				currentLine = nil
+				currentLine = currentLine[:0]
 				i++ // skip the \n
 			}
 		default:

@@ -292,6 +292,7 @@ func (m *mockMetricsProvider) GetAllSnapshots() []fwdmetrics.ServiceSnapshot { r
 func (m *mockMetricsProvider) GetServiceSnapshot(key string) *fwdmetrics.ServiceSnapshot {
 	return nil
 }
+
 func (m *mockMetricsProvider) GetTotals() (uint64, uint64, float64, float64) {
 	return m.bytesIn, m.bytesOut, m.rateIn, m.rateOut
 }
@@ -315,15 +316,19 @@ type mockDiagnosticsProvider struct{}
 func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return types.DiagnosticSummary{}
 }
+
 func (m *mockDiagnosticsProvider) GetServiceDiagnostic(key string) (*types.ServiceDiagnostic, error) {
 	return nil, nil
 }
+
 func (m *mockDiagnosticsProvider) GetForwardDiagnostic(key string) (*types.ForwardDiagnostic, error) {
 	return nil, nil
 }
+
 func (m *mockDiagnosticsProvider) GetNetworkStatus() types.NetworkStatus {
 	return types.NetworkStatus{}
 }
+
 func (m *mockDiagnosticsProvider) GetErrors(count int) []types.ErrorDetail {
 	return nil
 }

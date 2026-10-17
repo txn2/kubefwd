@@ -45,9 +45,23 @@ type ServiceConfiguration struct {
 	IP   string `yaml:"ip"`
 }
 
-var ipRegistry *Registry
-var forwardConfiguration *ForwardConfiguration
-var defaultConfiguration = &ForwardConfiguration{BaseUnreservedIP: "127.1.27.1"}
+// defaultBaseUnreservedIP is the first address handed out when no
+// configuration file sets baseUnreservedIP.
+const defaultBaseUnreservedIP = "127.1.27.1"
+
+// Octets of an allocated IP that carry the cluster, namespace and service
+// offsets.
+const (
+	clusterOctet   = 1
+	namespaceOctet = 2
+	serviceOctet   = 3
+)
+
+var (
+	ipRegistry           *Registry
+	forwardConfiguration *ForwardConfiguration
+	defaultConfiguration = &ForwardConfiguration{BaseUnreservedIP: defaultBaseUnreservedIP}
+)
 
 // Init
 func init() {
@@ -129,10 +143,12 @@ func determineIP(regKey string, opts ForwardIPOpts) (net.IP, error) {
 		return nil, ErrIPBoundsExceeded
 	}
 
+	// The bounds check above keeps each offset within 0-255, so the byte
+	// conversions below cannot truncate.
 	ip := baseUnreservedIP
-	ip[1] += byte(opts.ClusterN)
-	ip[2] += byte(opts.NamespaceN)
-	ip[3] += byte(ipRegistry.inc[opts.ClusterN][opts.NamespaceN])
+	ip[clusterOctet] += byte(opts.ClusterN)                                  // #nosec G115 -- bounded above
+	ip[namespaceOctet] += byte(opts.NamespaceN)                              // #nosec G115 -- bounded above
+	ip[serviceOctet] += byte(ipRegistry.inc[opts.ClusterN][opts.NamespaceN]) // #nosec G115 -- bounded above
 
 	ipRegistry.inc[opts.ClusterN][opts.NamespaceN]++
 	if err := addToRegistry(regKey, opts, ip); err != nil {

@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/evertras/bubble-table/table"
+
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )

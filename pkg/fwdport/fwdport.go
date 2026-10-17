@@ -17,12 +17,6 @@ import (
 	"k8s.io/streaming/pkg/httpstream"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdip"
-	"github.com/txn2/kubefwd/pkg/fwdmetrics"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
-	"github.com/txn2/kubefwd/pkg/fwdtui"
-	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,6 +27,13 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+
+	"github.com/txn2/kubefwd/pkg/fwdip"
+	"github.com/txn2/kubefwd/pkg/fwdmetrics"
+	"github.com/txn2/kubefwd/pkg/fwdnet"
+	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 // GlobalPodInformer manages a single informer for all pods across all services
@@ -44,8 +45,10 @@ type GlobalPodInformer struct {
 	stopChannel chan struct{}
 }
 
-var globalPodInformer *GlobalPodInformer
-var globalPodInformerOnce sync.Once
+var (
+	globalPodInformer     *GlobalPodInformer
+	globalPodInformerOnce sync.Once
+)
 
 // GetGlobalPodInformer returns the singleton global pod informer
 func GetGlobalPodInformer(clientSet kubernetes.Interface, namespace string) *GlobalPodInformer {
@@ -599,7 +602,6 @@ func sanitizeHost(host string) string {
 
 // AddHosts adds hostname entries to /etc/hosts
 func (pfo *PortForwardOpts) AddHosts() error {
-
 	pfo.HostFile.Lock()
 	defer pfo.HostFile.Unlock()
 
@@ -713,7 +715,6 @@ func (pfo *PortForwardOpts) AddHosts() error {
 // removeHosts removes hosts /etc/hosts
 // associated with a forwarded pod
 func (pfo *PortForwardOpts) removeHosts() {
-
 	// we should lock the pfo.HostFile here
 	// because sometimes other goroutine write the *txeh.Hosts
 	pfo.HostFile.Lock()

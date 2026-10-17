@@ -172,7 +172,8 @@ func TestReadyInterface_PortInUse(t *testing.T) {
 	// This test works on all platforms - it tests the port-in-use detection
 
 	// Start a listener on a specific port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	listener, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to create listener: %v", err)
 	}
@@ -724,4 +725,28 @@ func TestGetManager_ThreadSafety(t *testing.T) {
 
 	// If we get here without panic/race, the test passes
 	t.Log("Concurrent manager access completed without issues")
+}
+
+func TestPortInUse(t *testing.T) {
+	var lc net.ListenConfig
+	listener, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ip := net.ParseIP("127.0.0.1")
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split listener address: %v", err)
+	}
+
+	if !portInUse(ip, port) {
+		t.Errorf("portInUse(%s, %s) = false while listening, want true", ip, port)
+	}
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+	if portInUse(ip, port) {
+		t.Errorf("portInUse(%s, %s) = true after close, want false", ip, port)
+	}
 }

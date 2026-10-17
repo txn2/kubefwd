@@ -1,0 +1,30 @@
+# Citation metadata for kubefwd. Format: Citation File Format 1.2.0
+# (https://citation-file-format.github.io). GitHub renders a "Cite this
+# repository" button from this file. Update version and date-released when
+# cutting a release.
+cff-version: 1.2.0
+message: If you use this software in your work, please cite it as below.
+title: kubefwd
+abstract: >-
+  A command-line utility for bulk Kubernetes port forwarding. kubefwd forwards
+  every Service in one or more namespaces, gives each its own loopback IP and
+  /etc/hosts entry so services resolve by name as they do in the cluster, and
+  follows Service and Pod lifecycle events to keep forwards current.
+type: software
+authors:
+  - family-names: Johnston
+    given-names: Craig
+    email: cj@imti.co
+    affiliation: "Deasil Works, Inc."
+    orcid: "https://orcid.org/0009-0000-9041-4079"
+repository-code: "https://github.com/txn2/kubefwd"
+url: "https://kubefwd.com"
+license: Apache-2.0
+version: 1.25.18
+date-released: "2026-10-16"
+keywords:
+  - Kubernetes
+  - port forwarding
+  - local development
+  - developer tools
+  - networking

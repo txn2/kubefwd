@@ -2,6 +2,7 @@ package fwdapi
 
 import (
 	"github.com/gin-gonic/gin"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/handlers"
 	"github.com/txn2/kubefwd/pkg/fwdapi/middleware"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"

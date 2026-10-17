@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
@@ -50,18 +51,23 @@ func (m *mockDiscovery) ListServices(_, _ string) ([]types.K8sService, error) {
 func (m *mockDiscovery) GetService(_, _, _ string) (*types.K8sService, error) {
 	return nil, nil
 }
+
 func (m *mockDiscovery) ListPods(_, _ string, _ types.ListPodsOptions) ([]types.K8sPod, error) {
 	return nil, nil
 }
+
 func (m *mockDiscovery) GetPod(_, _, _ string) (*types.K8sPodDetail, error) {
 	return nil, nil
 }
+
 func (m *mockDiscovery) GetPodLogs(_, _, _ string, _ types.PodLogsOptions) (*types.PodLogsResponse, error) {
 	return nil, nil
 }
+
 func (m *mockDiscovery) GetEvents(_, _ string, _ types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return nil, nil
 }
+
 func (m *mockDiscovery) GetEndpoints(_, _, _ string) (*types.K8sEndpoints, error) {
 	return nil, nil
 }

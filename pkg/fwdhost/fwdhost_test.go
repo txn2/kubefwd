@@ -8,8 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/txn2/kubefwd/pkg/fwdip"
 	"github.com/txn2/txeh"
+
+	"github.com/txn2/kubefwd/pkg/fwdip"
 )
 
 // createTempHostsFile creates a temporary hosts file for testing

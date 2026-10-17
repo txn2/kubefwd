@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 )
@@ -924,7 +925,7 @@ func buildConnectionKey(serviceName, namespace, k8sContext string) string {
 
 // buildConnectionInfoFromService creates a connection info map from service state
 func buildConnectionInfoFromService(svc *state.ServiceSnapshot) map[string]interface{} {
-	var ports []map[string]interface{}
+	ports := make([]map[string]any, 0, len(svc.PortForwards))
 	var hostnames []string
 	var localIP string
 

@@ -41,7 +41,6 @@ func TestWaitUntilPodRunning_AlreadyRunning(t *testing.T) {
 	defer close(stopCh)
 
 	returnedPod, err := pfo.WaitUntilPodRunning(stopCh)
-
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}

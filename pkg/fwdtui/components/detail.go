@@ -1,6 +1,7 @@
 package components
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 )
@@ -683,7 +685,8 @@ func copyToClipboard(text string) bool {
 
 	for _, c := range candidates {
 		if _, err := exec.LookPath(c.name); err == nil {
-			cmd = exec.Command(c.name, c.args...)
+			// #nosec G204 -- name and args come from the fixed candidate table above.
+			cmd = exec.CommandContext(context.Background(), c.name, c.args...)
 			break
 		}
 	}

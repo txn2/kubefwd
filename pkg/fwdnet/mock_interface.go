@@ -2,10 +2,14 @@ package fwdnet
 
 import (
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/txn2/kubefwd/pkg/fwdip"
 )
+
+// mockIPPrefix is the /24 the mock allocates addresses from.
+const mockIPPrefix = "127.1.27."
 
 // MockInterfaceManager is a test double for InterfaceManager.
 // It tracks all calls and allows configuring return values.
@@ -57,7 +61,7 @@ func (m *MockInterfaceManager) ReadyInterface(opts fwdip.ForwardIPOpts) (net.IP,
 	}
 
 	// Allocate new IP
-	ip := net.IPv4(127, 1, 27, byte(m.ipCounter))
+	ip := net.ParseIP(mockIPPrefix + strconv.Itoa(m.ipCounter%256))
 	m.ipCounter++
 	m.AllocatedIPs[key] = ip
 

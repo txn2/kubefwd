@@ -24,13 +24,13 @@ Fixes #
 
 <!-- How was this tested? Include steps to reproduce if applicable -->
 
-- [ ] Ran `go test ./...` locally
+- [ ] Ran `make verify` locally and it passed (formatting, changed-line lint, tests, coverage floors, security scans)
 - [ ] Tested manually with a Kubernetes cluster
 - [ ] Added new tests for changes (if applicable)
 
 ## Checklist
 
-- [ ] My code follows the project's style guidelines (`go fmt`, `go vet`)
+- [ ] New and changed code passes the full lint rule set (`make lint`), with any `//nolint` or `#nosec` carrying a reason
 - [ ] I have read [CONTRIBUTING.md](CONTRIBUTING.md)
 - [ ] I have updated documentation if needed
 - [ ] This PR is focused and does not include unrelated changes
