@@ -33,6 +33,9 @@ jobs:
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: go
+          # The default suite plus code-quality queries, matching
+          # mcp-data-platform (#621).
+          queries: security-and-quality
 
       - name: Build
         run: go build ./...

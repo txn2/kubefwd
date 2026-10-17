@@ -21,8 +21,10 @@ import (
 )
 
 // initRegistryOnce ensures the service registry is initialized only once for all tests
-var initRegistryOnce sync.Once
-var testShutdownCh chan struct{}
+var (
+	initRegistryOnce sync.Once
+	testShutdownCh   chan struct{}
+)
 
 func initTestRegistry() {
 	initRegistryOnce.Do(func() {
@@ -609,7 +611,7 @@ func TestDiagnosticsProviderAdapter_buildForwardDiagnostic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			diag, _ := adapter.buildForwardDiagnostic(tt.fwd)
+			diag := adapter.buildForwardDiagnostic(tt.fwd)
 			if diag.Connection.State != tt.expectedState {
 				t.Errorf("Expected connection state '%s', got '%s'", tt.expectedState, diag.Connection.State)
 			}

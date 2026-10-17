@@ -1,0 +1,24 @@
+# osv-scanner.toml: the advisories `make osv` accepts.
+#
+# `make osv` (part of `make security`, so of `make verify` and CI) fails on any
+# advisory osv-scanner reports against go.mod or .github/requirements-docs.txt.
+# (test/integration is left to govulncheck; see the osv target in the Makefile.) osv-scanner reads the GitHub advisory
+# database, which carries advisories the Go vulnerability database behind
+# govulncheck does not, and it is the only scanner that reads the docs
+# requirements. A Go advisory whose symbols the module never calls is dropped
+# by osv-scanner's call analysis and needs no entry.
+#
+# An entry here says: we have read this advisory, it does not reach what we
+# ship or has no fix, and we are shipping anyway. It cannot outlive its reason:
+#
+#   1. ignoreUntil is required. Past that date the entry stops applying and the
+#      advisory fails the build again; re-check it before extending the date.
+#   2. An entry that no longer matches a finding fails the build. Delete it.
+#   3. An advisory with a fixed version is upgraded, not accepted.
+#
+# Format:
+#
+#   [[IgnoredVulns]]
+#   id = "GHSA-xxxx-xxxx-xxxx"
+#   ignoreUntil = 2027-01-14
+#   reason = "why it does not reach what we ship, and why there is no upgrade"

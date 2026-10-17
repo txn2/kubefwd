@@ -7,10 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdtui"
-	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +14,11 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
+
+	"github.com/txn2/kubefwd/pkg/fwdnet"
+	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 // setupMockInterface sets up the mock interface manager for tests

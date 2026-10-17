@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	log "github.com/sirupsen/logrus"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/components"
@@ -465,7 +466,8 @@ func (m *RootModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case tea.MouseWheelMsg:
 		return m.handleMouseWheel(msg)
 	case tea.MouseClickMsg:
-		return m.handleMouseClick(msg)
+		m.handleMouseClick(msg)
+		return m, nil
 	case MetricsUpdateMsg:
 		return m, m.handleMetricsUpdateMsg(msg)
 	case KubefwdEventMsg:
@@ -848,10 +850,10 @@ func (m *RootModel) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd)
 	return m, tea.Batch(cmds...)
 }
 
-// handleMouseClick handles mouse click events
-func (m *RootModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+// handleMouseClick moves focus to the panel under a left click.
+func (m *RootModel) handleMouseClick(msg tea.MouseClickMsg) {
 	if msg.Button != tea.MouseLeft {
-		return m, nil
+		return
 	}
 	y := msg.Y
 
@@ -862,7 +864,7 @@ func (m *RootModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd)
 		m.logs.SetFocus(false)
 		relativeY := y - m.servicesStartY
 		m.services.SelectByY(relativeY)
-		return m, nil
+		return
 	}
 
 	// Check if click is in Logs area
@@ -870,10 +872,7 @@ func (m *RootModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd)
 		m.focus = FocusLogs
 		m.services.SetFocus(false)
 		m.logs.SetFocus(true)
-		return m, nil
 	}
-
-	return m, nil
 }
 
 // handlePodLogsRequest handles pod log streaming requests

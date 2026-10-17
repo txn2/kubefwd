@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/txn2/kubefwd/pkg/fwdservice"
 )
 
 // waitForCondition polls the provided condition until it returns true or the timeout elapses.

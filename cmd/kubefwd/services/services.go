@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/txn2/txeh"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi"
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdcfg"
@@ -25,7 +27,6 @@ import (
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
 	"github.com/txn2/kubefwd/pkg/fwdtui/styles"
 	"github.com/txn2/kubefwd/pkg/utils"
-	"github.com/txn2/txeh"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -39,24 +40,26 @@ import (
 )
 
 // cmdline arguments
-var namespaces []string
-var contexts []string
-var verbose bool
-var domain string
-var mappings []string
-var isAllNs bool
-var fwdConfigurationPath string
-var fwdReservations []string
-var timeout int
-var hostsPath string
-var refreshHostsBackup bool
-var purgeStaleIps bool
-var resyncInterval time.Duration
-var retryInterval time.Duration
-var tuiMode bool
-var apiMode bool
-var autoReconnect bool
-var themeOverride string
+var (
+	namespaces           []string
+	contexts             []string
+	verbose              bool
+	domain               string
+	mappings             []string
+	isAllNs              bool
+	fwdConfigurationPath string
+	fwdReservations      []string
+	timeout              int
+	hostsPath            string
+	refreshHostsBackup   bool
+	purgeStaleIps        bool
+	resyncInterval       time.Duration
+	retryInterval        time.Duration
+	tuiMode              bool
+	apiMode              bool
+	autoReconnect        bool
+	themeOverride        string
+)
 
 // Version is set by the main package
 var Version string
@@ -150,14 +153,17 @@ func checkConnection(clientSet kubernetes.Interface, namespaces []string) error 
 	}
 
 	// Check RBAC permissions for each of the requested namespaces
+	const pods = "pods"
 	requiredPermissions := []authorizationv1.ResourceAttributes{
-		{Verb: "list", Resource: "pods"}, {Verb: "get", Resource: "pods"}, {Verb: "watch", Resource: "pods"},
+		{Verb: "list", Resource: pods},
+		{Verb: "get", Resource: pods},
+		{Verb: "watch", Resource: pods},
 		{Verb: "get", Resource: "services"},
 	}
 	for _, namespace := range namespaces {
 		for _, perm := range requiredPermissions {
 			perm.Namespace = namespace
-			var accessReview = &authorizationv1.SelfSubjectAccessReview{
+			accessReview := &authorizationv1.SelfSubjectAccessReview{
 				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 					ResourceAttributes: &perm,
 				},

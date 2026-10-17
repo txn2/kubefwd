@@ -2,18 +2,23 @@ coverage:
   status:
     project:
       default:
-        target: auto
+        # COVERAGE_MIN in the Makefile; `make coverage-check` enforces the
+        # same floor locally and in CI.
+        target: 80%
         threshold: 2%
     patch:
       default:
-        target: 50%
-        # Patch coverage is reported but does not block PRs.
-        # Mechanical refactors of integration-only code paths (k8s SPDY
-        # dialers, port-forward construction in pkg/fwdport/fwdport.go)
-        # have no unit tests because they require a live cluster, and
-        # routinely flunk a strict 50% gate even when the PR is a no-op
-        # rename. Project-level coverage (codecov/project) still blocks.
-        informational: true
+        # PATCH_COVERAGE_MIN in the Makefile; `make patch-coverage` enforces
+        # it locally and in CI. Code that only runs as root or against a live
+        # cluster is made testable by injecting its OS calls (see
+        # pkg/fwdapi/network.go) rather than exempted from the gate.
+        target: 80%
+        threshold: 5%
+        informational: false
+
+ignore:
+  - "**/*_test.go"
+  - "**/testdata/**"
 
 comment:
   layout: "reach,diff,flags,files"

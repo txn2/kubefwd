@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+# Every job reads the Go version from go.mod's toolchain directive, the same
+# pin `make check-go-version` enforces locally. Scanner and tool versions live
+# in the Makefile; jobs call make targets so local and CI run the same tools.
+
 jobs:
   validate-actions:
     name: Validate Action SHAs
@@ -26,18 +30,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so --new-from-rev below can diff against the base
+          # commit. A shallow clone has no base to diff against.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
+
+      # The base is the PR's target commit on pull_request and the previous
+      # tip on push. github.event.before is all zeros when there is no
+      # previous tip, so fall back to the parent commit.
+      - name: Resolve lint base
+        id: base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-$PUSH_BEFORE}"
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base=$(git rev-parse HEAD~1)
+          fi
+          echo "Lint base: $base"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
+          # GOLANGCI_LINT_VERSION in the Makefile; `make tools-check` fails if
+          # the two differ.
           version: v2.12.1
-          args: --timeout=5m
+          # Only issues on changed lines fail the build, so pre-existing issues
+          # don't block stricter linters (#621). This uses golangci-lint's
+          # git-based --new-from-rev, not the action's only-new-issues: that
+          # option fetches the diff from the GitHub API, fails on diffs over
+          # 20,000 lines and then falls back to linting the whole repo. The
+          # git-based diff has no size limit and matches `make lint`.
+          args: --new-from-rev=${{ steps.base.outputs.sha }}
+
+      # Formatting is checked over the whole tree, not only changed lines.
+      - name: Check formatting
+        run: make fmt-check
 
   test:
     name: Test (${{ matrix.os }})
@@ -49,11 +85,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history for the patch-coverage merge base.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
 
       - name: Download dependencies
@@ -64,6 +103,14 @@ jobs:
 
       - name: Run tests
         run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Coverage floor
+        if: matrix.os == 'ubuntu-latest'
+        run: make coverage-check
+
+      - name: Patch coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: make patch-coverage
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'
@@ -95,6 +142,33 @@ jobs:
           echo "Running FuzzServiceConfigurationFromReservation..."
           go test -fuzz=FuzzServiceConfigurationFromReservation -fuzztime=30s -timeout=60s ./pkg/fwdip/...
 
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history for the semgrep-diff merge base.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # gosec, govulncheck judged against .govulncheck-allow.txt (both
+      # modules), and osv-scanner judged against osv-scanner.toml.
+      - name: gosec, govulncheck, osv-scanner
+        run: make security
+
+      - name: Semgrep (p/golang)
+        run: make semgrep
+
+      - name: Semgrep (changed lines)
+        run: make semgrep-diff
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -107,11 +181,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
 
       - name: Download dependencies
         run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check go.mod and go.sum are tidy
+        run: make tidy-check
 
       - name: Build
         run: go build -o kubefwd ./cmd/kubefwd/kubefwd.go

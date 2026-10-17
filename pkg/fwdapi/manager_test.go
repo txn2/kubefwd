@@ -342,6 +342,7 @@ func (m *mockEventStreamer) Subscribe() (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
 }
+
 func (m *mockEventStreamer) SubscribeType(_ events.EventType) (<-chan events.Event, func()) {
 	ch := make(chan events.Event)
 	return ch, func() { close(ch) }
@@ -354,12 +355,15 @@ type mockDiagnosticsProvider struct{}
 func (m *mockDiagnosticsProvider) GetSummary() types.DiagnosticSummary {
 	return types.DiagnosticSummary{}
 }
+
 func (m *mockDiagnosticsProvider) GetServiceDiagnostic(_ string) (*types.ServiceDiagnostic, error) {
 	return nil, nil
 }
+
 func (m *mockDiagnosticsProvider) GetForwardDiagnostic(_ string) (*types.ForwardDiagnostic, error) {
 	return nil, nil
 }
+
 func (m *mockDiagnosticsProvider) GetNetworkStatus() types.NetworkStatus {
 	return types.NetworkStatus{}
 }

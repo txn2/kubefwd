@@ -1,0 +1,16 @@
+# Accepted govulncheck findings.
+#
+# An entry here says: this advisory reaches code we call, we have read it, and
+# we are shipping anyway. It is not a way to quiet the scanner. The gate
+# (scripts/govulncheck-gate.py, run by `make security` and CI) fails in three
+# cases, so an entry cannot outlive its reason:
+#
+#   1. A called finding is reported that is not listed here.
+#   2. A listed advisory now names a fixed version. Upgrade; do not accept.
+#   3. A listed advisory is no longer reported at all. Delete the line.
+#
+# The gate judges both modules: the root module and test/integration (with
+# -tags=integration). One file covers both.
+#
+# Format: one advisory id, whitespace, then the reason it is accepted.
+# Lines starting with # are comments.

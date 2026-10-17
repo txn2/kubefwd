@@ -375,7 +375,6 @@ func TestServiceControllerHTTP_Reconnect(t *testing.T) {
 
 	controller := NewServiceControllerHTTP(server.URL)
 	err := controller.Reconnect("svc1")
-
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -2123,5 +2122,31 @@ func TestHistoryProviderHTTP_GetStats(t *testing.T) {
 	}
 	if stats.TotalEvents != 100 {
 		t.Errorf("Expected 100 total events, got %d", stats.TotalEvents)
+	}
+}
+
+func TestGenerateEnvVars_ConnectionURLs(t *testing.T) {
+	testCases := []struct {
+		name  string
+		port  int
+		key   string
+		value string
+	}{
+		{"PostgreSQL", 5432, "DATABASE_URL", "postgresql://svc:5432"},
+		{"MySQL", 3306, "DATABASE_URL", "mysql://svc:3306"},
+		{"MongoDB", 27017, "MONGODB_URI", "mongodb://svc:27017"},
+		{"Redis", 6379, "REDIS_URL", "redis://svc:6379"},
+		{"Kafka", 9092, "KAFKA_BROKERS", "svc:9092"},
+		{"HTTP", 8080, "SVC_URL", "http://svc:8080"},
+		{"HTTPS", 8443, "SVC_URL", "https://svc:8443"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			envVars := generateEnvVars("svc", "127.1.0.1", []types.PortInfo{{LocalPort: tc.port}})
+			if got := envVars[tc.key]; got != tc.value {
+				t.Errorf("%s = %q, want %q", tc.key, got, tc.value)
+			}
+		})
 	}
 }

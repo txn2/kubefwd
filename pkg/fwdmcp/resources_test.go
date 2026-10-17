@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/state"
@@ -303,27 +304,35 @@ type mockK8sDiscoveryResource struct {
 func (m *mockK8sDiscoveryResource) ListNamespaces(ctx string) ([]types.K8sNamespace, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) ListServices(ctx, namespace string) ([]types.K8sService, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) ListContexts() (*types.K8sContextsResponse, error) {
 	return m.contextsResp, m.contextsErr
 }
+
 func (m *mockK8sDiscoveryResource) GetService(ctx, namespace, name string) (*types.K8sService, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) GetPodLogs(ctx, namespace, podName string, opts types.PodLogsOptions) (*types.PodLogsResponse, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) ListPods(ctx, namespace string, opts types.ListPodsOptions) ([]types.K8sPod, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) GetPod(ctx, namespace, podName string) (*types.K8sPodDetail, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) GetEvents(ctx, namespace string, opts types.GetEventsOptions) ([]types.K8sEvent, error) {
 	return nil, nil
 }
+
 func (m *mockK8sDiscoveryResource) GetEndpoints(ctx, namespace, serviceName string) (*types.K8sEndpoints, error) {
 	return nil, nil
 }
@@ -341,12 +350,14 @@ type mockMetricsProviderWithSnapshots struct {
 func (m *mockMetricsProviderWithSnapshots) GetAllSnapshots() []fwdmetrics.ServiceSnapshot {
 	return m.snapshots
 }
+
 func (m *mockMetricsProviderWithSnapshots) GetServiceSnapshot(key string) *fwdmetrics.ServiceSnapshot {
 	if m.snapshotsByKey != nil {
 		return m.snapshotsByKey[key]
 	}
 	return nil
 }
+
 func (m *mockMetricsProviderWithSnapshots) GetTotals() (uint64, uint64, float64, float64) {
 	return m.bytesIn, m.bytesOut, m.rateIn, m.rateOut
 }

@@ -1,0 +1,33 @@
+{
+  "title": "kubefwd",
+  "description": "A command-line utility for bulk Kubernetes port forwarding. kubefwd forwards every Service in one or more namespaces, gives each its own loopback IP and /etc/hosts entry so services resolve by name as they do in the cluster, and follows Service and Pod lifecycle events to keep forwards current.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    {
+      "name": "Johnston, Craig",
+      "affiliation": "Deasil Works, Inc.",
+      "orcid": "0009-0000-9041-4079"
+    }
+  ],
+  "keywords": [
+    "Kubernetes",
+    "port forwarding",
+    "local development",
+    "developer tools",
+    "networking"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/txn2/kubefwd",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://kubefwd.com",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
@@ -157,7 +159,7 @@ func setupRouter() *gin.Engine {
 }
 
 func performRequest(r *gin.Engine, method, path string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -2468,8 +2470,10 @@ func TestAnalyzeHandler_AnalyzeDegraded(t *testing.T) {
 	mock := &mockStateReader{
 		services: []state.ServiceSnapshot{
 			{Key: "svc1.default.ctx", ServiceName: "svc1", ActiveCount: 1, ErrorCount: 0},
-			{Key: "svc2.default.ctx", ServiceName: "svc2", ActiveCount: 0, ErrorCount: 1,
-				PortForwards: []state.ForwardSnapshot{{PodName: "pod1", Error: "unknown error type"}}},
+			{
+				Key: "svc2.default.ctx", ServiceName: "svc2", ActiveCount: 0, ErrorCount: 1,
+				PortForwards: []state.ForwardSnapshot{{PodName: "pod1", Error: "unknown error type"}},
+			},
 		},
 		summary: state.SummaryStats{
 			TotalServices:  2,
@@ -3340,7 +3344,7 @@ func TestParseNamespaceKey(t *testing.T) {
 // Helper function for requests with body
 
 func performRequestWithBody(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -3925,7 +3929,7 @@ func TestEventsHandler_StreamWithTypeFilter(t *testing.T) {
 	h := NewEventsHandler(streamer)
 	r.GET("/v1/events/stream", h.Stream)
 
-	req := httptest.NewRequest("GET", "/v1/events/stream?type=ServiceAdded", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), "GET", "/v1/events/stream?type=ServiceAdded", http.NoBody)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

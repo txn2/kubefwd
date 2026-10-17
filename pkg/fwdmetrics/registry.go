@@ -20,8 +20,10 @@ type Registry struct {
 	wg       sync.WaitGroup // Tracks running goroutines for graceful shutdown
 }
 
-var globalRegistry *Registry
-var registryOnce sync.Once
+var (
+	globalRegistry *Registry
+	registryOnce   sync.Once
+)
 
 // GetRegistry returns the singleton metrics registry
 func GetRegistry() *Registry {

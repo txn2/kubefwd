@@ -7,12 +7,6 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/kubefwd/pkg/fwdip"
-	"github.com/txn2/kubefwd/pkg/fwdnet"
-	"github.com/txn2/kubefwd/pkg/fwdport"
-	"github.com/txn2/kubefwd/pkg/fwdpub"
-	"github.com/txn2/kubefwd/pkg/fwdtui"
-	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +14,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
+
+	"github.com/txn2/kubefwd/pkg/fwdip"
+	"github.com/txn2/kubefwd/pkg/fwdnet"
+	"github.com/txn2/kubefwd/pkg/fwdport"
+	"github.com/txn2/kubefwd/pkg/fwdpub"
+	"github.com/txn2/kubefwd/pkg/fwdtui"
+	"github.com/txn2/kubefwd/pkg/fwdtui/events"
 )
 
 const (
@@ -389,7 +390,6 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	listOpts := metav1.ListOptions{LabelSelector: selector}
 
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOpts)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Warnf("WARNING: No Pods found for service %s: %s\n", svcFwd, err.Error())
@@ -734,7 +734,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
-
 				// AddServicePod returns false if this forward was already registered
 				// (race condition with another goroutine). Exit early to prevent duplicates.
 				if !svcFwd.AddServicePod(pfo) {

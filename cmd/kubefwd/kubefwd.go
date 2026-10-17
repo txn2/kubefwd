@@ -10,9 +10,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
+
 	"github.com/txn2/kubefwd/cmd/kubefwd/mcp"
 	"github.com/txn2/kubefwd/cmd/kubefwd/services"
-	"k8s.io/klog/v2"
 )
 
 var globalUsage = `Bulk forward Kubernetes services for local development.

@@ -1,0 +1,33 @@
+name: Mutation Testing
+
+# Mutation testing (gremlins) is too slow for a per-PR gate, so it runs weekly
+# and on demand. A scheduled run cannot block a merge; its red/green history is
+# the signal. Locally the same check is `make mutate`.
+on:
+  schedule:
+    # Weekly, Sunday 08:00 UTC
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: Mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Installs gremlins at GREMLINS_VERSION and enforces
+      # MUTATION_EFFICACY_MIN, both set in the Makefile.
+      - name: Run mutation testing
+        run: make mutate

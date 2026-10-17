@@ -3,6 +3,7 @@
 package utils
 
 import (
+	"context"
 	"os/exec"
 	"strconv"
 )
@@ -15,7 +16,7 @@ func CheckRoot() (bool, error) {
 
 // CheckRoot implements RootChecker for defaultRootChecker on Unix systems.
 func (d *defaultRootChecker) CheckRoot() (bool, error) {
-	cmd := exec.Command("id", "-u")
+	cmd := exec.CommandContext(context.Background(), "id", "-u")
 
 	output, err := cmd.Output()
 	if err != nil {

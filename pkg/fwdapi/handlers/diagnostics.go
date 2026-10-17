@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 )
 
@@ -62,7 +63,6 @@ func (h *DiagnosticsHandler) ServiceDiagnostic(c *gin.Context) {
 
 	key := c.Param("key")
 	diag, err := h.diagnostics.GetServiceDiagnostic(key)
-
 	if err != nil {
 		c.JSON(http.StatusNotFound, types.Response{
 			Success: false,
@@ -99,7 +99,6 @@ func (h *DiagnosticsHandler) ForwardDiagnostic(c *gin.Context) {
 
 	key := c.Param("key")
 	diag, err := h.diagnostics.GetForwardDiagnostic(key)
-
 	if err != nil {
 		c.JSON(http.StatusNotFound, types.Response{
 			Success: false,

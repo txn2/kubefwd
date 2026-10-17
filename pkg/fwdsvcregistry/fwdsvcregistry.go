@@ -4,11 +4,14 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
+	// Registers client-go's auth provider plugins (OIDC, Azure, GCP) so
+	// kubeconfigs that use them can authenticate.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
 	"github.com/txn2/kubefwd/pkg/fwdport"
 	"github.com/txn2/kubefwd/pkg/fwdservice"
 	"github.com/txn2/kubefwd/pkg/fwdtui"
 	"github.com/txn2/kubefwd/pkg/fwdtui/events"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // ServicesRegistry is a structure to hold all of the kubernetes
@@ -140,7 +143,6 @@ func ShutDownAll() {
 // RemoveByName will shutdown and remove the service, identified by svcName.svcNamespace,
 // from the inventory of services, if it was currently being configured to do forwarding.
 func RemoveByName(name string) {
-
 	log.Debugf("Registry: Removing service %s", name)
 
 	// Pop the service from the registry

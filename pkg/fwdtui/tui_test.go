@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	log "github.com/sirupsen/logrus"
+
 	"github.com/txn2/kubefwd/pkg/fwdapi/types"
 	"github.com/txn2/kubefwd/pkg/fwdmetrics"
 	"github.com/txn2/kubefwd/pkg/fwdtui/components"
@@ -1338,6 +1339,25 @@ func TestRootModel_Update_MouseClickLogs(t *testing.T) {
 
 	if m.focus != FocusLogs {
 		t.Error("Focus should switch to logs after clicking in logs area")
+	}
+}
+
+func TestRootModel_Update_MouseClickNonLeftButtonIgnored(t *testing.T) {
+	m := createTestRootModel()
+	m.focus = FocusLogs
+
+	// A right click in the services area must not move focus
+	msg := tea.MouseClickMsg{
+		Button: tea.MouseRight,
+		Y:      m.servicesStartY + 1,
+	}
+	_, cmd := m.Update(msg)
+
+	if m.focus != FocusLogs {
+		t.Error("Focus should not change on a non-left click")
+	}
+	if cmd != nil {
+		t.Error("A mouse click should not return a command")
 	}
 }
 

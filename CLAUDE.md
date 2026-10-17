@@ -60,6 +60,22 @@ The TUI follows the Model-View-Update (MVU) pattern:
 
 **All commits require explicit human approval.** Do not run `git commit` unless the user explicitly asks you to commit. Always show the diff or summarize changes and wait for approval first.
 
+## Verification
+
+**"Testing" means `make verify`, not `go test ./...`.** Run it before handing work back; it runs every check CI runs, with the same pinned tools, and a change isn't done until it passes.
+
+The gates (details in CONTRIBUTING.md, "Quality Gates"):
+
+- **Formatting**: gofmt, goimports (`github.com/txn2/kubefwd` local prefix), gofumpt over the whole tree. Fix with `make fmt`.
+- **Lint**: every linter in `.golangci.yml` applies to lines changed since the merge base with `origin/master` (`make lint`, CI `--new-from-rev`). Pre-existing issues elsewhere don't fail; anything touched must pass. `make lint-full` shows the backlog. A `//nolint` or `#nosec` needs a reason.
+- **Complexity** (production code): gocyclo 10, gocognit 15, nestif 5, dupl 150, nakedret 30. Split functions rather than suppressing.
+- **Layering**: depguard rules in `.golangci.yml`; `pkg/` never imports `cmd/`, leaf packages import nothing first-party, the forwarding core never imports `fwdapi`/`fwdmcp`.
+- **Coverage**: total ≥ 80% (`make coverage-check`); changed lines ≥ 80% (`make patch-coverage`). Both block, here and in codecov. Root-only or cluster-only code is made testable by injecting the OS call (see `runCommand` and `goos` in `pkg/fwdapi/network.go`), not left uncovered.
+- **Security**: `make security` runs gosec, govulncheck on both modules (gated by `scripts/govulncheck-gate.py` against `.govulncheck-allow.txt`), and osv-scanner (against `osv-scanner.toml`). Upgrade rather than accept; an accepted advisory needs a reason and expires.
+- **SAST**: `make semgrep` (p/golang, whole tree) and `make semgrep-diff` (`.semgrep-diff/` rules, changed lines). CodeQL runs `security-and-quality` in CI.
+- **Mutation**: `make mutate` (gremlins, 60% efficacy), weekly in CI. Too slow for every change.
+- **Toolchain**: Go is pinned by the `toolchain` line in go.mod; CI's setup-go reads the same line. Tool versions are pinned in the Makefile and installed into `.tools/`.
+
 ## Build and Development Commands
 
 ### Building
@@ -301,7 +317,7 @@ The version is set via ldflags during build: `-ldflags "-X main.Version={{.Versi
 
 ### Unit Tests
 
-Test coverage has improved significantly:
+`make verify` is the full check (see Verification above). For quicker loops:
 
 ```bash
 # Run all unit tests
